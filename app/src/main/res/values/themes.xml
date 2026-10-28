@@ -1,0 +1,4 @@
+<resources>
+
+    <style name="Theme.SiteDraft" parent="Theme.MaterialComponents.Light" />
+</resources>

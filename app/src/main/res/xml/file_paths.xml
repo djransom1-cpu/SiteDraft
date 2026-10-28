@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paths the FileProvider may hand to other apps: the app's external files dir, where
+     PDF/DXF exports are written (see DrawingManager.shareExportedFile). -->
+<paths>
+    <external-files-path name="exports" path="." />
+</paths>

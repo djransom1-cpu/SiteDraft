@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">SiteDraft</string>
+    <string name="layers_header">Layers</string>
+    <string name="files_header">Files</string>
+    <string name="add_layer">Add Layer</string>
+    <string name="close">Close</string>
+    <string name="save_project">Save Project</string>
+    <string name="export_pdf">Export PDF</string>
+    <string name="export_dxf">Export DXF</string>
+    <string name="load_project">Load Project</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+    <string name="import_image">Import Image</string>
+    <string name="import_pdf">Import PDF</string>
+    <string name="import_dxf">Import DXF</string>
+    <string name="import_menu">Import</string>
+    <string name="select_color">Select Color</string>
+    <string name="select_tool">Select Tool</string>
+</resources>
