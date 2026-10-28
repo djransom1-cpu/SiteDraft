@@ -89,7 +89,7 @@ object Elevation {
                     }
                     if (perpendicular && touches) Kind.CUT_WALL else continue
                 }
-                PlanSymbols.FIXTURES, PlanSymbols.CABINETS -> {
+                PlanSymbols.FIXTURES, PlanSymbols.CABINETS, PlanSymbols.OUTDOOR -> {
                     if (s.symbolName.startsWith("Island")) continue
                     // Signed gap from the viewed face to the item's back edge: positive = in front of the wall.
                     val back = when (side) {
@@ -199,6 +199,17 @@ object Elevation {
                         line(from, 4f, to, 4f) // toe kick
                         doors(from, to, 4f, counterTop - 1.5f)
                         counterRuns += Pair(from, to)
+                    }
+                    name == PlanSymbols.LYNX_36_GRILL -> {
+                        // Built into the counter: control panel in the cutout below the counter
+                        // line, hood standing above it (closed), handle across the hood.
+                        val panelBottom = counterTop - PlanSymbols.LYNX_36_CUTOUT_H
+                        val hoodTop = counterTop + PlanSymbols.LYNX_36_HOOD_ABOVE_COUNTER
+                        rect(from, to, panelBottom, counterTop)
+                        for (i in 0 until 4) circle(from + w * (0.2f + 0.2f * i), counterTop - 5f, 1f)
+                        rect(from, to, counterTop, hoodTop)
+                        line(from + 2f * inch, hoodTop - 6f, to - 2f * inch, hoodTop - 6f, medium) // handle
+                        line(from, counterTop + 2f, to, counterTop + 2f) // hood lip
                     }
                     name == "Dishwasher" -> {
                         rect(from, to, 0f, counterTop - 1.5f)

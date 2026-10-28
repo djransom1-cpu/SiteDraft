@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Kitchen
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.OutdoorGrill
 import androidx.compose.material.icons.filled.Square
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Park
@@ -66,6 +67,7 @@ fun SymbolLibraryPanel(
             SymbolCategory("Plumbing", Icons.Default.WaterDrop, listOf("Valve", "Faucet"), onEvent)
             SymbolCategory(PlanSymbols.FIXTURES, Icons.Default.Bathtub, PlanSymbols.fixtures, onEvent)
             SymbolCategory(PlanSymbols.CABINETS, Icons.Default.Kitchen, PlanSymbols.cabinets, onEvent)
+            SymbolCategory(PlanSymbols.OUTDOOR, Icons.Default.OutdoorGrill, PlanSymbols.outdoor, onEvent)
             SymbolCategory(PlanSymbols.DOORS_WINDOWS, Icons.Default.DoorFront, PlanSymbols.doorsWindows, onEvent)
             SymbolCategory(PlanSymbols.WALLS, Icons.Default.Fence, PlanSymbols.walls, onEvent)
             SymbolCategory("HVAC", Icons.Default.ElectricBolt, listOf("Vent", "AC Unit", "Thermostat"), onEvent)

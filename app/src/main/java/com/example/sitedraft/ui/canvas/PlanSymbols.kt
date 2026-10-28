@@ -33,7 +33,12 @@ object PlanSymbols {
     const val DOORS_WINDOWS = "Doors & Windows"
     const val WALLS = "Walls"
     const val CABINETS = "Cabinets"
-    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS)
+    const val OUTDOOR = "Outdoor Kitchen"
+    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR)
+
+    /** Outdoor kitchen equipment, by manufacturer spec where known. */
+    const val LYNX_36_GRILL = "Lynx 36\" Grill"
+    val outdoor = listOf(LYNX_36_GRILL)
 
     /** Base cabinets 24" deep, uppers 12" deep (drawn dashed: they are above the cut plane). */
     val cabinets = listOf(
@@ -97,8 +102,16 @@ object PlanSymbols {
         "Upper 30\"" to Pair(30f, 12f),
         "Upper 36\"" to Pair(36f, 12f),
         "Pantry 24\"" to Pair(24f, 24f),
-        "Island 3'x6'" to Pair(72f, 36f)
+        "Island 3'x6'" to Pair(72f, 36f),
+        // Lynx Professional 36" built-in (L36R-3 / L36TR): 36" wide, 25.38" deep, 24.75" high overall;
+        // cutout 35" x 22" x 10.13" deep below the counter, so ~14.6" of hood stands above it.
+        LYNX_36_GRILL to Pair(36f, 25.375f)
     )
+
+    const val LYNX_36_CUTOUT_W = 35f
+    const val LYNX_36_CUTOUT_D = 22f
+    const val LYNX_36_CUTOUT_H = 10.13f
+    const val LYNX_36_HOOD_ABOVE_COUNTER = 24.75f - LYNX_36_CUTOUT_H
 
     fun isDoor(name: String) = name.startsWith("Door ")
     fun isSlidingDoor(name: String) = name.startsWith("Sliding Door")
@@ -250,6 +263,23 @@ fun DrawScope.drawPlanSymbol(
                 val cy = inch * 1.5f
                 for (x in listOf(-w * 0.25f, w * 0.25f)) for (y in listOf(-h * 0.2f + cy, h * 0.22f + cy)) {
                     drawCircle(color = accentColor, radius = br, center = Offset(x, y), style = thin)
+                }
+            }
+            name == PlanSymbols.LYNX_36_GRILL -> {
+                // Body with the hood hinge line along the back, cooking grates, and the control
+                // panel with four knobs along the front edge.
+                drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+                drawLine(color = accentColor, start = Offset(-hw, -hh + inch * 3f), end = Offset(hw, -hh + inch * 3f), strokeWidth = line.width)
+                val grateTop = -hh + inch * 4f
+                val grateBottom = hh - inch * 5f
+                var gx = -hw + inch * 2f
+                while (gx < hw - inch) {
+                    drawLine(color = faint, start = Offset(gx, grateTop), end = Offset(gx, grateBottom), strokeWidth = thin.width)
+                    gx += inch * 1.5f
+                }
+                drawLine(color = lineColor, start = Offset(-hw, grateBottom), end = Offset(hw, grateBottom), strokeWidth = thin.width)
+                for (i in 0 until 4) {
+                    drawCircle(color = accentColor, radius = inch * 0.9f, center = Offset(-hw + w * (0.2f + 0.2f * i), hh - inch * 2.5f), style = thin)
                 }
             }
             name == "Dishwasher" -> {

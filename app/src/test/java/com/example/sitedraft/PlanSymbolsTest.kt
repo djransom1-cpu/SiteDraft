@@ -20,7 +20,7 @@ class PlanSymbolsTest {
 
     @Test
     fun `every library entry has a footprint`() {
-        for (name in PlanSymbols.fixtures + PlanSymbols.doorsWindows + PlanSymbols.walls + PlanSymbols.cabinets) {
+        for (name in PlanSymbols.fixtures + PlanSymbols.doorsWindows + PlanSymbols.walls + PlanSymbols.cabinets + PlanSymbols.outdoor) {
             assertTrue(name, PlanSymbols.footprintInches.containsKey(name))
         }
     }
