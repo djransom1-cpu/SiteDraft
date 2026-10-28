@@ -134,6 +134,7 @@ class DrawingManager(application: android.app.Application) : AndroidViewModel(ap
                     }
                     is Placement.Shell -> placeShell(point, pending)
                     is Placement.Room -> placeRoom(point, pending)
+                    is Placement.Elevation -> placeElevation(point, pending)
                 }
             }
             is DrawingEvent.CancelPlacement -> _state.value = _state.value.copy(pendingPlacement = null, placementPreview = null)
@@ -1993,6 +1994,21 @@ class DrawingManager(application: android.app.Application) : AndroidViewModel(ap
         val label = FloorPlan.roomLabel(room, inside, s)
         pushUndoSnapshot()
         _state.value = _state.value.copy(elements = _state.value.elements + walls + label, selectedElementId = null)
+        triggerAutoSave()
+    }
+
+    /** Elevation of a plan wall, built as plain elements with [origin] as the floor line's left end; left selected as a group. */
+    private fun placeElevation(origin: Offset, placement: Placement.Elevation) {
+        val s = _state.value
+        val wall = s.elements.find { it.id == placement.spec.wallId } as? DrawingElement.Symbol ?: return
+        val built = Elevation.build(wall, placement.spec, origin, s)
+        if (built.isEmpty()) return
+        pushUndoSnapshot()
+        _state.value = _state.value.copy(
+            elements = _state.value.elements + built,
+            selectedElementId = null,
+            selectedElementIds = built.map { it.id }.toSet()
+        )
         triggerAutoSave()
     }
 

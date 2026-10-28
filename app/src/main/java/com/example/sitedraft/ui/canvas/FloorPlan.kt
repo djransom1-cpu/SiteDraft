@@ -30,6 +30,9 @@ sealed class Placement {
      * it can be snapped to the inside corner of the building or of another room.
      */
     data class Room(val name: String, val width: Float, val depth: Float, val wallName: String, override val label: String) : Placement()
+
+    /** An elevation of a plan wall; the tap is the bottom-left corner of its floor line. */
+    data class Elevation(val spec: ElevationSpec, override val label: String) : Placement()
 }
 
 /** Builds the wall sections of the floor-plan tool out of the library's wall symbols. */
@@ -228,6 +231,11 @@ object FloorPlan {
                 val corner = magnetRoomCorner(point, w, d, state.elements.filterIsInstance<DrawingElement.Symbol>(), state.inchesToPx(ROOM_MAGNET_IN))
                 val inside = Rect(corner, Size(w, d))
                 listOf(inside.inflate(t), inside)
+            }
+            is Placement.Elevation -> {
+                val wall = state.elements.find { it.id == placement.spec.wallId } as? DrawingElement.Symbol ?: return emptyList()
+                val size = Elevation.sizePx(wall, placement.spec, state)
+                listOf(Rect(Offset(point.x, point.y - size.height), size))
             }
         }
     }

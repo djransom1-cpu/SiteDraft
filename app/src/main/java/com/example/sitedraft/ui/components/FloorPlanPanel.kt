@@ -34,9 +34,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.remember
 import com.example.sitedraft.ui.canvas.CanvasState
+import com.example.sitedraft.ui.canvas.DrawingElement
 import com.example.sitedraft.ui.canvas.DrawingEvent
+import com.example.sitedraft.ui.canvas.Elevation
+import com.example.sitedraft.ui.canvas.ElevationSpec
 import com.example.sitedraft.ui.canvas.FloorPlan
+import com.example.sitedraft.ui.canvas.inchesToPx
+import com.example.sitedraft.ui.canvas.splitFeetInches
 import com.example.sitedraft.ui.canvas.Placement
 import com.example.sitedraft.ui.canvas.PlanSymbols
 import com.example.sitedraft.ui.canvas.UnitSystem
@@ -172,6 +178,20 @@ fun FloorPlanPanel(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
+            // --- Elevation of a wall ---
+            Text("Elevation", style = MaterialTheme.typography.titleMedium)
+            val selectedWall = state.elements.find { it.id == state.selectedElementId } as? DrawingElement.Symbol
+            if (selectedWall == null || selectedWall.category != PlanSymbols.WALLS) {
+                Text(
+                    "Select a wall on the plan with the Select tool. Everything against that wall (cabinets, appliances, fixtures, doors, windows) is drawn as an elevation at the plan's scale.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                ElevationControls(selectedWall, state, onEvent)
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
             // --- Doors & windows ---
             Text("Doors & windows", style = MaterialTheme.typography.titleMedium)
             Text(
@@ -196,6 +216,79 @@ fun FloorPlanPanel(
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ElevationControls(wall: DrawingElement.Symbol, state: CanvasState, onEvent: (DrawingEvent) -> Unit) {
+    val metric = state.unitSystem == UnitSystem.METRIC
+    val sides = Elevation.sidesFor(wall)
+    var side by remember(wall.id) { mutableStateOf(Elevation.defaultSide(wall, state)) }
+    if (side !in sides) side = sides.first()
+    var wallHeight by rememberSaveable { mutableStateOf(if (metric) "2.4" else "8") }
+    var counter by rememberSaveable { mutableStateOf("36") }
+    var upperBottom by rememberSaveable { mutableStateOf("54") }
+    var upperHeight by rememberSaveable { mutableStateOf("30") }
+    var sill by rememberSaveable { mutableStateOf("36") }
+    var windowHeight by rememberSaveable { mutableStateOf("48") }
+    var doorHeight by rememberSaveable { mutableStateOf("80") }
+
+    val lengthIn = Elevation.lengthPx(wall) / state.inchesToPx(1f)
+    val items = Elevation.itemsOnWall(wall, side, state)
+    val (ft, inches) = splitFeetInches(lengthIn / 12f, 0.25f)
+    val lengthLabel = if (metric) "%.2f m".format(lengthIn * 0.0254f) else "$ft'-${fmt(inches)}\""
+    Text(
+        "Wall $lengthLabel long, ${items.size} item${if (items.size == 1) "" else "s"} on this side.",
+        style = MaterialTheme.typography.bodySmall
+    )
+    Spacer(Modifier.height(4.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        sides.forEach { s ->
+            FilterChip(selected = side == s, onClick = { side = s }, label = { Text("${s.label} (${s.looking})") })
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        NumberField("Wall height (${if (metric) "m" else "ft"})", wallHeight, Modifier.weight(1f)) { wallHeight = it }
+        NumberField("Counter (in)", counter, Modifier.weight(1f)) { counter = it }
+    }
+    Spacer(Modifier.height(4.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        NumberField("Uppers from (in)", upperBottom, Modifier.weight(1f)) { upperBottom = it }
+        NumberField("Uppers high (in)", upperHeight, Modifier.weight(1f)) { upperHeight = it }
+    }
+    Spacer(Modifier.height(4.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        NumberField("Window sill (in)", sill, Modifier.weight(1f)) { sill = it }
+        NumberField("Window high (in)", windowHeight, Modifier.weight(1f)) { windowHeight = it }
+    }
+    Spacer(Modifier.height(4.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        NumberField("Door height (in)", doorHeight, Modifier.weight(1f)) { doorHeight = it }
+        Spacer(Modifier.weight(1f))
+    }
+    Spacer(Modifier.height(4.dp))
+    val wh = wallHeight.toFloatOrNull()?.let { if (metric) it / 0.0254f else it * 12f }
+    val values = listOf(counter, upperBottom, upperHeight, sill, windowHeight, doorHeight).map { it.toFloatOrNull() }
+    val ready = wh != null && wh > 0f && values.all { it != null && it >= 0f }
+    Button(
+        onClick = {
+            if (ready) {
+                val spec = ElevationSpec(
+                    wallId = wall.id, side = side, wallHeightIn = wh!!,
+                    counterHeightIn = values[0]!!, upperBottomIn = values[1]!!, upperHeightIn = values[2]!!,
+                    sillIn = values[3]!!, windowHeightIn = values[4]!!, doorHeightIn = values[5]!!
+                )
+                onEvent(DrawingEvent.StartPlacement(Placement.Elevation(spec, "elevation (${side.looking})")))
+            }
+        },
+        enabled = ready,
+        modifier = Modifier.fillMaxWidth()
+    ) { Text("Place elevation") }
+    Text(
+        "Then tap an empty spot on the canvas: that is the bottom-left corner of the floor line. The elevation is placed selected, so it can be moved as a group.",
+        style = MaterialTheme.typography.bodySmall
+    )
 }
 
 private fun fmt(v: Float): String =
