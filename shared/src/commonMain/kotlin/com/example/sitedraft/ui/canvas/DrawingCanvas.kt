@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.input.pointer.*
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.toArgb
@@ -40,6 +41,7 @@ import com.example.sitedraft.data.PalmRejectionMode
 import com.example.sitedraft.platform.stylusButtonHeld
 import androidx.compose.ui.text.rememberTextMeasurer
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun DrawingCanvas(
     state: CanvasState,
@@ -69,6 +71,11 @@ fun DrawingCanvas(
             // toggle from the S Pen button) mid-gesture killed whatever was being drawn and the
             // rest of that gesture was handled by a fresh block with no memory of it. The block
             // now reads live state through latestState/latestOnEvent instead.
+            // Mouse wheel = zoom (desktop and web); pinch handles touch below.
+            .onPointerEvent(PointerEventType.Scroll) { e ->
+                val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                if (dy != 0f) onEvent(DrawingEvent.UpdateZoom(if (dy < 0f) 1.1f else 1f / 1.1f))
+            }
             .pointerInput(Unit) {
                 var isDrawing = false
                 var wallDragging = false
@@ -153,7 +160,8 @@ fun DrawingCanvas(
                             }
                         } else if (!isTransforming) {
                             // Prioritize stylus input for palm rejection
-                            val stylusPointer = event.changes.find { (it.type == PointerType.Stylus) || (it.type == PointerType.Eraser) }
+                            // A mouse (desktop, web) is as precise as a pen and is never palm-rejected.
+                            val stylusPointer = event.changes.find { (it.type == PointerType.Stylus) || (it.type == PointerType.Eraser) || (it.type == PointerType.Mouse) }
                             val touchPointer = event.changes.find { it.type == PointerType.Touch }
                             
                             // If Stylus Only Drawing is enabled, ignore touch for drawing completely
