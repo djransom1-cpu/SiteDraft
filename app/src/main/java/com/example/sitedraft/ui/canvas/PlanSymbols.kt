@@ -103,15 +103,22 @@ object PlanSymbols {
         "Upper 36\"" to Pair(36f, 12f),
         "Pantry 24\"" to Pair(24f, 24f),
         "Island 3'x6'" to Pair(72f, 36f),
-        // Lynx Professional 36" built-in (L36R-3 / L36TR): 36" wide, 25.38" deep, 24.75" high overall;
-        // cutout 35" x 22" x 10.13" deep below the counter, so ~14.6" of hood stands above it.
-        LYNX_36_GRILL to Pair(36f, 25.375f)
+        // Lynx built-in 36" (Lynx "Built-In 36 w/ dimensions" drawing, 1/20/10): 36" wide, 26 3/8"
+        // deep overall with the front 1 3/4" overhanging the island face; island cutout 35" x 22",
+        // 10 1/8" deep; front panel 11" below the counter; hood 14 7/8" above it closed, 23 1/2" open.
+        LYNX_36_GRILL to Pair(36f, LYNX_36_DEPTH)
     )
 
+    const val LYNX_36_DEPTH = 26.375f
+    const val LYNX_36_FRONT_LIP = 1.75f
     const val LYNX_36_CUTOUT_W = 35f
     const val LYNX_36_CUTOUT_D = 22f
-    const val LYNX_36_CUTOUT_H = 10.13f
-    const val LYNX_36_HOOD_ABOVE_COUNTER = 24.75f - LYNX_36_CUTOUT_H
+    const val LYNX_36_CUTOUT_H = 10.125f
+    const val LYNX_36_PANEL_H = 11f
+    const val LYNX_36_HOOD_ABOVE_COUNTER = 14.875f
+    const val LYNX_36_HOOD_OPEN_ABOVE_COUNTER = 23.5f
+    /** 2" supply hole in the cutout floor: 2" from the right side, 2 1/4" from the front. */
+    const val LYNX_36_HOLE_DIA = 2f
 
     fun isDoor(name: String) = name.startsWith("Door ")
     fun isSlidingDoor(name: String) = name.startsWith("Sliding Door")
@@ -266,8 +273,10 @@ fun DrawScope.drawPlanSymbol(
                 }
             }
             name == PlanSymbols.LYNX_36_GRILL -> {
-                // Body with the hood hinge line along the back, cooking grates, and the control
-                // panel with four knobs along the front edge.
+                // Body with the hood hinge line along the back, cooking grates, the control panel
+                // with four knobs along the front, and the island cutout dashed inside it: 35" x
+                // 22" whose front edge sits 1 3/4" behind the grill's front lip, with the 2" supply
+                // hole 2" from the right side and 2 1/4" from the front of the cutout.
                 drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
                 drawLine(color = accentColor, start = Offset(-hw, -hh + inch * 3f), end = Offset(hw, -hh + inch * 3f), strokeWidth = line.width)
                 val grateTop = -hh + inch * 4f
@@ -281,6 +290,15 @@ fun DrawScope.drawPlanSymbol(
                 for (i in 0 until 4) {
                     drawCircle(color = accentColor, radius = inch * 0.9f, center = Offset(-hw + w * (0.2f + 0.2f * i), hh - inch * 2.5f), style = thin)
                 }
+                val cutW = inch * PlanSymbols.LYNX_36_CUTOUT_W
+                val cutD = inch * PlanSymbols.LYNX_36_CUTOUT_D
+                val cutFront = hh - inch * PlanSymbols.LYNX_36_FRONT_LIP
+                val dashed = Stroke(width = thin.width, pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 2f, inch)))
+                drawRect(color = accentColor, topLeft = Offset(-cutW / 2f, cutFront - cutD), size = Size(cutW, cutD), style = dashed)
+                drawCircle(
+                    color = accentColor, radius = inch * PlanSymbols.LYNX_36_HOLE_DIA / 2f,
+                    center = Offset(cutW / 2f - inch * 2f, cutFront - inch * 2.25f), style = thin
+                )
             }
             name == "Dishwasher" -> {
                 drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)

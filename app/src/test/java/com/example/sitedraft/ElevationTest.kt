@@ -129,7 +129,8 @@ class ElevationTest {
     @Test
     fun `a Lynx 36 grill against the wall shows its hood above the counter and panel below`() {
         val wall = sym("2x4 Wall", PlanSymbols.WALLS, 500f, 0f, 1000f, t)
-        val grill = sym(PlanSymbols.LYNX_36_GRILL, PlanSymbols.OUTDOOR, 300f, t / 2f + 25.375f * inch / 2f, 36f * inch, 25.375f * inch)
+        val depth = PlanSymbols.LYNX_36_DEPTH
+        val grill = sym(PlanSymbols.LYNX_36_GRILL, PlanSymbols.OUTDOOR, 300f, t / 2f + depth * inch / 2f, 36f * inch, depth * inch)
         val state = CanvasState(elements = listOf(wall, grill))
         val item = Elevation.itemsOnWall(wall, ViewerSide.BELOW, state).single()
         assertEquals(Elevation.Kind.FIXTURE, item.kind)
@@ -137,7 +138,7 @@ class ElevationTest {
         val hoodTop = 1000f - (36f + PlanSymbols.LYNX_36_HOOD_ABOVE_COUNTER) * inch
         assertTrue(rects.any { near(it.topLeft.y, hoodTop) && near(it.size.width, 36f * inch) })
         val panelTop = 1000f - 36f * inch
-        assertTrue(rects.any { near(it.topLeft.y, panelTop) && near(it.size.height, PlanSymbols.LYNX_36_CUTOUT_H * inch) })
+        assertTrue(rects.any { near(it.topLeft.y, panelTop) && near(it.size.height, PlanSymbols.LYNX_36_PANEL_H * inch) })
     }
 
     @Test

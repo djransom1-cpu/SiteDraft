@@ -201,15 +201,18 @@ object Elevation {
                         counterRuns += Pair(from, to)
                     }
                     name == PlanSymbols.LYNX_36_GRILL -> {
-                        // Built into the counter: control panel in the cutout below the counter
-                        // line, hood standing above it (closed), handle across the hood.
-                        val panelBottom = counterTop - PlanSymbols.LYNX_36_CUTOUT_H
+                        // Built into the counter, per the Lynx drawing: 11" front panel below the
+                        // counter line (9" control panel inside a 1 1/8" trim), hood 14 7/8" above
+                        // it closed, handle bar across the hood, thermometer in the middle.
+                        val panelBottom = counterTop - PlanSymbols.LYNX_36_PANEL_H
                         val hoodTop = counterTop + PlanSymbols.LYNX_36_HOOD_ABOVE_COUNTER
                         rect(from, to, panelBottom, counterTop)
-                        for (i in 0 until 4) circle(from + w * (0.2f + 0.2f * i), counterTop - 5f, 1f)
+                        rect(from + 1.125f * inch, to - 1.125f * inch, panelBottom + 1f, panelBottom + 10f, light)
+                        for (x in listOf(0.1f, 0.19f, 0.5f, 0.8f)) circle(from + w * x, panelBottom + 5.5f, 1.25f)
                         rect(from, to, counterTop, hoodTop)
-                        line(from + 2f * inch, hoodTop - 6f, to - 2f * inch, hoodTop - 6f, medium) // handle
-                        line(from, counterTop + 2f, to, counterTop + 2f) // hood lip
+                        line(from, counterTop + 1.75f, to, counterTop + 1.75f) // hood lip
+                        line(from + 1.5f * inch, counterTop + 4f, to - 1.5f * inch, counterTop + 4f, medium) // handle bar
+                        circle(xc, counterTop + 9f, 1.5f) // thermometer
                     }
                     name == "Dishwasher" -> {
                         rect(from, to, 0f, counterTop - 1.5f)
