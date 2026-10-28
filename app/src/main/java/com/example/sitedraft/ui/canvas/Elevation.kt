@@ -7,6 +7,7 @@ import kotlin.math.abs
 import kotlin.math.min
 
 /** Which side of a wall the viewer stands on when looking at its elevation (screen directions: up = north). */
+@kotlinx.serialization.Serializable
 enum class ViewerSide(val label: String, val looking: String) {
     BELOW("From below", "looking north"),
     ABOVE("From above", "looking south"),
@@ -15,6 +16,7 @@ enum class ViewerSide(val label: String, val looking: String) {
 }
 
 /** Heights (inches) that the elevation of a wall is built from. The wall's length comes from the plan. */
+@kotlinx.serialization.Serializable
 data class ElevationSpec(
     val wallId: String,
     val side: ViewerSide,
@@ -109,9 +111,23 @@ object Elevation {
      * The elevation as canvas elements. [origin] is the bottom-left corner of the floor line; the
      * view runs to the right and up from there, at the drawing's scale.
      */
-    fun build(wall: DrawingElement.Symbol, spec: ElevationSpec, origin: Offset, state: CanvasState): List<DrawingElement> {
+    /** What an [DrawingElement.ElevationView] shows right now: rebuilt from the plan every time it is drawn. */
+    fun partsOf(view: DrawingElement.ElevationView, state: CanvasState): List<DrawingElement> {
+        val wall = state.elements.find { it.id == view.spec.wallId } as? DrawingElement.Symbol
+        return if (wall != null) build(wall, view.spec, view.origin, state, view.color) else missingWall(view, state)
+    }
+
+    /** The wall this view was made from is gone: keep the frame so the view can still be found and deleted. */
+    fun missingWall(view: DrawingElement.ElevationView, state: CanvasState): List<DrawingElement> {
+        val h = state.inchesToPx(view.spec.wallHeightIn)
+        return listOf(
+            DrawingElement.Rectangle(topLeft = Offset(view.origin.x, view.origin.y - h), size = Size(view.size.width, h), color = view.color, strokeWidth = 1f),
+            DrawingElement.Text(text = "Elevation: its wall was deleted", topLeft = view.origin + Offset(0f, state.inchesToPx(2f)), fontSize = (state.inchesToPx(6f)).coerceIn(10f, 36f), color = view.color)
+        )
+    }
+
+    fun build(wall: DrawingElement.Symbol, spec: ElevationSpec, origin: Offset, state: CanvasState, color: androidx.compose.ui.graphics.Color = state.currentColor): List<DrawingElement> {
         val inch = state.inchesToPx(1f)
-        val color = state.currentColor
         val length = lengthPx(wall)
         val heavy = 3f
         val medium = 2f

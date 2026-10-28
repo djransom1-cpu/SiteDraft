@@ -304,6 +304,30 @@ sealed class DrawingElement {
         override val color: Color = Color.Transparent
         override val strokeWidth: Float = 0f
     }
+
+    /**
+     * A live interior elevation of one plan wall. Nothing is stored but the recipe: which wall,
+     * the heights, where its floor line starts ([origin], bottom-left) and its current frame
+     * [size]; the drawing itself is rebuilt from the plan every time it is drawn, so moving a
+     * cabinet or adding a window on that wall shows up here at once. Explode turns it into plain
+     * lines and rectangles when hand editing is wanted.
+     */
+    @Serializable
+    data class ElevationView(
+        override val id: String = UUID.randomUUID().toString(),
+        val spec: ElevationSpec,
+        @Serializable(with = OffsetSerializer::class)
+        val origin: Offset,
+        @Serializable(with = SizeSerializer::class)
+        val size: Size,
+        @Serializable(with = ColorSerializer::class)
+        override val color: Color,
+        override val rotation: Float = 0f
+    ) : DrawingElement() {
+        override val strokeWidth: Float = 2f
+        /** The frame: floor line at the bottom, wall height up from it. */
+        val frame: Rect get() = Rect(Offset(origin.x, origin.y - size.height), size)
+    }
 }
 
 @Serializable
@@ -441,6 +465,7 @@ fun DrawingElement.contains(offset: Offset, threshold: Float = 20f): Boolean {
         is DrawingElement.Dxf -> {
             elements.any { it.move(topLeft).contains(offset, threshold) }
         }
+        is DrawingElement.ElevationView -> frame.inflate(threshold).contains(offset)
     }
 }
 
@@ -483,6 +508,7 @@ fun DrawingElement.boundingRect(): Rect {
         is DrawingElement.Image -> Rect(topLeft, size)
         is DrawingElement.Pdf -> Rect(topLeft, size)
         is DrawingElement.Dxf -> Rect(topLeft, Size(100f, 100f))
+        is DrawingElement.ElevationView -> frame
     }
 }
 
@@ -532,6 +558,7 @@ fun DrawingElement.move(delta: Offset): DrawingElement {
         is DrawingElement.Image -> copy(topLeft = topLeft + delta)
         is DrawingElement.Pdf -> copy(topLeft = topLeft + delta)
         is DrawingElement.Dxf -> copy(topLeft = topLeft + delta)
+        is DrawingElement.ElevationView -> copy(origin = origin + delta)
     }
 }
 
@@ -620,6 +647,7 @@ fun DrawingElement.rotate(deltaAngle: Float): DrawingElement {
         is DrawingElement.Image -> copy(rotation = rotation + deltaAngle)
         is DrawingElement.Pdf -> copy(rotation = rotation + deltaAngle)
         is DrawingElement.Dxf -> this // DXF rotation not supported in this simple version
+        is DrawingElement.ElevationView -> this // an elevation always reads upright
     }
 }
 

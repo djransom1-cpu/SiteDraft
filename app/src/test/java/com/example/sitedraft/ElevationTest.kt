@@ -100,17 +100,58 @@ class ElevationTest {
     }
 
     @Test
-    fun `placing an elevation through the view model adds it as a selected group`() {
+    fun `placing an elevation adds one live view that follows later plan edits`() {
+        val vm = DrawingManager(Application())
+        vm.onEvent(DrawingEvent.SelectSymbol("2x4 Wall", PlanSymbols.WALLS))
+        vm.onEvent(DrawingEvent.PlaceAt(Offset(500f, 500f))) // 4 ft wall, x 400..600, lower face at 500 + t/2
+        val wall = vm.state.value.elements.filterIsInstance<DrawingElement.Symbol>().single()
+        vm.onEvent(DrawingEvent.StartPlacement(Placement.Elevation(ElevationSpec(wall.id, ViewerSide.BELOW), "elevation")))
+        vm.onEvent(DrawingEvent.PlaceAt(Offset(0f, 2000f)))
+        val view = vm.state.value.elements.filterIsInstance<DrawingElement.ElevationView>().single()
+        assertEquals(view.id, vm.state.value.selectedElementId)
+        assertEquals(200f, view.size.width, 0.01f)
+        assertEquals(96f * inch, view.size.height, 0.01f)
+        val rectsBefore = Elevation.partsOf(view, vm.state.value).count { it is DrawingElement.Rectangle }
+
+        // Now put a base cabinet against the wall: the same view shows it without being replaced.
+        vm.onEvent(DrawingEvent.SelectSymbol("Base 24\"", PlanSymbols.CABINETS))
+        vm.onEvent(DrawingEvent.PlaceAt(Offset(450f, 500f + t / 2f + 12f * inch)))
+        val sameView = vm.state.value.elements.filterIsInstance<DrawingElement.ElevationView>().single()
+        assertEquals(view.id, sameView.id)
+        val rectsAfter = Elevation.partsOf(sameView, vm.state.value).count { it is DrawingElement.Rectangle }
+        assertTrue(rectsAfter > rectsBefore)
+
+        // Stretching the wall widens the view's frame on the next autosave tick.
+        vm.onEvent(DrawingEvent.UpdateElementProperty(wall.id, "width", "10"))
+        assertEquals(500f, vm.state.value.elements.filterIsInstance<DrawingElement.ElevationView>().single().size.width, 0.01f)
+    }
+
+    @Test
+    fun `exploding a view freezes it into plain elements`() {
         val vm = DrawingManager(Application())
         vm.onEvent(DrawingEvent.SelectSymbol("2x4 Wall", PlanSymbols.WALLS))
         vm.onEvent(DrawingEvent.PlaceAt(Offset(500f, 500f)))
         val wall = vm.state.value.elements.filterIsInstance<DrawingElement.Symbol>().single()
-        val before = vm.state.value.elements.size
         vm.onEvent(DrawingEvent.StartPlacement(Placement.Elevation(ElevationSpec(wall.id, ViewerSide.BELOW), "elevation")))
         vm.onEvent(DrawingEvent.PlaceAt(Offset(0f, 2000f)))
-        val added = vm.state.value.elements.size - before
-        assertTrue(added >= 5) // frame lines + title at least
-        assertEquals(added, vm.state.value.selectedElementIds.size)
+        vm.onEvent(DrawingEvent.ExplodeSelectedElement)
+        assertTrue(vm.state.value.elements.none { it is DrawingElement.ElevationView })
+        assertTrue(vm.state.value.elements.count { it is DrawingElement.Line } >= 4)
+        assertTrue(vm.state.value.selectedElementIds.isNotEmpty())
+    }
+
+    @Test
+    fun `a view survives a save and load round trip`() {
+        val view = DrawingElement.ElevationView(
+            spec = ElevationSpec("wall-1", ViewerSide.LEFT, wallHeightIn = 108f),
+            origin = Offset(10f, 20f), size = Size(300f, 450f), color = Color.Black
+        )
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val text = json.encodeToString(CanvasState.serializer(), CanvasState(elements = listOf(view)))
+        val back = json.decodeFromString(CanvasState.serializer(), text).elements.single() as DrawingElement.ElevationView
+        assertEquals(view.spec, back.spec)
+        assertEquals(10f, back.origin.x, 0f)
+        assertEquals(450f, back.size.height, 0f)
     }
 
     private fun near(a: Float, b: Float) = kotlin.math.abs(a - b) < 0.05f

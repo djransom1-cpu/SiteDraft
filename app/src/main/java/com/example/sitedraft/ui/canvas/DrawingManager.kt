@@ -283,6 +283,7 @@ class DrawingManager(application: android.app.Application) : AndroidViewModel(ap
     }
 
     private fun triggerAutoSave() {
+        syncElevationViews()
         registerProjectName()
         val app = getApplication<android.app.Application>()
         pendingSave?.cancel()
@@ -339,6 +340,7 @@ class DrawingManager(application: android.app.Application) : AndroidViewModel(ap
         is DrawingElement.Image -> element.copy(id = UUID.randomUUID().toString(), topLeft = element.topLeft + offset)
         is DrawingElement.Pdf -> element.copy(id = UUID.randomUUID().toString(), topLeft = element.topLeft + offset)
         is DrawingElement.Dxf -> element.copy(id = UUID.randomUUID().toString(), topLeft = element.topLeft + offset)
+        is DrawingElement.ElevationView -> element.copy(id = UUID.randomUUID().toString(), origin = element.origin + offset)
     }
 
     private fun duplicateSelectedElement() {
@@ -835,6 +837,7 @@ class DrawingManager(application: android.app.Application) : AndroidViewModel(ap
             }
             is DrawingElement.Dimension -> listOf(element.start, element.end, element.start + (element.end - element.start) / 2f)
             is DrawingElement.Text -> listOf(element.topLeft)
+            is DrawingElement.ElevationView -> element.frame.let { listOf(it.topLeft, it.topRight, it.bottomLeft, it.bottomRight) }
             // A pen stroke: its two ends are the points worth aiming at.
             is DrawingElement.Freehand -> listOfNotNull(element.points.firstOrNull()?.offset, element.points.lastOrNull()?.offset)
             else -> emptyList()
@@ -1938,8 +1941,22 @@ class DrawingManager(application: android.app.Application) : AndroidViewModel(ap
     private fun explodeSelectedElement() {
         val selectedId = _state.value.selectedElementId ?: return
         val element = _state.value.elements.find { it.id == selectedId } ?: return
-        val explodable = element is DrawingElement.Rectangle || element is DrawingElement.Triangle || element is DrawingElement.Symbol
+        val explodable = element is DrawingElement.Rectangle || element is DrawingElement.Triangle ||
+            element is DrawingElement.Symbol || element is DrawingElement.ElevationView
         if (!explodable) return
+
+        if (element is DrawingElement.ElevationView) {
+            // Freeze the live view into plain lines, rectangles and text for hand editing.
+            val parts = Elevation.partsOf(element, _state.value)
+            pushUndoSnapshot()
+            _state.value = _state.value.copy(
+                elements = _state.value.elements.filter { it.id != selectedId } + parts,
+                selectedElementId = null,
+                selectedElementIds = parts.map { it.id }.toSet()
+            )
+            triggerAutoSave()
+            return
+        }
 
         val edges = element.edgeSegments()
         if (edges.isEmpty()) return
@@ -1997,19 +2014,40 @@ class DrawingManager(application: android.app.Application) : AndroidViewModel(ap
         triggerAutoSave()
     }
 
-    /** Elevation of a plan wall, built as plain elements with [origin] as the floor line's left end; left selected as a group. */
+    /** A live elevation of a plan wall with [origin] as the floor line's left end. */
     private fun placeElevation(origin: Offset, placement: Placement.Elevation) {
         val s = _state.value
         val wall = s.elements.find { it.id == placement.spec.wallId } as? DrawingElement.Symbol ?: return
-        val built = Elevation.build(wall, placement.spec, origin, s)
-        if (built.isEmpty()) return
+        val view = DrawingElement.ElevationView(
+            spec = placement.spec,
+            origin = origin,
+            size = Elevation.sizePx(wall, placement.spec, s),
+            color = s.currentColor
+        )
         pushUndoSnapshot()
         _state.value = _state.value.copy(
-            elements = _state.value.elements + built,
-            selectedElementId = null,
-            selectedElementIds = built.map { it.id }.toSet()
+            elements = _state.value.elements + view,
+            selectedElementId = view.id,
+            selectedElementIds = emptySet()
         )
         triggerAutoSave()
+    }
+
+    /**
+     * Keeps each elevation view's frame in step with its wall (the wall may have been stretched,
+     * trimmed or the heights edited). Runs with every autosave; cheap when nothing changed.
+     */
+    private fun syncElevationViews() {
+        val s = _state.value
+        if (s.elements.none { it is DrawingElement.ElevationView }) return
+        var changed = false
+        val updated = s.elements.map { e ->
+            if (e !is DrawingElement.ElevationView) return@map e
+            val wall = s.elements.find { it.id == e.spec.wallId } as? DrawingElement.Symbol ?: return@map e
+            val size = Elevation.sizePx(wall, e.spec, s)
+            if (size == e.size) e else { changed = true; e.copy(size = size) }
+        }
+        if (changed) _state.value = _state.value.copy(elements = updated)
     }
 
     /** Rotates the selection (a box-selected group, or the single selected element) about its centre. */
@@ -2166,6 +2204,27 @@ class DrawingManager(application: android.app.Application) : AndroidViewModel(ap
                         "rotation" -> {
                             val newValue = value.toFloatOrNull() ?: return@map element
                             element.rotate(newValue - element.rotation)
+                        }
+                        // Elevation view heights (inches) and viewing side.
+                        "wallHeightIn", "counterHeightIn", "upperBottomIn", "upperHeightIn", "sillIn", "windowHeightIn", "doorHeightIn" -> {
+                            val v = value.toFloatOrNull() ?: return@map element
+                            if (element !is DrawingElement.ElevationView || v < 0f) return@map element
+                            val spec = element.spec
+                            val newSpec = when (property) {
+                                "wallHeightIn" -> spec.copy(wallHeightIn = v)
+                                "counterHeightIn" -> spec.copy(counterHeightIn = v)
+                                "upperBottomIn" -> spec.copy(upperBottomIn = v)
+                                "upperHeightIn" -> spec.copy(upperHeightIn = v)
+                                "sillIn" -> spec.copy(sillIn = v)
+                                "windowHeightIn" -> spec.copy(windowHeightIn = v)
+                                else -> spec.copy(doorHeightIn = v)
+                            }
+                            element.copy(spec = newSpec, size = Size(element.size.width, _state.value.inchesToPx(newSpec.wallHeightIn)))
+                        }
+                        "viewerSide" -> {
+                            if (element is DrawingElement.ElevationView) {
+                                ViewerSide.entries.firstOrNull { it.name == value }?.let { element.copy(spec = element.spec.copy(side = it)) } ?: element
+                            } else element
                         }
                         "text" -> {
                             if (element is DrawingElement.Text) element.copy(text = value) else element
@@ -2508,8 +2567,26 @@ class DrawingManager(application: android.app.Application) : AndroidViewModel(ap
                         addLineToDxf(dxf, element.points[i].offset, element.points[i+1].offset)
                     }
                 }
+                is DrawingElement.ElevationView -> {
+                    // Export what the live view shows: its lines and boxes.
+                    Elevation.partsOf(element, _state.value).forEach { part ->
+                        when (part) {
+                            is DrawingElement.Line -> addLineToDxf(dxf, part.start, part.end)
+                            is DrawingElement.Rectangle -> {
+                                val tr = Offset(part.topLeft.x + part.size.width, part.topLeft.y)
+                                val br = Offset(part.topLeft.x + part.size.width, part.topLeft.y + part.size.height)
+                                val bl = Offset(part.topLeft.x, part.topLeft.y + part.size.height)
+                                addLineToDxf(dxf, part.topLeft, tr)
+                                addLineToDxf(dxf, tr, br)
+                                addLineToDxf(dxf, br, bl)
+                                addLineToDxf(dxf, bl, part.topLeft)
+                            }
+                            else -> {}
+                        }
+                    }
+                }
                 is DrawingElement.Oval, is DrawingElement.Triangle,
-                is DrawingElement.Image, is DrawingElement.Pdf, is DrawingElement.Dxf, 
+                is DrawingElement.Image, is DrawingElement.Pdf, is DrawingElement.Dxf,
                 is DrawingElement.Symbol,
                 is DrawingElement.Dimension,
                 is DrawingElement.Text -> {

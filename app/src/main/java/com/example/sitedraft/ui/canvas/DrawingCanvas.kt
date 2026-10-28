@@ -941,6 +941,10 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                     element.elements.forEach { drawElement(it, isSelected = false, state = state) }
                 }
             }
+            is DrawingElement.ElevationView -> {
+                // Live: rebuilt from the plan on every draw, so plan edits show up at once.
+                Elevation.partsOf(element, state).forEach { drawElement(it, isSelected = false, state = state) }
+            }
             else -> {}
         }
     }
@@ -982,6 +986,7 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
             is DrawingElement.Image -> Rect(element.topLeft, element.size)
             is DrawingElement.Pdf -> Rect(element.topLeft, element.size)
             is DrawingElement.Dxf -> Rect(element.topLeft, Size(100f, 100f)) // Placeholder
+            is DrawingElement.ElevationView -> element.frame
             is DrawingElement.Text -> Rect(element.topLeft, Size(100f, 50f))
         }
 

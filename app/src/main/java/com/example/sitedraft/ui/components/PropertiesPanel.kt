@@ -483,6 +483,39 @@ fun PropertiesPanel(
                             }
                         }
                     }
+                    is DrawingElement.ElevationView -> {
+                        val spec = selectedElement.spec
+                        val wall = state.elements.find { it.id == spec.wallId } as? DrawingElement.Symbol
+                        Text(
+                            if (wall != null) "Live elevation: follows the plan. Explode it (floating bar) to edit by hand."
+                            else "Live elevation: its wall has been deleted.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        if (wall != null) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Elevation.sidesFor(wall).forEach { s ->
+                                    FilterChip(
+                                        selected = spec.side == s,
+                                        onClick = { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "viewerSide", s.name)) },
+                                        label = { Text(s.looking) }
+                                    )
+                                }
+                            }
+                        }
+                        listOf(
+                            "Wall height (in)" to ("wallHeightIn" to spec.wallHeightIn),
+                            "Counter (in)" to ("counterHeightIn" to spec.counterHeightIn),
+                            "Uppers from (in)" to ("upperBottomIn" to spec.upperBottomIn),
+                            "Uppers high (in)" to ("upperHeightIn" to spec.upperHeightIn),
+                            "Window sill (in)" to ("sillIn" to spec.sillIn),
+                            "Window high (in)" to ("windowHeightIn" to spec.windowHeightIn),
+                            "Door height (in)" to ("doorHeightIn" to spec.doorHeightIn)
+                        ).forEach { (label, keyValue) ->
+                            EditableProperty(label, "%.1f".format(keyValue.second).trimEnd('0').trimEnd('.')) {
+                                onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, keyValue.first, it))
+                            }
+                        }
+                    }
                     else -> {}
                 }
 

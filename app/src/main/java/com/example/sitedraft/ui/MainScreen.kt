@@ -348,7 +348,8 @@ fun MainScreen(
                             currentTool = state.currentTool,
                             canExplode = explodeCandidate is DrawingElement.Rectangle ||
                                 explodeCandidate is DrawingElement.Triangle ||
-                                explodeCandidate is DrawingElement.Symbol,
+                                explodeCandidate is DrawingElement.Symbol ||
+                                explodeCandidate is DrawingElement.ElevationView,
                             onEvent = viewModel::onEvent,
                             onClose = { viewModel.onEvent(DrawingEvent.DeselectElement) },
                             modifier = Modifier
