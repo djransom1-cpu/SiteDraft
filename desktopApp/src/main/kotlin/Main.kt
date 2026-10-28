@@ -1,0 +1,33 @@
+package com.example.sitedraft.desktop
+
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import com.example.sitedraft.platform.DesktopPlatform
+import com.example.sitedraft.platform.LocalPlatform
+import com.example.sitedraft.ui.MainScreen
+import com.example.sitedraft.ui.canvas.DrawingManager
+import com.example.sitedraft.ui.theme.SiteDraftTheme
+
+fun main() = application {
+    val platform = remember { DesktopPlatform() }
+    val manager = remember { DrawingManager(platform) }
+    DisposableEffect(Unit) { onDispose { manager.dispose() } }
+    Window(
+        onCloseRequest = ::exitApplication,
+        title = "SiteDraft",
+        state = rememberWindowState(position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center), size = DpSize(1400.dp, 900.dp))
+    ) {
+        CompositionLocalProvider(LocalPlatform provides platform) {
+            SiteDraftTheme {
+                MainScreen(viewModel = manager)
+            }
+        }
+    }
+}

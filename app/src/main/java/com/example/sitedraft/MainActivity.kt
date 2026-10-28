@@ -1,18 +1,35 @@
 package com.example.sitedraft
 
+import android.app.Application
 import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import com.example.sitedraft.navigation.SiteDraftNavKey
+import com.example.sitedraft.platform.AndroidPlatform
+import com.example.sitedraft.platform.LocalPlatform
 import com.example.sitedraft.ui.MainScreen
+import com.example.sitedraft.ui.canvas.DrawingManager
 import com.example.sitedraft.ui.canvas.StylusButton
 import com.example.sitedraft.ui.theme.SiteDraftTheme
+
+/** Keeps the shared [DrawingManager] alive across Activity recreation. */
+class DrawingManagerHolder(application: Application) : AndroidViewModel(application) {
+    val platform = AndroidPlatform(application)
+    val manager = DrawingManager(platform)
+    override fun onCleared() {
+        manager.dispose()
+        super.onCleared()
+    }
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -33,12 +50,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            SiteDraftTheme {
-                val backStack = rememberNavBackStack(SiteDraftNavKey.Main)
-                NavDisplay(backStack = backStack) { key ->
-                    NavEntry(key) {
-                        when (key) {
-                            SiteDraftNavKey.Main -> MainScreen()
+            val holder: DrawingManagerHolder = viewModel()
+            CompositionLocalProvider(LocalPlatform provides holder.platform) {
+                SiteDraftTheme {
+                    val backStack = rememberNavBackStack(SiteDraftNavKey.Main)
+                    NavDisplay(backStack = backStack) { key ->
+                        NavEntry(key) {
+                            when (key) {
+                                SiteDraftNavKey.Main -> MainScreen(viewModel = holder.manager)
+                            }
                         }
                     }
                 }

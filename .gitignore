@@ -18,3 +18,7 @@ local.properties
 /*.png
 /doc_martin_project.json
 .kotlin/
+
+# Module build outputs (all modules) and wasm tool caches
+build/
+.kotlin/
