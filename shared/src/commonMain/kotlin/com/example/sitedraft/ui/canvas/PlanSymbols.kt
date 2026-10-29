@@ -201,6 +201,39 @@ object PlanSymbols {
     const val PROP_HEIGHT_IN = "openingHeightIn"
 
     /**
+     * Cabinet fronts, kept in the symbol's properties as numbers. [PROP_FRONT]: 0 doors only,
+     * 1 top drawer over doors, 2 three drawers, 3 four drawers. [PROP_DOORS]: 0 by width
+     * (two doors from 30"), 1 one door, 2 two doors. [PROP_OVERHANG] (islands): 0 none, 1 the
+     * front, 2 front and back, 3 front and the right end; [PROP_OVERHANG_IN] how far, inches.
+     */
+    const val PROP_FRONT = "front"
+    const val PROP_DOORS = "doors"
+    const val PROP_OVERHANG = "overhang"
+    const val PROP_OVERHANG_IN = "overhangIn"
+    const val FRONT_DOORS = 0
+    const val FRONT_DRAWER_DOORS = 1
+    const val FRONT_THREE_DRAWERS = 2
+    const val FRONT_FOUR_DRAWERS = 3
+    val frontLabels = listOf("Doors", "Drawer + doors", "3 drawers", "4 drawers")
+    val overhangLabels = listOf("None", "Front", "Front + back", "Front + end")
+
+    /** Cabinets whose fronts can be chosen: base units (not corners) and islands. */
+    fun hasFrontChoice(symbol: DrawingElement.Symbol) =
+        symbol.category == CABINETS && (symbol.symbolName.startsWith("Base") || symbol.symbolName.startsWith("Island"))
+    fun hasDoorChoice(symbol: DrawingElement.Symbol) =
+        symbol.category == CABINETS && !isFiller(symbol.symbolName) && !symbol.symbolName.startsWith("Corner") && symbol.symbolName != UPPER_CORNER
+    fun isIsland(symbol: DrawingElement.Symbol) = symbol.category == CABINETS && symbol.symbolName.startsWith("Island")
+
+    fun front(symbol: DrawingElement.Symbol): Int =
+        symbol.properties[PROP_FRONT]?.toInt() ?: if (symbol.symbolName.startsWith("Base")) FRONT_DRAWER_DOORS else FRONT_DOORS
+
+    /** How many doors a run of [widthIn] gets: the override, else two from 30" wide. */
+    fun doorCount(symbol: DrawingElement.Symbol, widthIn: Float): Int {
+        val chosen = symbol.properties[PROP_DOORS]?.toInt() ?: 0
+        return if (chosen in 1..2) chosen else if (widthIn >= 30f) 2 else 1
+    }
+
+    /**
      * Symbols whose renderer draws them vertically when taller than wide (walls, windows,
      * sliding doors). A right-angle turn swaps their width and height instead of setting a
      * rotation, so they stay axis-aligned for snapping and hit-testing.
@@ -249,7 +282,7 @@ fun DrawScope.drawPlanSymbol(
                 if (h > w) rotate(90f, pivot = Offset.Zero) { drawWallSection(name, h, w, inch, lineColor, accentColor, line, thin) }
                 else drawWallSection(name, w, h, inch, lineColor, accentColor, line, thin)
             }
-            element.category == PlanSymbols.CABINETS -> drawCabinet(name, w, h, inch, lineColor, accentColor, faint, line, thin)
+            element.category == PlanSymbols.CABINETS -> drawCabinet(element, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.CLOSET -> drawClosetPart(name, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.FURNITURE -> drawFurniture(name, w, h, inch, lineColor, accentColor, faint, line, thin)
             PlanSymbols.isDoor(name) -> {
@@ -469,12 +502,14 @@ private fun DrawScope.drawWallSection(
  * the floor-plan cut plane.
  */
 private fun DrawScope.drawCabinet(
-    name: String, w: Float, h: Float, inch: Float,
+    element: DrawingElement.Symbol, w: Float, h: Float, inch: Float,
     lineColor: Color, accentColor: Color, faint: Color, line: Stroke, thin: Stroke
 ) {
+    val name = element.symbolName
     val hw = w / 2f
     val hh = h / 2f
     val face = inch * 1.5f
+    val twoDoors = PlanSymbols.doorCount(element, w / inch) == 2
     when {
         PlanSymbols.isFiller(name) -> {
             // A plain strip with a diagonal through it; upper fillers dashed like the uppers.
@@ -534,12 +569,34 @@ private fun DrawScope.drawCabinet(
                 drawLine(color = accentColor, start = Offset(x, -hh + face), end = Offset(x, hh - face), strokeWidth = thin.width)
                 x += inch * 24f
             }
+            // Seating overhang: the countertop reaches past the cabinet on the chosen sides.
+            val over = element.properties[PlanSymbols.PROP_OVERHANG]?.toInt() ?: 0
+            if (over > 0) {
+                val d = inch * (element.properties[PlanSymbols.PROP_OVERHANG_IN] ?: 12f)
+                val left = -hw
+                val right = if (over == 3) hw + d else hw
+                val top = if (over == 2) -hh - d else -hh
+                val bottom = hh + d
+                drawRect(color = accentColor, topLeft = Offset(left, top), size = Size(right - left, bottom - top), style = thin)
+                // Stool marks along the overhang(s).
+                var sx = -hw + inch * 12f
+                while (sx < hw - inch * 6f) {
+                    drawCircle(color = faint, radius = inch * 6f, center = Offset(sx, hh + d - inch * 6f), style = thin)
+                    if (over == 2) drawCircle(color = faint, radius = inch * 6f, center = Offset(sx, -hh - d + inch * 6f), style = thin)
+                    sx += inch * 24f
+                }
+                if (over == 3) drawCircle(color = faint, radius = inch * 6f, center = Offset(hw + d - inch * 6f, 0f), style = thin)
+            }
         }
         else -> {
-            // Base and pantry: outline, door face along the front, split doors when wide enough.
+            // Base and pantry: outline, door face along the front, split doors when chosen or
+            // wide enough; drawer banks get the front line doubled.
             drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
             drawLine(color = accentColor, start = Offset(-hw, hh - face), end = Offset(hw, hh - face), strokeWidth = line.width)
-            if (w >= inch * 30f) {
+            val front = PlanSymbols.front(element)
+            if (front == PlanSymbols.FRONT_THREE_DRAWERS || front == PlanSymbols.FRONT_FOUR_DRAWERS) {
+                drawLine(color = accentColor, start = Offset(-hw, hh - face * 0.5f), end = Offset(hw, hh - face * 0.5f), strokeWidth = thin.width)
+            } else if (twoDoors) {
                 drawLine(color = accentColor, start = Offset(0f, hh - face), end = Offset(0f, hh), strokeWidth = line.width)
             }
             if (name.startsWith("Pantry")) {

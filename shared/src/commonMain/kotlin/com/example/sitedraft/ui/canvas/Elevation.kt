@@ -152,11 +152,40 @@ object Elevation {
         fun circle(xc: Float, hc: Float, rIn: Float, sw: Float = light) {
             out += DrawingElement.Circle(center = px(xc, hc), radius = rIn * inch, color = color, strokeWidth = sw)
         }
-        /** Door fronts across [xFrom]..[xTo] between two heights, split in two when wide enough. */
-        fun doors(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float) {
+        /** Door fronts across [xFrom]..[xTo] between two heights; [count] doors (two from 30" when 0). */
+        fun doors(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, count: Int = 0) {
             val inset = inch
             rect(xFrom + inset, xTo - inset, hBottom + 1f, hTop - 1f, light)
-            if (xTo - xFrom >= 30f * inch) line((xFrom + xTo) / 2f, hBottom + 1f, (xFrom + xTo) / 2f, hTop - 1f)
+            val two = if (count in 1..2) count == 2 else xTo - xFrom >= 30f * inch
+            if (two) line((xFrom + xTo) / 2f, hBottom + 1f, (xFrom + xTo) / 2f, hTop - 1f)
+            // Knobs near the top inside corner(s).
+            val knobH = minOf(hTop - 3f, hBottom + (hTop - hBottom) * 0.8f)
+            if (two) { circle((xFrom + xTo) / 2f - 1.5f * inch, knobH, 0.5f); circle((xFrom + xTo) / 2f + 1.5f * inch, knobH, 0.5f) }
+            else circle(xTo - 2.5f * inch, knobH, 0.5f)
+        }
+        /** A stack of [n] equal drawers between two heights, pulls centred. */
+        fun drawers(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, n: Int) {
+            val each = (hTop - hBottom) / n
+            val xc2 = (xFrom + xTo) / 2f
+            for (i in 0 until n) {
+                val b = hBottom + each * i
+                rect(xFrom + inch, xTo - inch, b + 0.5f, b + each - 0.5f, light)
+                line(xc2 - 2f * inch, b + each / 2f, xc2 + 2f * inch, b + each / 2f, medium)
+            }
+        }
+        /** A base cabinet's chosen fronts between the toe kick and the counter. */
+        fun fronts(symbol: DrawingElement.Symbol, xFrom: Float, xTo: Float, hBottom: Float, hTop: Float) {
+            val count = PlanSymbols.doorCount(symbol, (xTo - xFrom) / inch)
+            when (PlanSymbols.front(symbol)) {
+                PlanSymbols.FRONT_DRAWER_DOORS -> {
+                    // A 6" drawer under the counter, doors below it.
+                    drawers(xFrom, xTo, hTop - 7f, hTop, 1)
+                    doors(xFrom, xTo, hBottom, hTop - 7f, count)
+                }
+                PlanSymbols.FRONT_THREE_DRAWERS -> drawers(xFrom, xTo, hBottom, hTop, 3)
+                PlanSymbols.FRONT_FOUR_DRAWERS -> drawers(xFrom, xTo, hBottom, hTop, 4)
+                else -> doors(xFrom, xTo, hBottom, hTop, count)
+            }
         }
 
         /** A closet rod at [rodIn] off the floor with a 3/4" shelf 2" above it and a few hangers. */
@@ -251,7 +280,8 @@ object Elevation {
                     name.startsWith("Base") || name.startsWith("Corner Base") -> {
                         rect(from, to, 0f, counterTop - 1.5f)
                         line(from, 4f, to, 4f) // toe kick
-                        doors(from, to, 4f, counterTop - 1.5f)
+                        if (name.startsWith("Corner")) doors(from, to, 4f, counterTop - 1.5f, PlanSymbols.doorCount(item.symbol, w / inch))
+                        else fronts(item.symbol, from, to, 4f, counterTop - 1.5f)
                         counterRuns += Pair(from, to)
                     }
                     name == PlanSymbols.LYNX_36_GRILL -> {
@@ -289,13 +319,13 @@ object Elevation {
                     name.startsWith("Upper") -> {
                         val top = spec.upperBottomIn + spec.upperHeightIn
                         rect(from, to, spec.upperBottomIn, top)
-                        doors(from, to, spec.upperBottomIn, top)
+                        doors(from, to, spec.upperBottomIn, top, PlanSymbols.doorCount(item.symbol, w / inch))
                     }
                     name.startsWith("Pantry") -> {
                         val top = spec.upperBottomIn + spec.upperHeightIn
                         rect(from, to, 0f, top)
                         line(from, 4f, to, 4f)
-                        doors(from, to, 4f, top)
+                        doors(from, to, 4f, top, PlanSymbols.doorCount(item.symbol, w / inch))
                     }
                     name == "Refrigerator" -> {
                         rect(from, to, 0f, 70f)

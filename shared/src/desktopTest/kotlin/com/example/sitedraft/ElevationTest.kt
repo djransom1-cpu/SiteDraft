@@ -117,6 +117,33 @@ class ElevationTest {
     }
 
     @Test
+    fun `a base cabinet shows its chosen fronts in the elevation`() {
+        val wall = sym("2x4 Wall", PlanSymbols.WALLS, 500f, 0f, 1000f, t)
+        val face = t / 2f
+        val base = sym("Base 36\"", PlanSymbols.CABINETS, 175f, face + 12f * inch, 36f * inch, 24f * inch)
+        fun drawerRects(b: DrawingElement.Symbol): List<DrawingElement.Rectangle> {
+            val state = CanvasState(elements = listOf(wall, b))
+            // Drawer and door fronts are the light (1px) rectangles inset 1" from the cabinet sides.
+            return Elevation.build(wall, ElevationSpec(wall.id, ViewerSide.BELOW), Offset(0f, 2000f), state)
+                .filterIsInstance<DrawingElement.Rectangle>()
+                .filter { it.strokeWidth == 1f && kotlin.math.abs(it.size.width - 34f * inch) < 0.01f }
+        }
+        // Default: a 6" drawer over the doors.
+        val byDefault = drawerRects(base)
+        assertTrue(byDefault.any { kotlin.math.abs(it.size.height - 6f * inch) < 0.01f })
+        // Three drawers: three equal fronts, no door.
+        val three = drawerRects(base.copy(properties = mapOf(PlanSymbols.PROP_FRONT to PlanSymbols.FRONT_THREE_DRAWERS.toFloat())))
+        assertEquals(3, three.size)
+        assertEquals(three[0].size.height, three[1].size.height, 0.01f)
+        // Doors only, forced to one door: no centre split line among the door-height lines.
+        val oneDoor = base.copy(properties = mapOf(PlanSymbols.PROP_FRONT to 0f, PlanSymbols.PROP_DOORS to 1f))
+        val lines = Elevation.build(wall, ElevationSpec(wall.id, ViewerSide.BELOW), Offset(0f, 2000f), CanvasState(elements = listOf(wall, oneDoor)))
+            .filterIsInstance<DrawingElement.Line>()
+            .filter { it.start.x == it.end.x && kotlin.math.abs(it.start.x - 175f) < 0.01f }
+        assertEquals(0, lines.size)
+    }
+
+    @Test
     fun `viewed from the other side the run is mirrored`() {
         val (wall, state) = kitchen()
         val window = Elevation.itemsOnWall(wall, ViewerSide.ABOVE, state).single()

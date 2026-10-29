@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.example.sitedraft.ui.components
 
 import com.example.sitedraft.util.format
@@ -480,6 +482,46 @@ fun PropertiesPanel(
                                 }
                                 EditableProperty(hLabel, "%.2f".format(height)) {
                                     onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "height", it))
+                                }
+                            }
+                            // Cabinets: what the front is (doors, a drawer over doors, a drawer
+                            // bank), how many doors, and an island's seating overhang.
+                            if (PlanSymbols.hasFrontChoice(selectedElement)) {
+                                Text(text = "Fronts", style = MaterialTheme.typography.labelLarge)
+                                val front = PlanSymbols.front(selectedElement)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    PlanSymbols.frontLabels.forEachIndexed { i, label ->
+                                        FilterChip(selected = front == i, onClick = {
+                                            onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_FRONT, i.toString()))
+                                        }, label = { Text(label) })
+                                    }
+                                }
+                            }
+                            if (PlanSymbols.hasDoorChoice(selectedElement)) {
+                                Text(text = "Doors", style = MaterialTheme.typography.labelLarge)
+                                val chosen = selectedElement.properties[PlanSymbols.PROP_DOORS]?.toInt() ?: 0
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf("By width", "1 door", "2 doors").forEachIndexed { i, label ->
+                                        FilterChip(selected = chosen == i, onClick = {
+                                            onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_DOORS, i.toString()))
+                                        }, label = { Text(label) })
+                                    }
+                                }
+                            }
+                            if (PlanSymbols.isIsland(selectedElement)) {
+                                Text(text = "Seating overhang", style = MaterialTheme.typography.labelLarge)
+                                val over = selectedElement.properties[PlanSymbols.PROP_OVERHANG]?.toInt() ?: 0
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    PlanSymbols.overhangLabels.forEachIndexed { i, label ->
+                                        FilterChip(selected = over == i, onClick = {
+                                            onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_OVERHANG, i.toString()))
+                                        }, label = { Text(label) })
+                                    }
+                                }
+                                if (over > 0) {
+                                    EditableProperty("Overhang (in)", formatInches(selectedElement.properties[PlanSymbols.PROP_OVERHANG_IN] ?: 12f)) {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_OVERHANG_IN, it))
+                                    }
                                 }
                             }
                             // Doors and windows: their own heights, in inches, used by elevations.
