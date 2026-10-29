@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Bathtub
+import androidx.compose.material.icons.filled.Checkroom
+import androidx.compose.material.icons.filled.Weekend
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoorFront
 import androidx.compose.material.icons.filled.Fence
@@ -65,6 +67,8 @@ fun SymbolLibraryPanel(
             SymbolCategory(PlanSymbols.FIXTURES, Icons.Default.Bathtub, PlanSymbols.fixtures, onEvent)
             SymbolCategory(PlanSymbols.CABINETS, Icons.Default.Kitchen, PlanSymbols.cabinets, onEvent)
             SymbolCategory(PlanSymbols.OUTDOOR, Icons.Default.OutdoorGrill, PlanSymbols.outdoor, onEvent)
+            SymbolCategory(PlanSymbols.CLOSET, Icons.Default.Checkroom, PlanSymbols.closet, onEvent)
+            SymbolCategory(PlanSymbols.FURNITURE, Icons.Default.Weekend, PlanSymbols.furniture, onEvent)
             SymbolCategory(PlanSymbols.DOORS_WINDOWS, Icons.Default.DoorFront, PlanSymbols.doorsWindows, onEvent)
             SymbolCategory(PlanSymbols.WALLS, Icons.Default.Fence, PlanSymbols.walls, onEvent)
             SymbolCategory("HVAC", Icons.Default.ElectricBolt, listOf("Vent", "AC Unit", "Thermostat"), onEvent)

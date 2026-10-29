@@ -90,7 +90,7 @@ object Elevation {
                     }
                     if (perpendicular && touches) Kind.CUT_WALL else continue
                 }
-                PlanSymbols.FIXTURES, PlanSymbols.CABINETS, PlanSymbols.OUTDOOR -> {
+                PlanSymbols.FIXTURES, PlanSymbols.CABINETS, PlanSymbols.OUTDOOR, PlanSymbols.CLOSET, PlanSymbols.FURNITURE -> {
                     if (s.symbolName.startsWith("Island")) continue
                     // Signed gap from the viewed face to the item's back edge: positive = in front of the wall.
                     val back = when (side) {
@@ -151,6 +151,24 @@ object Elevation {
             val inset = inch
             rect(xFrom + inset, xTo - inset, hBottom + 1f, hTop - 1f, light)
             if (xTo - xFrom >= 30f * inch) line((xFrom + xTo) / 2f, hBottom + 1f, (xFrom + xTo) / 2f, hTop - 1f)
+        }
+
+        /** A 3/4" shelf at [shelfIn] with a closet rod 2" below it and a few hangers. */
+        fun shelfAndRod(xFrom: Float, xTo: Float, shelfIn: Float) {
+            rect(xFrom, xTo, shelfIn, shelfIn + 0.75f, light)
+            line(xFrom, shelfIn - 2f, xTo, shelfIn - 2f, medium)
+            var x = xFrom + 4f * inch
+            while (x < xTo - 2f * inch) {
+                line(x, shelfIn - 2f, x, shelfIn - 6f)
+                rect(x - 7f * inch, x + 7f * inch, shelfIn - 38f, shelfIn - 6f, light)
+                x += 9f * inch
+            }
+        }
+        /** A table or desk top at [topIn] on legs set 2" in from the ends. */
+        fun tableWithLegs(xFrom: Float, xTo: Float, topIn: Float) {
+            rect(xFrom, xTo, topIn - 1.5f, topIn)
+            line(xFrom + 2f * inch, 0f, xFrom + 2f * inch, topIn - 1.5f, medium)
+            line(xTo - 2f * inch, 0f, xTo - 2f * inch, topIn - 1.5f, medium)
         }
 
         // Frame: floor, ceiling, ends.
@@ -285,6 +303,104 @@ object Elevation {
                         rect(from, to, 0f, 78f)
                         line(xc, 0f, xc, 78f)
                         line(from + 4f * inch, 6f, from + 4f * inch, 78f, light)
+                    }
+                    // ---- Closet parts ----
+                    name.startsWith("Shelf & Rod") -> {
+                        // Single hang: shelf at 66", rod 2" below it, a few hangers under the rod.
+                        shelfAndRod(from, to, 66f)
+                    }
+                    name.startsWith("Double Hang") -> {
+                        shelfAndRod(from, to, 84f)
+                        shelfAndRod(from, to, 42f)
+                    }
+                    name.startsWith("Shelving") -> {
+                        // Uprights to 84" with 3/4" shelves every 12".
+                        line(from, 0f, from, 84f, medium)
+                        line(to, 0f, to, 84f, medium)
+                        var hIn = 12f
+                        while (hIn <= 84f) { rect(from, to, hIn, hIn + 0.75f, light); hIn += 12f }
+                    }
+                    name.startsWith("Drawers") -> {
+                        // A bank of four 8" drawers on a 4" base, pulls centred.
+                        rect(from, to, 0f, 36f)
+                        for (i in 0 until 4) {
+                            val bottom = 4f + 8f * i
+                            rect(from + inch, to - inch, bottom + 0.5f, bottom + 7.5f, light)
+                            line(xc - 2f * inch, bottom + 4f, xc + 2f * inch, bottom + 4f, medium)
+                        }
+                    }
+                    name.startsWith("Shoe") -> {
+                        line(from, 0f, from, 24f, medium)
+                        line(to, 0f, to, 24f, medium)
+                        for (hIn in listOf(6f, 14f, 22f)) rect(from, to, hIn, hIn + 0.75f, light)
+                    }
+                    // ---- Furniture ----
+                    name.startsWith("Sofa") || name.startsWith("Loveseat") || name == "Armchair" || name == "Recliner" -> {
+                        // Back to 34", arms to 24", seat at 18".
+                        val armW = 6f * inch
+                        rect(from, to, 2f, 34f)
+                        rect(from, from + armW, 2f, 24f, light)
+                        rect(to - armW, to, 2f, 24f, light)
+                        line(from + armW, 18f, to - armW, 18f)
+                        val seats = if (name.startsWith("Sofa")) 3 else if (name.startsWith("Loveseat")) 2 else 1
+                        val seatW = (w - 2f * armW) / seats
+                        for (i in 1 until seats) line(from + armW + seatW * i, 18f, from + armW + seatW * i, 30f)
+                    }
+                    name.startsWith("Coffee Table") || name.startsWith("End Table") -> tableWithLegs(from, to, if (name.startsWith("Coffee")) 18f else 24f)
+                    name.startsWith("Kitchen Table") || name.startsWith("Round Table") || name.startsWith("Desk") -> tableWithLegs(from, to, 30f)
+                    name == "Dining Chair" -> {
+                        rect(from, to, 18f, 19f)
+                        rect(from + inch, to - inch, 19f, 36f, light)
+                        line(from + inch, 0f, from + inch, 18f); line(to - inch, 0f, to - inch, 18f)
+                    }
+                    name == "Office Chair" -> {
+                        rect(from, to, 18f, 20f)
+                        rect(from + 2f * inch, to - 2f * inch, 22f, 40f, light)
+                        line(xc, 0f, xc, 18f, medium)
+                        line(from + 2f * inch, 0f, to - 2f * inch, 0f, medium)
+                    }
+                    name.endsWith("Bed") -> {
+                        // Headboard against the wall, mattress in front of it.
+                        rect(from, to, 0f, 48f)
+                        rect(from - inch, to + inch, 14f, 24f, light)
+                    }
+                    name == "Nightstand" -> {
+                        rect(from, to, 0f, 24f)
+                        rect(from + inch, to - inch, 14f, 22f, light)
+                    }
+                    name.startsWith("Dresser") -> {
+                        rect(from, to, 0f, 32f)
+                        for (i in 0 until 3) {
+                            val bottom = 4f + 9f * i
+                            rect(from + inch, to - inch, bottom, bottom + 8f, light)
+                        }
+                    }
+                    name.startsWith("Wall Unit") -> {
+                        // Full height with three bays, a TV bay in the middle, shelves in the sides.
+                        rect(from, to, 0f, 84f)
+                        val bay = w / 3f
+                        line(from + bay, 0f, from + bay, 84f)
+                        line(to - bay, 0f, to - bay, 84f)
+                        for (hIn in listOf(24f, 48f, 72f)) {
+                            rect(from, from + bay, hIn, hIn + 0.75f, light)
+                            rect(to - bay, to, hIn, hIn + 0.75f, light)
+                        }
+                        rect(from + bay, to - bay, 24f, 24.75f, light)
+                    }
+                    name.startsWith("Bookcase") -> {
+                        rect(from, to, 0f, 72f)
+                        var hIn = 12f
+                        while (hIn < 72f) { rect(from, to, hIn, hIn + 0.75f, light); hIn += 12f }
+                    }
+                    name.startsWith("TV Stand") -> {
+                        rect(from, to, 0f, 24f)
+                        line(from, 12f, to, 12f)
+                    }
+                    name.startsWith("TV") -> {
+                        // A 16:9 screen, its bottom 30" up (on a stand or a wall bracket).
+                        val screenH = w / inch * 9f / 16f
+                        rect(from, to, 30f, 30f + screenH)
+                        rect(from + inch, to - inch, 31f, 29f + screenH, light)
                     }
                     else -> rect(from, to, 0f, 30f)
                 }

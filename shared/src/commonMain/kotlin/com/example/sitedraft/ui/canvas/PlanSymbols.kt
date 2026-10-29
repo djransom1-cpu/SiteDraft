@@ -30,7 +30,27 @@ object PlanSymbols {
     const val WALLS = "Walls"
     const val CABINETS = "Cabinets"
     const val OUTDOOR = "Outdoor Kitchen"
-    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR)
+    const val CLOSET = "Closet"
+    const val FURNITURE = "Furniture"
+    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE)
+
+    /**
+     * Closet parts, set against a closet wall with their backs at the top (like cabinets).
+     * Lengths along the wall are the defaults: stretch them in Properties. Shelf-and-rod and
+     * double-hang are 12" deep, shelving and drawer units 16", shoe shelves 12".
+     */
+    val closet = listOf(
+        "Shelf & Rod 36\"", "Shelf & Rod 48\"", "Double Hang 36\"", "Double Hang 48\"",
+        "Shelving 24\"", "Shelving 36\"", "Drawers 24\"", "Drawers 30\"", "Shoe Shelves 24\""
+    )
+
+    /** Furniture, real size, backs at the top so the piece can be set against a wall. */
+    val furniture = listOf(
+        "Sofa 84\"", "Loveseat 60\"", "Armchair", "Recliner",
+        "Coffee Table 48x24", "End Table 24\"", "Kitchen Table 36x60", "Round Table 48\"", "Dining Chair",
+        "Queen Bed", "King Bed", "Twin Bed", "Nightstand", "Dresser 60\"",
+        "Desk 60x30", "Office Chair", "Wall Unit 72\"", "Bookcase 36\"", "TV Stand 60\"", "TV 65\""
+    )
 
     /** Outdoor kitchen equipment, by manufacturer spec where known. */
     const val LYNX_36_GRILL = "Lynx 36\" Grill"
@@ -109,6 +129,37 @@ object PlanSymbols {
         UPPER_CORNER to Pair(24f, 24f),
         "Pantry 24\"" to Pair(24f, 24f),
         "Island 3'x6'" to Pair(72f, 36f),
+        // Closet parts.
+        "Shelf & Rod 36\"" to Pair(36f, 12f),
+        "Shelf & Rod 48\"" to Pair(48f, 12f),
+        "Double Hang 36\"" to Pair(36f, 12f),
+        "Double Hang 48\"" to Pair(48f, 12f),
+        "Shelving 24\"" to Pair(24f, 16f),
+        "Shelving 36\"" to Pair(36f, 16f),
+        "Drawers 24\"" to Pair(24f, 16f),
+        "Drawers 30\"" to Pair(30f, 16f),
+        "Shoe Shelves 24\"" to Pair(24f, 12f),
+        // Furniture (width along the wall, depth out from it).
+        "Sofa 84\"" to Pair(84f, 36f),
+        "Loveseat 60\"" to Pair(60f, 36f),
+        "Armchair" to Pair(36f, 36f),
+        "Recliner" to Pair(36f, 40f),
+        "Coffee Table 48x24" to Pair(48f, 24f),
+        "End Table 24\"" to Pair(24f, 24f),
+        "Kitchen Table 36x60" to Pair(60f, 36f),
+        "Round Table 48\"" to Pair(48f, 48f),
+        "Dining Chair" to Pair(18f, 20f),
+        "Queen Bed" to Pair(60f, 80f),
+        "King Bed" to Pair(76f, 80f),
+        "Twin Bed" to Pair(38f, 75f),
+        "Nightstand" to Pair(24f, 18f),
+        "Dresser 60\"" to Pair(60f, 20f),
+        "Desk 60x30" to Pair(60f, 30f),
+        "Office Chair" to Pair(24f, 24f),
+        "Wall Unit 72\"" to Pair(72f, 20f),
+        "Bookcase 36\"" to Pair(36f, 12f),
+        "TV Stand 60\"" to Pair(60f, 18f),
+        "TV 65\"" to Pair(57f, 3f),
         // Lynx built-in 36" (Lynx "Built-In 36 w/ dimensions" drawing, 1/20/10): 36" wide, 26 3/8"
         // deep overall with the front 1 3/4" overhanging the island face; island cutout 35" x 22",
         // 10 1/8" deep; front panel 11" below the counter; hood 14 7/8" above it closed, 23 1/2" open.
@@ -185,6 +236,8 @@ fun DrawScope.drawPlanSymbol(
                 else drawWallSection(name, w, h, inch, lineColor, accentColor, line, thin)
             }
             element.category == PlanSymbols.CABINETS -> drawCabinet(name, w, h, inch, lineColor, accentColor, faint, line, thin)
+            element.category == PlanSymbols.CLOSET -> drawClosetPart(name, w, h, inch, lineColor, accentColor, faint, line, thin)
+            element.category == PlanSymbols.FURNITURE -> drawFurniture(name, w, h, inch, lineColor, accentColor, faint, line, thin)
             PlanSymbols.isDoor(name) -> {
                 // Hinge at the bottom-left corner, leaf standing open along the left edge, swing
                 // arc sweeping to the latch at the bottom-right corner. The threshold (bottom
@@ -470,6 +523,140 @@ private fun DrawScope.drawCabinet(
                 drawLine(color = faint, start = Offset(-hw, hh - face), end = Offset(hw, -hh), strokeWidth = thin.width)
             }
         }
+    }
+}
+
+/**
+ * Closet parts centred on the origin, back (wall side) at the top. A shelf-and-rod is the shelf
+ * outline with the rod as a dashed line near the front; double hang is the same marked DBL;
+ * shelving shows its shelf edge and a label; drawer units show their drawer front; shoe shelves
+ * the slanted shelf edges.
+ */
+private fun DrawScope.drawClosetPart(
+    name: String, w: Float, h: Float, inch: Float,
+    lineColor: Color, accentColor: Color, faint: Color, line: Stroke, thin: Stroke
+) {
+    val hw = w / 2f
+    val hh = h / 2f
+    val dashed = Stroke(width = thin.width, pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 2f, inch * 1.5f)))
+    val textSize = (inch * 3.5f).coerceAtLeast(6f)
+    drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+    when {
+        name.startsWith("Shelf & Rod") || name.startsWith("Double Hang") -> {
+            // Rod 10 1/2" out from the wall, drawn as a dashed line; rod ends as short ticks.
+            val rodY = -hh + inch * 10.5f
+            drawPath(Path().apply { moveTo(-hw + inch, rodY); lineTo(hw - inch, rodY) }, color = accentColor, style = dashed)
+            drawLine(color = accentColor, start = Offset(-hw + inch, rodY - inch), end = Offset(-hw + inch, rodY + inch), strokeWidth = thin.width)
+            drawLine(color = accentColor, start = Offset(hw - inch, rodY - inch), end = Offset(hw - inch, rodY + inch), strokeWidth = thin.width)
+            if (name.startsWith("Double")) label("DBL", accentColor, textSize, Offset(0f, -hh + inch * 5f))
+        }
+        name.startsWith("Shelving") -> {
+            drawLine(color = accentColor, start = Offset(-hw, hh - inch), end = Offset(hw, hh - inch), strokeWidth = thin.width)
+            label("SHELVES", accentColor, textSize)
+        }
+        name.startsWith("Drawers") -> {
+            drawLine(color = accentColor, start = Offset(-hw, hh - inch * 1.5f), end = Offset(hw, hh - inch * 1.5f), strokeWidth = line.width)
+            // Pull.
+            drawLine(color = accentColor, start = Offset(-inch * 2f, hh - inch * 0.75f), end = Offset(inch * 2f, hh - inch * 0.75f), strokeWidth = thin.width)
+            label("DRAWERS", accentColor, textSize)
+        }
+        name.startsWith("Shoe") -> {
+            drawPath(Path().apply { moveTo(-hw, hh - inch * 2f); lineTo(hw, hh - inch * 2f) }, color = faint, style = dashed)
+            label("SHOES", accentColor, textSize)
+        }
+    }
+}
+
+/** Furniture centred on the origin, back at the top. Simple, recognisable plan outlines. */
+private fun DrawScope.drawFurniture(
+    name: String, w: Float, h: Float, inch: Float,
+    lineColor: Color, accentColor: Color, faint: Color, line: Stroke, thin: Stroke
+) {
+    val hw = w / 2f
+    val hh = h / 2f
+    val textSize = (inch * 3.5f).coerceAtLeast(6f)
+    val r = CornerRadius(inch * 2f, inch * 2f)
+    fun seating(seats: Int, arms: Boolean) {
+        val back = inch * 8f
+        val arm = if (arms) inch * 6f else 0f
+        drawRoundRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), cornerRadius = r, style = line)
+        // Back cushion strip along the wall side, arms down each end.
+        drawLine(color = accentColor, start = Offset(-hw + arm, -hh + back), end = Offset(hw - arm, -hh + back), strokeWidth = thin.width)
+        if (arms) {
+            drawLine(color = accentColor, start = Offset(-hw + arm, -hh + back), end = Offset(-hw + arm, hh), strokeWidth = thin.width)
+            drawLine(color = accentColor, start = Offset(hw - arm, -hh + back), end = Offset(hw - arm, hh), strokeWidth = thin.width)
+        }
+        val seatW = (w - 2f * arm) / seats
+        for (i in 1 until seats) {
+            val x = -hw + arm + seatW * i
+            drawLine(color = accentColor, start = Offset(x, -hh + back), end = Offset(x, hh), strokeWidth = thin.width)
+        }
+    }
+    fun bed() {
+        drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+        // Headboard line, pillows, and the blanket turn-down a third of the way down.
+        drawLine(color = accentColor, start = Offset(-hw, -hh + inch * 3f), end = Offset(hw, -hh + inch * 3f), strokeWidth = thin.width)
+        val pillowW = if (w > inch * 45f) (w - inch * 9f) / 2f else w - inch * 6f
+        val pr = CornerRadius(inch * 3f, inch * 3f)
+        if (w > inch * 45f) {
+            drawRoundRect(color = accentColor, topLeft = Offset(-hw + inch * 3f, -hh + inch * 5f), size = Size(pillowW, inch * 18f), cornerRadius = pr, style = thin)
+            drawRoundRect(color = accentColor, topLeft = Offset(inch * 1.5f, -hh + inch * 5f), size = Size(pillowW, inch * 18f), cornerRadius = pr, style = thin)
+        } else {
+            drawRoundRect(color = accentColor, topLeft = Offset(-hw + inch * 3f, -hh + inch * 5f), size = Size(pillowW, inch * 18f), cornerRadius = pr, style = thin)
+        }
+        val fold = -hh + h / 3f
+        drawLine(color = accentColor, start = Offset(-hw, fold), end = Offset(hw, fold), strokeWidth = thin.width)
+        drawLine(color = faint, start = Offset(-hw, fold + inch * 2f), end = Offset(hw, fold + inch * 2f), strokeWidth = thin.width)
+    }
+    fun box(text: String? = null, frontLine: Boolean = false) {
+        drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+        if (frontLine) drawLine(color = accentColor, start = Offset(-hw, hh - inch * 1.5f), end = Offset(hw, hh - inch * 1.5f), strokeWidth = thin.width)
+        if (text != null) label(text, accentColor, textSize)
+    }
+    when {
+        name.startsWith("Sofa") -> seating(3, true)
+        name.startsWith("Loveseat") -> seating(2, true)
+        name == "Armchair" -> seating(1, true)
+        name == "Recliner" -> {
+            seating(1, true)
+            // Footrest line across the front.
+            drawLine(color = faint, start = Offset(-hw + inch * 6f, hh - inch * 10f), end = Offset(hw - inch * 6f, hh - inch * 10f), strokeWidth = thin.width)
+        }
+        name.startsWith("Round Table") -> {
+            drawCircle(color = lineColor, radius = min(hw, hh), center = Offset.Zero, style = line)
+            drawCircle(color = faint, radius = min(hw, hh) * 0.3f, center = Offset.Zero, style = thin)
+        }
+        name.startsWith("Coffee Table") || name.startsWith("End Table") || name.startsWith("Kitchen Table") -> {
+            drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+            drawRect(color = faint, topLeft = Offset(-hw + inch * 2f, -hh + inch * 2f), size = Size(w - inch * 4f, h - inch * 4f), style = thin)
+        }
+        name == "Dining Chair" -> {
+            drawRoundRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), cornerRadius = r, style = line)
+            drawLine(color = accentColor, start = Offset(-hw, -hh + inch * 3f), end = Offset(hw, -hh + inch * 3f), strokeWidth = line.width)
+        }
+        name == "Office Chair" -> {
+            drawCircle(color = lineColor, radius = min(hw, hh) * 0.8f, center = Offset(0f, inch * 2f), style = line)
+            drawArc(color = accentColor, startAngle = 200f, sweepAngle = 140f, useCenter = false, topLeft = Offset(-hw, -hh), size = Size(w, h * 0.8f), style = line)
+        }
+        name.endsWith("Bed") -> bed()
+        name == "Nightstand" -> box("NS", frontLine = true)
+        name.startsWith("Dresser") -> box("DRESSER", frontLine = true)
+        name.startsWith("Desk") -> {
+            box("DESK")
+            drawRect(color = faint, topLeft = Offset(-inch * 9f, hh - inch * 10f), size = Size(inch * 18f, inch * 6f), style = thin)
+        }
+        name.startsWith("Wall Unit") -> {
+            box("WALL UNIT")
+            drawLine(color = accentColor, start = Offset(-hw / 3f, -hh), end = Offset(-hw / 3f, hh), strokeWidth = thin.width)
+            drawLine(color = accentColor, start = Offset(hw / 3f, -hh), end = Offset(hw / 3f, hh), strokeWidth = thin.width)
+        }
+        name.startsWith("Bookcase") -> box("BOOKS")
+        name.startsWith("TV Stand") -> box("TV STAND", frontLine = true)
+        name.startsWith("TV") -> {
+            drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+            label("TV", accentColor, textSize, Offset(0f, hh + inch * 3f))
+        }
+        else -> box(name)
     }
 }
 

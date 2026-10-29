@@ -69,6 +69,25 @@ class ElevationTest {
     }
 
     @Test
+    fun `closet parts and furniture against a wall appear in its elevation`() {
+        val wall = sym("2x4 Wall", PlanSymbols.WALLS, 500f, 0f, 1000f, t)
+        val face = t / 2f
+        val hang = sym("Double Hang 48\"", PlanSymbols.CLOSET, 100f, face + 6f * inch, 48f * inch, 12f * inch)
+        val drawers = sym("Drawers 24\"", PlanSymbols.CLOSET, 300f, face + 8f * inch, 24f * inch, 16f * inch)
+        val sofa = sym("Sofa 84\"", PlanSymbols.FURNITURE, 700f, face + 18f * inch, 84f * inch, 36f * inch)
+        val state = CanvasState(elements = listOf(wall, hang, drawers, sofa))
+        val items = Elevation.itemsOnWall(wall, ViewerSide.BELOW, state)
+        assertEquals(listOf("Double Hang 48\"", "Drawers 24\"", "Sofa 84\""), items.map { it.symbol.symbolName })
+        // The elevation draws something for each: two rods (double hang) are two medium lines at 82" and 40".
+        val parts = Elevation.build(wall, ElevationSpec(wallId = wall.id, side = ViewerSide.BELOW), Offset(0f, 2000f), state)
+        val rodHeights = parts.filterIsInstance<DrawingElement.Line>()
+            .filter { it.strokeWidth == 2f && it.start.y == it.end.y && (it.end.x - it.start.x) > 40f * inch }
+            .map { (2000f - it.start.y) / inch }
+        assertTrue(rodHeights.any { kotlin.math.abs(it - 82f) < 0.01f })
+        assertTrue(rodHeights.any { kotlin.math.abs(it - 40f) < 0.01f })
+    }
+
+    @Test
     fun `viewed from the other side the run is mirrored`() {
         val (wall, state) = kitchen()
         val window = Elevation.itemsOnWall(wall, ViewerSide.ABOVE, state).single()
