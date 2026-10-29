@@ -11,6 +11,8 @@ import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import com.example.sitedraft.cloud.CloudService
+import com.example.sitedraft.cloud.RestCloudService
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -84,4 +86,15 @@ class WebPlatform : Platform {
         downloadBase64(fileName, Base64.encode(text.encodeToByteArray()), "application/dxf")
         return "Downloaded $fileName"
     }
+
+    override val cloud: CloudService by lazy { RestCloudService(prefs) }
+
+    override fun openUrl(url: String): Boolean {
+        // Same tab: a popup from a click handler may be blocked, and Stripe Checkout sends the
+        // user back to the app URL when done.
+        window.location.href = url
+        return true
+    }
+
+    override val checkoutReturnUrl: String get() = window.location.href.substringBefore('#').substringBefore('?')
 }

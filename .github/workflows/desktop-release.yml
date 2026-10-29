@@ -3,6 +3,10 @@ name: Desktop installer (Windows MSI)
 # Builds the Windows installer on a GitHub Windows runner, the same way the laptop build is
 # made locally (./gradlew :desktopApp:packageMsi), and keeps it as a downloadable artifact.
 # Run it from the Actions tab, or push a version tag: git tag v1.0.6 && git push origin v1.0.6
+#
+# Repository secret:
+#   FIREBASE_PROPERTIES_BASE64   base64 of firebase.properties (base64 -w0 firebase.properties),
+#                                compiled into the app for sign-in and the subscription check.
 
 on:
   workflow_dispatch: {}
@@ -22,6 +26,11 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
+
+      - name: Recreate firebase.properties from secret
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("firebase.properties", [Convert]::FromBase64String("${{ secrets.FIREBASE_PROPERTIES_BASE64 }}"))
 
       - name: Build Windows installer (MSI)
         run: .\gradlew.bat :desktopApp:packageMsi --no-daemon --console=plain

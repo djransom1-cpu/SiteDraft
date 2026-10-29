@@ -16,7 +16,8 @@ import androidx.navigation3.ui.NavDisplay
 import com.example.sitedraft.navigation.SiteDraftNavKey
 import com.example.sitedraft.platform.AndroidPlatform
 import com.example.sitedraft.platform.LocalPlatform
-import com.example.sitedraft.ui.MainScreen
+import com.example.sitedraft.cloud.AndroidActivityHolder
+import com.example.sitedraft.ui.cloud.SiteDraftApp
 import com.example.sitedraft.ui.canvas.DrawingManager
 import com.example.sitedraft.ui.canvas.StylusButton
 import com.example.sitedraft.ui.theme.SiteDraftTheme
@@ -57,13 +58,24 @@ class MainActivity : ComponentActivity() {
                     NavDisplay(backStack = backStack) { key ->
                         NavEntry(key) {
                             when (key) {
-                                SiteDraftNavKey.Main -> MainScreen(viewModel = holder.manager)
+                                SiteDraftNavKey.Main -> SiteDraftApp(manager = holder.manager)
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    // Credential Manager (Google sign-in) needs the Activity that is on screen.
+    override fun onStart() {
+        super.onStart()
+        AndroidActivityHolder.current = this
+    }
+
+    override fun onStop() {
+        if (AndroidActivityHolder.current === this) AndroidActivityHolder.current = null
+        super.onStop()
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {

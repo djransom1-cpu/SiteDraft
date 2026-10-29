@@ -6,7 +6,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
 import com.example.sitedraft.platform.LocalPlatform
 import com.example.sitedraft.platform.WebPlatform
-import com.example.sitedraft.ui.MainScreen
+import com.example.sitedraft.ui.cloud.SiteDraftApp
 import com.example.sitedraft.ui.canvas.DrawingManager
 import com.example.sitedraft.ui.theme.SiteDraftTheme
 import kotlinx.browser.document
@@ -18,7 +18,7 @@ fun main() {
         val manager = remember { DrawingManager(platform) }
         CompositionLocalProvider(LocalPlatform provides platform) {
             SiteDraftTheme {
-                MainScreen(viewModel = manager)
+                SiteDraftApp(manager = manager)
             }
         }
     }

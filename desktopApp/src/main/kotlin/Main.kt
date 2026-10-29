@@ -13,7 +13,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.example.sitedraft.platform.DesktopPlatform
 import com.example.sitedraft.platform.LocalPlatform
-import com.example.sitedraft.ui.MainScreen
+import com.example.sitedraft.ui.cloud.SiteDraftApp
 import com.example.sitedraft.ui.canvas.DrawingManager
 import com.example.sitedraft.ui.theme.SiteDraftTheme
 
@@ -37,7 +37,7 @@ fun main() = application {
     ) {
         CompositionLocalProvider(LocalPlatform provides platform) {
             SiteDraftTheme {
-                MainScreen(viewModel = manager)
+                SiteDraftApp(manager = manager)
             }
         }
     }

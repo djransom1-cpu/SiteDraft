@@ -5,6 +5,16 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.jetbrains.kotlin.plugin.serialization)
+    alias(libs.plugins.google.services) apply false
+}
+
+// Firebase on Android: app/google-services.json (gitignored, recreated from the
+// GOOGLE_SERVICES_JSON_BASE64 secret in CI) lets the google-services plugin generate the
+// Firebase resources, including default_web_client_id for Google sign-in. Applying the plugin
+// without the file fails the build, so it is only applied when the file is there; without it
+// the shared code initialises Firebase itself from firebase.properties (see AndroidCloud.kt).
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 // Release signing, the same way CrewSync does it: keystore/keystore.properties (gitignored,

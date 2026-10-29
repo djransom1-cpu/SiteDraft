@@ -1,0 +1,10 @@
+# Copy to firebase.properties (gitignored) and fill in from the Firebase console
+# (Project settings > Your apps > Web app). See docs/CLOUD_SETUP.md.
+projectId=your-project-id
+apiKey=AIza...
+authDomain=your-project-id.firebaseapp.com
+storageBucket=your-project-id.firebasestorage.app
+webAppId=1:1234567890:web:abcdef123456
+# Authentication > Sign-in method > Google > Web SDK configuration > Web client ID
+googleWebClientId=1234567890-abcdef.apps.googleusercontent.com
+functionsRegion=us-central1

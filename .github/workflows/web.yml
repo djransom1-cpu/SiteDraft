@@ -3,6 +3,12 @@ name: Web app
 # Builds the SiteDraft web app (Kotlin/Wasm) on every push to main and keeps the result as a
 # downloadable artifact. When the repository variable DEPLOY_PAGES is "true" (and GitHub Pages
 # is set to deploy from Actions under Settings > Pages), it also publishes the build to Pages.
+#
+# Repository secret:
+#   FIREBASE_PROPERTIES_BASE64   base64 of firebase.properties (base64 -w0 firebase.properties).
+#                                Compiled into the web app so it can sign users in and check
+#                                their subscription; without it the published site shows
+#                                "not configured" on its sign-in screen and lets nobody in.
 on:
   push:
     branches: [main]
@@ -29,6 +35,9 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
+
+      - name: Recreate firebase.properties from secret
+        run: echo "${{ secrets.FIREBASE_PROPERTIES_BASE64 }}" | base64 -d > firebase.properties
 
       # The first wasm build on a clean machine can stop on the Kotlin/JS yarn lockfile check;
       # a second run goes through, so retry once.

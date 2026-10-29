@@ -1,0 +1,17 @@
+{
+  "name": "sitedraft-functions",
+  "description": "SiteDraft Cloud Functions: Stripe Checkout, customer portal and the subscription webhook.",
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.3.0",
+    "stripe": "^17.7.0"
+  },
+  "private": true,
+  "scripts": {
+    "test": "node --test test/subscription.test.js"
+  }
+}

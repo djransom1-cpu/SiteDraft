@@ -20,6 +20,8 @@ import androidx.compose.ui.input.pointer.indexOfLastPressed
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.content.FileProvider
+import com.example.sitedraft.cloud.AndroidCloudService
+import com.example.sitedraft.cloud.CloudService
 import com.example.sitedraft.data.laser.GlmLaserClient
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -115,4 +117,14 @@ class AndroidPlatform(private val context: Context) : Platform {
 
     override fun createLaserClient(): Any = GlmLaserClient(app)
     override val supportsLaser: Boolean get() = true
+
+    override val cloud: CloudService by lazy { AndroidCloudService(app) }
+
+    override fun openUrl(url: String): Boolean = try {
+        app.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (e: Exception) {
+        toast("Could not open a browser: ${e.message}")
+        false
+    }
 }

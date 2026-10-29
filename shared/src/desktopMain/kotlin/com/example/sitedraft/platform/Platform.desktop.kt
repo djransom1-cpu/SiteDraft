@@ -12,6 +12,8 @@ import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import com.example.sitedraft.cloud.CloudService
+import com.example.sitedraft.cloud.DesktopCloudService
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import org.jetbrains.skia.EncodedImageFormat
@@ -93,4 +95,12 @@ class DesktopPlatform(
         file.writeText(text)
         return "Saved ${file.absolutePath}"
     }
+
+    override val cloud: CloudService by lazy { DesktopCloudService() }
+
+    override fun openUrl(url: String): Boolean = runCatching {
+        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+            Desktop.getDesktop().browse(java.net.URI(url)); true
+        } else false
+    }.getOrDefault(false)
 }

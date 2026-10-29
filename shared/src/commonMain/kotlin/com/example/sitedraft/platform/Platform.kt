@@ -4,6 +4,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.PointerEvent
+import com.example.sitedraft.cloud.CloudService
+import com.example.sitedraft.cloud.UnavailableCloud
 import kotlinx.coroutines.CoroutineDispatcher
 
 /** Where project files live. Names are plain file names ("project_X.json"). */
@@ -55,6 +57,12 @@ interface Platform {
     /** The Bosch GLM Bluetooth client on platforms that have one; the Laser panel knows the type. */
     fun createLaserClient(): Any? = null
     val supportsLaser: Boolean get() = false
+    /** Firebase sign-in and Firestore; [UnavailableCloud] where the host has none (unit tests). */
+    val cloud: CloudService get() = UnavailableCloud
+    /** Opens [url] in the system browser (Stripe Checkout). False if the platform cannot. */
+    fun openUrl(url: String): Boolean = false
+    /** Where Stripe sends the user after paying; null = the Cloud Function's default (the web app URL). */
+    val checkoutReturnUrl: String? get() = null
 }
 
 /** Used by unit tests and as a safe default: nothing persists, nothing is exported. */

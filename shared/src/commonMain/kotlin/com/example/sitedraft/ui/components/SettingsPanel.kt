@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.example.sitedraft.data.PalmRejectionMode
 import com.example.sitedraft.data.rememberPalmRejection
 import com.example.sitedraft.ui.canvas.*
+import com.example.sitedraft.ui.cloud.AccountSection
 
 @Composable
 fun SettingsPanel(
@@ -235,7 +236,11 @@ fun SettingsPanel(
                     onCheckedChange = { onEvent(DrawingEvent.ToggleGridSnap(it)) }
                 )
             }
-            
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Who is signed in, the subscription on file, sign out. Nothing here without a cloud.
+            AccountSection()
 
             Spacer(modifier = Modifier.weight(1f))
             

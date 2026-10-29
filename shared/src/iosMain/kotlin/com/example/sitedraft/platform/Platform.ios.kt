@@ -11,6 +11,8 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import com.example.sitedraft.cloud.CloudService
+import com.example.sitedraft.cloud.RestCloudService
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -95,5 +97,13 @@ class IosPlatform : Platform {
     override fun exportText(fileName: String, text: String): String? {
         (text as NSString).writeToFile(path(fileName), true, NSUTF8StringEncoding, null)
         return "Saved ${path(fileName)}"
+    }
+
+    override val cloud: CloudService by lazy { RestCloudService(prefs) }
+
+    override fun openUrl(url: String): Boolean {
+        val nsUrl = platform.Foundation.NSURL.URLWithString(url) ?: return false
+        platform.UIKit.UIApplication.sharedApplication.openURL(nsUrl, options = emptyMap<Any?, Any>(), completionHandler = null)
+        return true
     }
 }

@@ -16,6 +16,11 @@ compose.desktop {
         // use the JDK 17 toolchain Gradle already provisions for compiling.
         javaHome = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) }.get().metadata.installationPath.asFile.absolutePath
         nativeDistributions {
+            // GitLive's firebase-java-sdk reaches jdk.unsupported and java.sql (sqlite-jdbc for the
+            // Firestore cache) through reflection, which jlink's module detection misses; the
+            // packaged app then dies on the first Firestore call. CrewSync hit the same thing:
+            // bundle the whole JDK instead of enumerating modules.
+            includeAllModules = true
             targetFormats(
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg,

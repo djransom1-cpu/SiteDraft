@@ -10,9 +10,15 @@ name: Android release (signed AAB)
 #   ANDROID_KEYSTORE_STORE_PASSWORD  the .jks store password
 #   ANDROID_KEYSTORE_KEY_ALIAS       the key alias inside the .jks
 #   ANDROID_KEYSTORE_KEY_PASSWORD    the key password
+#   GOOGLE_SERVICES_JSON_BASE64      base64 of app/google-services.json (Firebase console > Android app)
+#                                    (make it with: base64 -w0 app/google-services.json)
+#   FIREBASE_PROPERTIES_BASE64       base64 of firebase.properties (see docs/CLOUD_SETUP.md)
+#                                    (make it with: base64 -w0 firebase.properties)
 #
 # app/build.gradle.kts reads keystore/keystore.properties for the release signing config; this
-# workflow recreates that file and the .jks from the secrets just before the build.
+# workflow recreates that file and the .jks from the secrets just before the build. The same
+# goes for google-services.json (Firebase Android app, Google sign-in) and firebase.properties
+# (compiled into the shared CloudConfig object).
 
 on:
   workflow_dispatch: {}
@@ -48,12 +54,17 @@ jobs:
           keyPassword=${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
           EOF
 
+      - name: Recreate google-services.json and firebase.properties from secrets
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > app/google-services.json
+          echo "${{ secrets.FIREBASE_PROPERTIES_BASE64 }}" | base64 -d > firebase.properties
+
       - name: Build release AAB
         run: ./gradlew :app:bundleRelease --no-daemon --console=plain
 
       - name: Clean up secret files
         if: always()
-        run: rm -rf keystore/sitedraft-release.jks keystore/keystore.properties
+        run: rm -rf keystore/sitedraft-release.jks keystore/keystore.properties app/google-services.json firebase.properties
 
       - uses: actions/upload-artifact@v4
         with:

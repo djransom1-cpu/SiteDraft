@@ -7,6 +7,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.example.sitedraft.platform.NoopPlatform
 import com.example.sitedraft.platform.Platform
 import com.example.sitedraft.platform.ioDispatcher
+import com.example.sitedraft.cloud.ProjectSync
+import com.example.sitedraft.cloud.ProjectSyncListener
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -36,9 +38,16 @@ private const val LAST_PROJECT_FILE = "last_project.txt"
  * ViewModel, the desktop and web apps keep one for the window's lifetime. Call [dispose] when
  * the host goes away.
  */
-class DrawingManager(private val platform: Platform = NoopPlatform) {
+class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyncListener {
     private val _state = mutableStateOf(CanvasState())
     val state: State<CanvasState> = _state
+
+    /**
+     * Cloud sync, attached by the root screen once the signed-in user has passed the gate and
+     * detached at sign-out. Every local save is handed to it; it calls back through
+     * [ProjectSyncListener] when a newer copy arrives from another device.
+     */
+    var sync: ProjectSync? = null
 
     private var startOffset: Offset = Offset.Zero
     private var lastOffset: Offset = Offset.Zero
@@ -2564,15 +2573,28 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
     private fun saveProject(snapshot: CanvasState) {
         val storage = platform.storage ?: return // nothing persisted (unit tests)
         try {
-            storage.write(projectFileName(snapshot.projectName), json.encodeToString(CanvasState.serializer(), snapshot))
+            val text = json.encodeToString(CanvasState.serializer(), snapshot)
+            storage.write(projectFileName(snapshot.projectName), text)
             // Also update the project list file
             val currentList = storage.read("project_list.txt")?.lines()?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
             storage.write("project_list.txt", (currentList + snapshot.projectName).sorted().joinToString("\n"))
             storage.write(LAST_PROJECT_FILE, snapshot.projectName)
+            sync?.onLocalSaved(snapshot.projectName, text)
         } catch (e: Exception) {
             platform.log("SiteDraft", "save failed: ${e.message}")
         }
     }
+
+    // ProjectSyncListener: both arrive on the main thread.
+    override fun onProjectPulled(name: String) {
+        // Only the open project needs reloading; others are picked up when opened.
+        if (name == _state.value.projectName) {
+            pendingSave?.cancel()
+            reloadFromStorage(name)
+        }
+    }
+
+    override fun onProjectListChanged() = refreshProjectList()
 
     private fun refreshProjectList() {
         val storage = platform.storage ?: return
@@ -2586,12 +2608,18 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
     }
 
     fun loadProjectByName(name: String) {
+        reloadFromStorage(name)
+        // Opening a project is the moment to fetch a newer copy another device may have saved.
+        sync?.syncProject(name)
+    }
+
+    private fun reloadFromStorage(name: String) {
         val storage = platform.storage ?: return
         try {
             val projectData = storage.read(projectFileName(name)) ?: return
             val loadedState = json.decodeFromString(CanvasState.serializer(), projectData)
             // When loading, preserve the available projects list from current session
-            _state.value = loadedState.copy(availableProjects = _state.value.availableProjects)
+            _state.value = loadedState.copy(availableProjects = _state.value.availableProjects, selectedElementId = null, selectedElementIds = emptySet())
             storage.write(LAST_PROJECT_FILE, name)
         } catch (e: Exception) {
             platform.log("SiteDraft", "load failed: ${e.message}")

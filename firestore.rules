@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// SiteDraft: every user owns users/{uid} and the projects under it. The subscription fields
+// are written only by the Stripe webhook Cloud Function (Admin SDK bypasses these rules).
+// Deploy with: firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Fields a client may never set or change.
+    function touchesBillingFields() {
+      return request.resource.data.keys().hasAny(['subscription', 'stripeCustomerId', 'subscriptionUpdatedAt']);
+    }
+
+    function changesBillingFields() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['subscription', 'stripeCustomerId', 'subscriptionUpdatedAt']);
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && !touchesBillingFields();
+      allow update: if isOwner(uid) && !changesBillingFields();
+      allow delete: if false;
+
+      // Project JSON, split into chunks when it is bigger than one document (ProjectSync.kt).
+      match /projects/{projectName} {
+        allow read, write: if isOwner(uid);
+
+        match /chunks/{index} {
+          allow read, write: if isOwner(uid);
+        }
+      }
+    }
+
+    // Beta testers: document id = lowercase email. A user may look up only their own entry;
+    // listing is never allowed, so the set of testers stays private. Managed in the console.
+    match /allowlist/{email} {
+      allow get: if isSignedIn()
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() == email;
+      allow list: if false;
+      allow write: if false;
+    }
+  }
+}

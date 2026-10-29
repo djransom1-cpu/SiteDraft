@@ -5,7 +5,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.window.ComposeUIViewController
 import com.example.sitedraft.platform.IosPlatform
 import com.example.sitedraft.platform.LocalPlatform
-import com.example.sitedraft.ui.MainScreen
+import com.example.sitedraft.ui.cloud.SiteDraftApp
 import com.example.sitedraft.ui.canvas.DrawingManager
 import com.example.sitedraft.ui.theme.SiteDraftTheme
 import platform.UIKit.UIViewController
@@ -16,7 +16,7 @@ fun MainViewController(): UIViewController = ComposeUIViewController {
     val manager = remember { DrawingManager(platform) }
     CompositionLocalProvider(LocalPlatform provides platform) {
         SiteDraftTheme {
-            MainScreen(viewModel = manager)
+            SiteDraftApp(manager = manager)
         }
     }
 }
