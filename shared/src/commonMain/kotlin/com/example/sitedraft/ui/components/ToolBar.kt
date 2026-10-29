@@ -46,6 +46,9 @@ fun ToolBar(
         modifier = modifier,
         shape = RoundedCornerShape(32.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+        // Explicit: a translucent colour matches no theme colour, so contentColorFor() fell back to
+        // black and the panel's titles were black on blue.
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         tonalElevation = 4.dp
     ) {
         Row(

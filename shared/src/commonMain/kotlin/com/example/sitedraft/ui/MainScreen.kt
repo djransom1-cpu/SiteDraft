@@ -60,6 +60,16 @@ fun MainScreen(
 
 
 
+    // Selected rail item in safety orange: the default selected label colour is the theme's
+    // "secondary" (navy 0xFF003366), which was dark blue text on the blue rail.
+    val railColors = NavigationRailItemDefaults.colors(
+        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+        selectedTextColor = MaterialTheme.colorScheme.primary,
+        indicatorColor = MaterialTheme.colorScheme.primary,
+        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
     Row(modifier = modifier.fillMaxSize()) {
         // Navigation Rail
         NavigationRail(
@@ -67,24 +77,28 @@ fun MainScreen(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Home",
                 onClick = { currentNav = if (currentNav == "Home") "Drawing" else "Home" },
                 icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
                 label = { Text("Home") },
             )
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Symbols",
                 onClick = { currentNav = if (currentNav == "Symbols") "Drawing" else "Symbols" },
                 icon = { Icon(Icons.Default.Widgets, contentDescription = "Symbols") },
                 label = { Text("Symbols") },
             )
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Tools",
                 onClick = { currentNav = if (currentNav == "Tools") "Drawing" else "Tools" },
                 icon = { Icon(Icons.Default.Build, contentDescription = "Tools") },
                 label = { Text("Tools") },
             )
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Settings",
                 onClick = { currentNav = if (currentNav == "Settings") "Drawing" else "Settings" },
                 icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
@@ -92,18 +106,21 @@ fun MainScreen(
             )
             Spacer(modifier = Modifier.weight(1f))
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Plan",
                 onClick = { currentNav = if (currentNav == "Plan") "Drawing" else "Plan" },
                 icon = { Icon(Icons.Default.Architecture, contentDescription = "Floor plan") },
                 label = { Text("Plan") },
             )
             if (platform.supportsLaser) NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Laser",
                 onClick = { currentNav = if (currentNav == "Laser") "Drawing" else "Laser" },
                 icon = { Icon(Icons.Default.Straighten, contentDescription = "Laser") },
                 label = { Text("Laser") },
             )
             NavigationRailItem(
+                colors = railColors,
                 selected = false,
                 onClick = { },
                 icon = { Icon(Icons.AutoMirrored.Filled.Help, contentDescription = "Help") },

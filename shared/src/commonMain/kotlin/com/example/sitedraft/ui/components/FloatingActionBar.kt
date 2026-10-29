@@ -26,6 +26,8 @@ fun FloatingActionBar(
         modifier = modifier.wrapContentSize(),
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+        // Explicit: a translucent colour matches no theme colour (contentColorFor() fell back to black).
+        contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 8.dp,
         shadowElevation = 6.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)

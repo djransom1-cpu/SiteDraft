@@ -46,6 +46,9 @@ fun PropertiesPanel(
             .fillMaxHeight()
             .width(300.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+        // Explicit: a translucent colour matches no theme colour, so contentColorFor() fell back to
+        // black and the panel's titles were black on blue.
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         shape = MaterialTheme.shapes.large,
         shadowElevation = 8.dp
     ) {
@@ -68,6 +71,8 @@ fun PropertiesPanel(
             if (selectedElement != null) {
                 Surface(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                    // Explicit: a translucent colour matches no theme colour (contentColorFor() fell back to black).
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth()
                 ) {
