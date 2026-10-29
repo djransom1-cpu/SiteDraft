@@ -22,7 +22,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
             )
             packageName = "SiteDraft"
-            packageVersion = "1.0.1"
+            packageVersion = "1.0.2"
             description = "Construction drafting: floor plans, elevations, laser-measured walls"
             vendor = "SiteDraft"
             windows {
