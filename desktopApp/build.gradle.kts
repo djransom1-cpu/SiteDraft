@@ -22,10 +22,15 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
             )
             packageName = "SiteDraft"
-            packageVersion = "1.0.2"
+            packageVersion = "1.0.3"
             description = "Construction drafting: floor plans, elevations, laser-measured walls"
             vendor = "SiteDraft"
+            // App icon: the tablet's pencil-and-square glyph on a white tile, generated from the
+            // Android launcher art by make-icon.ps1 (icon.ico for Windows, icon.png for Linux;
+            // macOS wants an .icns made on a Mac).
+            linux { iconFile.set(project.file("icon.png")) }
             windows {
+                iconFile.set(project.file("icon.ico"))
                 // Without these the MSI installs silently to C:\Program Files\SiteDraft and
                 // nothing shows up in the Start Menu or on the desktop - the app looked
                 // "not installed" on the laptop.

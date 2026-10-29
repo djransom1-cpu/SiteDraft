@@ -3,6 +3,7 @@ package com.example.sitedraft.desktop
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -22,6 +23,8 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "SiteDraft",
+        // Title bar / taskbar icon (the installer's own icon comes from build.gradle.kts).
+        icon = painterResource("icon.png"),
         state = rememberWindowState(position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center), size = DpSize(1400.dp, 900.dp))
     ) {
         CompositionLocalProvider(LocalPlatform provides platform) {
