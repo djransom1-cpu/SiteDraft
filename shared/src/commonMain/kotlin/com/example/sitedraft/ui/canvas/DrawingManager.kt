@@ -114,8 +114,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
                 triggerAutoSave()
             }
             is DrawingEvent.SelectDimensionFormat -> updateDimensionFormat(event.format)
-            is DrawingEvent.UpdateZoom -> _state.value = _state.value.copy(zoom = (_state.value.zoom * event.delta).coerceIn(0.1f, 100f))
+            is DrawingEvent.UpdateZoom -> zoomBy(event.delta, event.focal)
             is DrawingEvent.UpdatePan -> _state.value = _state.value.copy(pan = _state.value.pan + event.delta)
+            is DrawingEvent.SetViewportSize -> if (event.size != _state.value.viewportSize) _state.value = _state.value.copy(viewportSize = event.size)
+            DrawingEvent.ZoomToFit -> zoomToFit()
             // Picking a symbol, outline or room arms placement; the next canvas tap says where it goes.
             is DrawingEvent.SelectSymbol -> _state.value = _state.value.copy(pendingPlacement = Placement.Symbol(event.name, event.category), placementPreview = null)
             is DrawingEvent.StartPlacement -> _state.value = _state.value.copy(pendingPlacement = event.placement, placementPreview = null)
@@ -177,7 +179,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
                 _state.value = _state.value.copy(elements = emptyList(), selectedElementId = null)
                 triggerAutoSave()
             }
-            DrawingEvent.ResetZoom -> _state.value = _state.value.copy(zoom = 1f, pan = Offset.Zero)
+            // Back to 100% keeping what is in the middle of the view in the middle; jumping to
+            // the canvas origin (as before) usually showed an empty corner of the grid.
+            DrawingEvent.ResetZoom -> if (_state.value.viewportSize == Size.Zero) _state.value = _state.value.copy(zoom = 1f, pan = Offset.Zero)
+                else zoomBy(1f / _state.value.zoom, null)
             is DrawingEvent.SaveProject -> saveNow()
             is DrawingEvent.LoadProject -> loadProject()
             is DrawingEvent.RefreshProjectList -> refreshProjectList()
@@ -365,6 +370,43 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
             elements = _state.value.elements + newElement,
             selectedElementId = newElement.id
         )
+    }
+
+    /**
+     * Zooms by [factor] about [focal] (screen px): the drawing under that point stays put, so a
+     * pinch zooms about the fingers, the wheel about the mouse, and the +/- buttons about the
+     * middle of the view. Zooming about the canvas origin (the old behaviour) sent whatever was
+     * being looked at sliding off screen with every step.
+     */
+    private fun zoomBy(factor: Float, focal: Offset?) {
+        val s = _state.value
+        val newZoom = (s.zoom * factor).coerceIn(0.1f, 100f)
+        val applied = newZoom / s.zoom
+        if (applied == 1f) return
+        val f = focal ?: Offset(s.viewportSize.width / 2f, s.viewportSize.height / 2f)
+        // screen = pan + world * zoom; keep the world point under f where it is.
+        val newPan = f - (f - s.pan) * applied
+        _state.value = s.copy(zoom = newZoom, pan = newPan)
+    }
+
+    /** Frames every element in the view with a margin (or resets when there is nothing to frame). */
+    private fun zoomToFit() {
+        val s = _state.value
+        val vw = s.viewportSize.width
+        val vh = s.viewportSize.height
+        val rects = s.elements.map { it.boundingRect() }.filter { it.width.isFinite() && it.height.isFinite() }
+        if (rects.isEmpty() || vw <= 0f || vh <= 0f) {
+            _state.value = s.copy(zoom = 1f, pan = Offset.Zero)
+            return
+        }
+        val bounds = Rect(rects.minOf { it.left }, rects.minOf { it.top }, rects.maxOf { it.right }, rects.maxOf { it.bottom })
+        val margin = 0.08f
+        val zoom = minOf(
+            vw * (1f - 2f * margin) / maxOf(bounds.width, 1f),
+            vh * (1f - 2f * margin) / maxOf(bounds.height, 1f)
+        ).coerceIn(0.1f, 100f)
+        val pan = Offset(vw / 2f, vh / 2f) - bounds.center * zoom
+        _state.value = s.copy(zoom = zoom, pan = pan)
     }
 
     private fun updateBackgroundColor(color: Color) {
@@ -623,18 +665,35 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
         return (Offset(nearestX, nearestY) - p).getDistance()
     }
 
+    // How far the tap is from the element's drawn outline (its edges, stroke or circle), or from
+    // the edge of its bounding box for the types that have no outline geometry (text, images).
+    // Unlike distanceToElement this is NOT zero everywhere inside a shape, which is what lets an
+    // object sitting inside another one be picked at all.
+    private fun pickDistance(element: DrawingElement, p: Offset): Float {
+        getNearestPointOnElement(p, element)?.let { return (it - p).getDistance() }
+        val r = element.boundingRect()
+        val toEdge = if (r.contains(p)) minOf(p.x - r.left, r.right - p.x, p.y - r.top, r.bottom - p.y) else distanceToElement(element, p)
+        return maxOf(0f, toEdge)
+    }
+
     // Selection hit-testing: among every element whose contains() matches this tap, pick the one
-    // whose actual geometry is nearest to the tap, not just whichever happens to sit last in the
-    // elements list. lastOrNull{} was the previous behavior, and it meant that whenever a tap's
-    // threshold radius (48dp - a generous fingertip-sized net) reached two or more elements at
-    // once - routine right after Explode, where 4 short edges of a small rectangle all sit close
-    // together - which one got selected depended on element creation order, not on which one the
-    // tap was actually closest to. Confirmed via a field recording of repeatedly tapping a
-    // specific edge of an exploded rectangle and getting an unrelated edge (or nothing) instead.
+    // whose drawn outline is nearest to the tap, and when two are equally near (an upper cabinet
+    // whose back edge sits on the base cabinet's back edge, a small rectangle drawn inside a big
+    // one), the smaller one. Picking by distance-to-bounding-box (the previous rule) made every
+    // enclosing shape a tie at distance 0, so a 12"-deep upper cabinet placed over a 24"-deep base
+    // could never be selected, a line drawn inside a rectangle always lost to the rectangle, and
+    // which of two overlapping cabinets won depended on creation order. Outline distance was
+    // already the right tie-breaker for the exploded-rectangle case this replaced (4 short edges
+    // close together: the one the pen is actually nearest to wins).
     private fun findHitElement(offset: Offset, threshold: Float): DrawingElement? {
-        return _state.value.elements
-            .filter { it.contains(offset, threshold) }
-            .minByOrNull { distanceToElement(it, offset) }
+        val scored = _state.value.elements.filter { it.contains(offset, threshold) }.map { it to pickDistance(it, offset) }
+        val best = scored.minOfOrNull { it.second } ?: return null
+        // Outlines within a fingertip's wobble (8 screen px) of the nearest one count as a tie -
+        // an upper cabinet's back edge sits on the base cabinet's back edge, give or take a px -
+        // and the smaller object wins the tie.
+        val tie = 8f / _state.value.zoom
+        return scored.filter { it.second <= best + tie }
+            .minByOrNull { it.first.boundingRect().let { r -> r.width * r.height } }?.first
     }
 
     /** The point an element turns about when it has a rotation; null for elements never drawn rotated. */
@@ -1791,7 +1850,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
             )
             triggerAutoSave()
         } else {
-            _state.value = _state.value.copy(lastSnapPoint = null)
+            // A wall (or window) dragged round to a right angle with the rotate handle becomes
+            // an axis-aligned wall again, so it keeps working with doors, trim and elevations.
+            val elements = if (isRotating) _state.value.elements.map { if (it.id == _state.value.selectedElementId) it.squaredUp() else it } else _state.value.elements
+            _state.value = _state.value.copy(elements = elements, lastSnapPoint = null)
+            isRotating = false
         }
     }
 
@@ -1831,17 +1894,77 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
     private fun trimmables(): List<Trimmable> = _state.value.elements.mapNotNull { e ->
         when {
             e is DrawingElement.Line -> Trimmable(e, e.start, e.end, 0f) { a, b -> e.copy(start = a, end = b) }
-            e is DrawingElement.Symbol && e.category == PlanSymbols.WALLS && e.rotation == 0f -> {
+            e is DrawingElement.Symbol && e.category == PlanSymbols.WALLS -> {
+                // A wall at any angle: its centre line is its long axis turned by its rotation
+                // (a wall turned with the rotate handle used to be silently skipped here, so
+                // Trim and Extend did nothing on it).
                 val horizontal = e.size.width >= e.size.height
                 val t = minOf(e.size.width, e.size.height)
                 val half = if (horizontal) Offset(e.size.width / 2f, 0f) else Offset(0f, e.size.height / 2f)
-                Trimmable(e, e.center - half, e.center + half, t / 2f) { a, b ->
+                val turned = rotatePoint(half, Offset.Zero, e.rotation)
+                Trimmable(e, e.center - turned, e.center + turned, t / 2f) { a, b ->
                     val len = (b - a).getDistance()
                     e.copy(center = (a + b) / 2f, size = if (horizontal) Size(len, t) else Size(t, len))
                 }
             }
             else -> null
         }
+    }
+
+    /**
+     * Closing an outside corner. [target] is a wall being extended along [fixedPoint]->[movingPoint]
+     * (axis-aligned, [halfWidth] thick each side of its centre line) and [other] is the wall its
+     * end is about to meet. When [other] ENDS alongside the target (a corner, not a T through it:
+     * its end lies within the target's thickness band or just past it) the two should close
+     * with their outside faces meeting: the target runs on to the far face of [other], and
+     * [other]'s end is pulled to the target's outer face. Returns the target's new end and the
+     * adjusted other wall, or null when this is not a corner.
+     */
+    private fun closeOutsideCorner(
+        target: Trimmable, other: DrawingElement.Symbol, fixedPoint: Offset, movingPoint: Offset
+    ): Pair<Offset, DrawingElement.Symbol>? {
+        if (target.halfWidth <= 0f || other.category != PlanSymbols.WALLS || other.rotation != 0f) return null
+        val dir = movingPoint - fixedPoint
+        val targetHorizontal = abs(dir.x) >= abs(dir.y)
+        if (abs(if (targetHorizontal) dir.y else dir.x) > 0.01f) return null // target must be axis-aligned too
+        val ob = FloorPlan.bounds(other)
+        val otherHorizontal = ob.width >= ob.height
+        if (otherHorizontal == targetHorizontal) return null // parallel walls never make a corner
+        val h = target.halfWidth
+        // Where the moving end would reach along the target's axis to clear the other wall.
+        val farFace: Float
+        val cross: Float // the target's centre-line coordinate across the other wall's length
+        if (targetHorizontal) {
+            cross = fixedPoint.y
+            val forward = dir.x > 0f
+            farFace = if (forward) ob.right else ob.left
+            if (forward && ob.left < movingPoint.x - 0.01f) return null
+            if (!forward && ob.right > movingPoint.x + 0.01f) return null
+        } else {
+            cross = fixedPoint.x
+            val forward = dir.y > 0f
+            farFace = if (forward) ob.bottom else ob.top
+            if (forward && ob.top < movingPoint.y - 0.01f) return null
+            if (!forward && ob.bottom > movingPoint.y + 0.01f) return null
+        }
+        val bandLow = cross - h
+        val bandHigh = cross + h
+        val tol = h // an end up to half a thickness past the target's outer face still reads as a corner
+        val oStart = if (targetHorizontal) ob.top else ob.left
+        val oEnd = if (targetHorizontal) ob.bottom else ob.right
+        // Which end of the other wall is the one in the corner band, if any.
+        val endsAtLow = oEnd in (bandLow - tol)..(bandHigh + tol) && oStart < bandLow - tol   // other comes from the low side
+        val endsAtHigh = oStart in (bandLow - tol)..(bandHigh + tol) && oEnd > bandHigh + tol // other comes from the high side
+        if (!endsAtLow && !endsAtHigh) return null
+        val newStart = if (endsAtHigh) bandLow else oStart
+        val newEnd = if (endsAtLow) bandHigh else oEnd
+        val adjusted = if (targetHorizontal)
+            Rect(ob.left, newStart, ob.right, newEnd) else Rect(newStart, ob.top, newEnd, ob.bottom)
+        val newOther = other.copy(center = adjusted.center, size = Size(adjusted.width, adjusted.height))
+        val newEndPoint = if (targetHorizontal) Offset(farFace, movingPoint.y) else Offset(movingPoint.x, farFace)
+        // Sanity: the corner must be ahead, not behind the moving end.
+        if (((newEndPoint - fixedPoint) - dir).let { if (targetHorizontal) it.x * dir.x else it.y * dir.y } < -0.01f) return null
+        return newEndPoint to newOther
     }
 
     private fun DrawingElement.withNewId(): DrawingElement = when (this) {
@@ -1911,21 +2034,45 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
         val dir = movingPoint - fixedPoint
         if (dir.getDistance() < 0.0001f) return
 
-        val otherEdges = _state.value.elements.filter { it.id != target.element.id }.flatMap { it.edgeSegments() }
+        val others = _state.value.elements.filter { it.id != target.element.id }
         // t is parametrized along fixedPoint->movingPoint: t=1 is the current (un-extended)
         // endpoint, so t > 1 means genuinely further out in the direction the line already
         // points, not doubling back over itself.
-        val nearestT = otherEdges.mapNotNull { (p3, p4) ->
-            val (t, u) = lineIntersectionParams(fixedPoint, movingPoint, p3, p4) ?: return@mapNotNull null
-            if (t > 1.0001f && u in -0.0001f..1.0001f) t else null
-        }.minOrNull() ?: return // nothing ahead to extend to
+        // A wall looks ahead along its centre line AND both faces: a wall whose end sits
+        // within this wall's thickness (the corner case) is missed by the centre line alone.
+        val unit = dir / dir.getDistance()
+        val perp = Offset(-unit.y, unit.x)
+        val rays = if (target.halfWidth > 0f) listOf(0f, target.halfWidth, -target.halfWidth) else listOf(0f)
+        val nearest = others.flatMap { owner ->
+            owner.edgeSegments().flatMap { (p3, p4) ->
+                rays.mapNotNull { off ->
+                    val (t, u) = lineIntersectionParams(fixedPoint + perp * off, movingPoint + perp * off, p3, p4) ?: return@mapNotNull null
+                    if (t > 1.0001f && u in -0.0001f..1.0001f) owner to t else null
+                }
+            }
+        }.minByOrNull { it.second } ?: return // nothing ahead to extend to
 
-        val newEndpoint = fixedPoint + dir * nearestT
+        var newEndpoint = fixedPoint + dir * nearest.second
+        var adjustedOther: DrawingElement? = null
+        // A wall meeting the END of another wall closes the corner outside-to-outside, instead
+        // of stopping at the near face and leaving a notch in the outside corner.
+        (nearest.first as? DrawingElement.Symbol)?.let { other ->
+            closeOutsideCorner(target, other, fixedPoint, movingPoint)?.let { (end, fixedOther) ->
+                newEndpoint = end
+                adjustedOther = fixedOther
+            }
+        }
         val updated = if (extendingStart) target.rebuild(newEndpoint, target.end) else target.rebuild(target.start, newEndpoint)
 
         pushUndoSnapshot()
         _state.value = _state.value.copy(
-            elements = _state.value.elements.map { if (it.id == target.element.id) updated else it },
+            elements = _state.value.elements.map {
+                when (it.id) {
+                    target.element.id -> updated
+                    adjustedOther?.id -> adjustedOther!!
+                    else -> it
+                }
+            },
             selectedElementId = target.element.id
         )
         triggerAutoSave()
@@ -1993,17 +2140,15 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
         triggerAutoSave()
     }
 
-    /** Room: [insideCorner] is the top-left INSIDE corner; its walls go around the outside. */
-    private fun placeRoom(insideCorner: Offset, room: Placement.Room) {
+    /**
+     * Room: [corner] is the top-left INSIDE corner (or the top-left OUTSIDE corner when the room
+     * was entered by outside dimensions); its walls go around the outside. Butting up to an
+     * existing wall shares it rather than standing a few inches off it (see roomInside).
+     */
+    private fun placeRoom(corner: Offset, room: Placement.Room) {
         val s = _state.value
         val t = wallThicknessPx(room.wallName)
-        val w = room.width * s.scale.ratio
-        val d = room.depth * s.scale.ratio
-        // Butting up to an existing wall: share it rather than standing a few inches off it.
-        val corner = FloorPlan.magnetRoomCorner(
-            insideCorner, w, d, s.elements.filterIsInstance<DrawingElement.Symbol>(), s.inchesToPx(FloorPlan.ROOM_MAGNET_IN)
-        )
-        val inside = Rect(corner, Size(w, d))
+        val inside = FloorPlan.roomInside(room, corner, t, s)
         val outer = Rect(inside.left - t, inside.top - t, inside.right + t, inside.bottom + t)
         val walls = FloorPlan.wallsAround(
             outer, t, room.wallName, s.currentColor,
@@ -2204,7 +2349,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
                         }
                         "rotation" -> {
                             val newValue = value.toFloatOrNull() ?: return@map element
-                            element.rotate(newValue - element.rotation)
+                            element.rotate(newValue - element.rotation).squaredUp()
                         }
                         // Elevation view heights (inches) and viewing side.
                         "wallHeightIn", "counterHeightIn", "upperBottomIn", "upperHeightIn", "sillIn", "windowHeightIn", "doorHeightIn" -> {
@@ -2568,8 +2713,13 @@ sealed class DrawingEvent {
     data class SelectBackground(val background: DrawingBackground) : DrawingEvent()
     data class SelectBackgroundColor(val color: Color) : DrawingEvent()
     data class SelectDimensionFormat(val format: DimensionFormat) : DrawingEvent()
-    data class UpdateZoom(val delta: Float) : DrawingEvent()
+    /** Multiplies the zoom by [delta] about [focal] (screen px); null = the middle of the view. */
+    data class UpdateZoom(val delta: Float, val focal: Offset? = null) : DrawingEvent()
     data class UpdatePan(val delta: Offset) : DrawingEvent()
+    /** The canvas's on-screen size, from DrawingCanvas. */
+    data class SetViewportSize(val size: Size) : DrawingEvent()
+    /** Zoom and pan so the whole drawing fits the view. */
+    object ZoomToFit : DrawingEvent()
     data class SelectSymbol(val name: String, val category: String) : DrawingEvent()
     /** Arms a building outline or room from the floor-plan panel. */
     data class StartPlacement(val placement: Placement) : DrawingEvent()

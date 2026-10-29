@@ -5,9 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Bathtub
@@ -107,16 +104,22 @@ private fun SymbolCategory(
         }
 
         if (expanded) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.heightIn(max = 260.dp),
-                contentPadding = PaddingValues(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            // A plain two-column grid, so the panel's own scroll reaches every symbol. This was
+            // a LazyVerticalGrid capped at 260dp: a category with more than six entries (the
+            // cabinets) hid the rest behind a second, invisible scroll inside the box - the
+            // upper cabinets looked like they did not exist.
+            Column(
+                modifier = Modifier.padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(symbols) { symbol ->
-                    SymbolItem(symbol) {
-                        onEvent(DrawingEvent.SelectSymbol(symbol, name))
+                symbols.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { symbol ->
+                            Box(modifier = Modifier.weight(1f)) {
+                                SymbolItem(symbol) { onEvent(DrawingEvent.SelectSymbol(symbol, name)) }
+                            }
+                        }
+                        if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }

@@ -43,7 +43,8 @@ import com.example.sitedraft.ui.canvas.Elevation
 import com.example.sitedraft.ui.canvas.ElevationSpec
 import com.example.sitedraft.ui.canvas.FloorPlan
 import com.example.sitedraft.ui.canvas.inchesToPx
-import com.example.sitedraft.ui.canvas.splitFeetInches
+import com.example.sitedraft.ui.canvas.formatFeetInches
+import com.example.sitedraft.ui.canvas.parseFeet
 import com.example.sitedraft.ui.canvas.Placement
 import com.example.sitedraft.ui.canvas.PlanSymbols
 import com.example.sitedraft.ui.canvas.UnitSystem
@@ -72,6 +73,7 @@ fun FloorPlanPanel(
     var roomWidth by rememberSaveable { mutableStateOf(if (metric) "3.6" else "12") }
     var roomDepth by rememberSaveable { mutableStateOf(if (metric) "3.6" else "12") }
     var roomWall by rememberSaveable { mutableStateOf(FloorPlan.INTERIOR_WALL) }
+    var roomOutside by rememberSaveable { mutableStateOf(false) }
 
     Surface(
         modifier = modifier.fillMaxHeight(),
@@ -97,8 +99,8 @@ fun FloorPlanPanel(
             )
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                NumberField("Width ($unit)", shellWidth, Modifier.weight(1f)) { shellWidth = it }
-                NumberField("Depth ($unit)", shellDepth, Modifier.weight(1f)) { shellDepth = it }
+                NumberField("Width ($unit)", shellWidth, Modifier.weight(1f), feetInches = !metric) { shellWidth = it }
+                NumberField("Depth ($unit)", shellDepth, Modifier.weight(1f), feetInches = !metric) { shellDepth = it }
             }
             Spacer(Modifier.height(4.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -107,8 +109,9 @@ fun FloorPlanPanel(
                 }
             }
             Spacer(Modifier.height(4.dp))
-            val sw = shellWidth.toFloatOrNull()
-            val sd = shellDepth.toFloatOrNull()
+            // Imperial sizes take feet and inches too: 30'-6", 30' 6 1/2", 30-6 or plain 30.5.
+            val sw = if (metric) shellWidth.toFloatOrNull() else parseFeet(shellWidth)
+            val sd = if (metric) shellDepth.toFloatOrNull() else parseFeet(shellDepth)
             Button(
                 onClick = {
                     if (sw != null && sd != null) onEvent(
@@ -126,7 +129,7 @@ fun FloorPlanPanel(
             // --- Rooms ---
             Text("Rooms", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Inside dimensions. Tap the room's top-left inside corner; a wall that is already there is not doubled.",
+                "Inside or outside dimensions. Tap the room's top-left corner (inside or outside to match); a wall that is already there is not doubled.",
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(8.dp))
@@ -136,8 +139,8 @@ fun FloorPlanPanel(
                         selected = roomName == name,
                         onClick = {
                             roomName = name
-                            roomWidth = fmt(if (metric) size.first * 0.3048f else size.first)
-                            roomDepth = fmt(if (metric) size.second * 0.3048f else size.second)
+                            roomWidth = if (metric) fmt(size.first * 0.3048f) else formatFeetInches(size.first)
+                            roomDepth = if (metric) fmt(size.second * 0.3048f) else formatFeetInches(size.second)
                         },
                         label = { Text(name) }
                     )
@@ -157,23 +160,37 @@ fun FloorPlanPanel(
                 NumberField("Depth ($unit)", roomDepth, Modifier.weight(1f)) { roomDepth = it }
             }
             Spacer(Modifier.height(4.dp))
+            // Inside (clear room size, tap the inside corner) or outside (wall-to-wall, tap the
+            // outside corner) - whichever the measurement at hand is.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = !roomOutside, onClick = { roomOutside = false }, label = { Text("Inside dims") })
+                FilterChip(selected = roomOutside, onClick = { roomOutside = true }, label = { Text("Outside dims") })
+            }
+            Spacer(Modifier.height(4.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(FloorPlan.INTERIOR_WALL, FloorPlan.EXTERIOR_WALL).forEach { w ->
                     FilterChip(selected = roomWall == w, onClick = { roomWall = w }, label = { Text(w) })
                 }
             }
             Spacer(Modifier.height(4.dp))
-            val rw = roomWidth.toFloatOrNull()
-            val rd = roomDepth.toFloatOrNull()
+            val rw = if (metric) roomWidth.toFloatOrNull() else parseFeet(roomWidth)
+            val rd = if (metric) roomDepth.toFloatOrNull() else parseFeet(roomDepth)
+            // An outside-dimensioned room must still have some inside once two walls are taken off.
+            val minOutside = 2f * (PlanSymbols.footprintInches[roomWall]?.second ?: 4.5f) / (if (metric) 39.37f else 12f)
+            val sizeOk = rw != null && rd != null && rw > 0f && rd > 0f && (!roomOutside || (rw > minOutside && rd > minOutside))
             Button(
                 onClick = {
                     if (rw != null && rd != null) onEvent(
                         DrawingEvent.StartPlacement(
-                            Placement.Room(roomName.trim(), rw, rd, roomWall, FloorPlan.roomPlacementLabel(roomName.trim(), rw, rd, state.unitSystem))
+                            Placement.Room(
+                                roomName.trim(), rw, rd, roomWall,
+                                FloorPlan.roomPlacementLabel(roomName.trim(), rw, rd, state.unitSystem, roomOutside),
+                                outside = roomOutside
+                            )
                         )
                     )
                 },
-                enabled = rw != null && rd != null && rw > 0f && rd > 0f,
+                enabled = sizeOk,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Place room") }
 
@@ -236,8 +253,7 @@ private fun ElevationControls(wall: DrawingElement.Symbol, state: CanvasState, o
 
     val lengthIn = Elevation.lengthPx(wall) / state.inchesToPx(1f)
     val items = Elevation.itemsOnWall(wall, side, state)
-    val (ft, inches) = splitFeetInches(lengthIn / 12f, 0.25f)
-    val lengthLabel = if (metric) "%.2f m".format(lengthIn * 0.0254f) else "$ft'-${fmt(inches)}\""
+    val lengthLabel = if (metric) "%.2f m".format(lengthIn * 0.0254f) else formatFeetInches(lengthIn / 12f)
     Text(
         "Wall $lengthLabel long, ${items.size} item${if (items.size == 1) "" else "s"} on this side.",
         style = MaterialTheme.typography.bodySmall
@@ -295,14 +311,16 @@ private fun ElevationControls(wall: DrawingElement.Symbol, state: CanvasState, o
 private fun fmt(v: Float): String =
     if (v == v.toInt().toFloat()) v.toInt().toString() else "%.2f".format(v).trimEnd('0').trimEnd('.')
 
+/** [feetInches]: the field takes 12'-6" / 12' 6 1/2" as well as 12.5, so it needs the full keyboard. */
 @Composable
-private fun NumberField(label: String, value: String, modifier: Modifier, onChange: (String) -> Unit) {
+private fun NumberField(label: String, value: String, modifier: Modifier, feetInches: Boolean = false, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        isError = value.isNotBlank() && (if (feetInches) parseFeet(value) else value.toFloatOrNull()) == null,
+        keyboardOptions = KeyboardOptions(keyboardType = if (feetInches) KeyboardType.Text else KeyboardType.Decimal),
         modifier = modifier
     )
 }

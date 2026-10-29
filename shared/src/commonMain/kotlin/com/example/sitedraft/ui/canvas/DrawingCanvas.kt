@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.toArgb
 import com.example.sitedraft.ui.canvas.DrawingElement
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -71,15 +72,32 @@ fun DrawingCanvas(
             // toggle from the S Pen button) mid-gesture killed whatever was being drawn and the
             // rest of that gesture was handled by a fresh block with no memory of it. The block
             // now reads live state through latestState/latestOnEvent instead.
-            // Mouse wheel = zoom (desktop and web); pinch handles touch below.
-            .onPointerEvent(PointerEventType.Scroll) { e ->
-                val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
-                if (dy != 0f) onEvent(DrawingEvent.UpdateZoom(if (dy < 0f) 1.1f else 1f / 1.1f))
+            // The view's size, so zoom buttons zoom about its middle and Fit can frame the drawing.
+            .onSizeChanged { onEvent(DrawingEvent.SetViewportSize(Size(it.width.toFloat(), it.height.toFloat()))) }
+            // Mouse wheel = zoom about the mouse (desktop and web); pinch handles touch below.
+            // Done with a plain pointerInput: Modifier.onPointerEvent only exists on the
+            // desktop/web targets, so using it here broke the Android build.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent()
+                        if (e.type != PointerEventType.Scroll) continue
+                        val change = e.changes.firstOrNull() ?: continue
+                        val dy = change.scrollDelta.y
+                        if (dy != 0f) {
+                            latestOnEvent.value(DrawingEvent.UpdateZoom(if (dy < 0f) 1.1f else 1f / 1.1f, change.position))
+                            change.consume()
+                        }
+                    }
+                }
             }
             .pointerInput(Unit) {
                 var isDrawing = false
                 var wallDragging = false
                 var isTransforming = false
+                // Dragging the view: the Hand tool, the middle mouse button, or a lone finger
+                // while the S Pen is the drawing pointer.
+                var panning = false
                 // A pending symbol/room is being positioned: ghost follows the pen, lift places it.
                 var placing = false
                 // Survives across gestures (the block is keyed on Unit) - AUTO palm rejection
@@ -115,12 +133,14 @@ fun DrawingCanvas(
                             PalmRejectionMode.STYLUS_ONLY -> true
                             PalmRejectionMode.AUTO -> now - lastStylusSeenAt < PALM_REJECTION_AUTO_WINDOW_MS
                         }
-                        val relevantChanges = if (rejectTouch && hasStylus) {
-                            event.changes.filter { it.type == PointerType.Stylus || it.type == PointerType.Eraser }
-                        } else {
-                            event.changes
-                        }
-                        val pointersCount = relevantChanges.size
+                        // Two fingers down pinch-zoom and pan, whatever the tool and whatever the
+                        // palm-rejection setting - except while the pen is actually DOWN (a second
+                        // contact then is a palm) or while it hovers with touch rejected (same). Only
+                        // pressed touch pointers count: a hovering pen plus one finger used to add up
+                        // to "two pointers" and turn a plain finger drag into pinch math.
+                        val stylusPressed = event.changes.any { (it.type == PointerType.Stylus || it.type == PointerType.Eraser) && it.pressed }
+                        val pinchPointers = if (stylusPressed || (rejectTouch && hasStylus)) emptyList()
+                            else event.changes.filter { it.type == PointerType.Touch && it.pressed }
 
                         // S Pen side button = momentary eraser, as in Samsung Notes: hold it while
                         // drawing and that stroke erases; let go and the previous tool comes back.
@@ -135,26 +155,29 @@ fun DrawingCanvas(
                             latestOnEvent.value(DrawingEvent.StylusButtonErase(true))
                         }
 
-                        if (pointersCount >= 2) {
+                        if (pinchPointers.size >= 2) {
                             if (isDrawing) {
                                 latestOnEvent.value(DrawingEvent.End)
                                 isDrawing = false
                             }
+                            panning = false
                             isTransforming = true
 
-                            val p1 = relevantChanges[0]
-                            val p2 = relevantChanges[1]
+                            val p1 = pinchPointers[0]
+                            val p2 = pinchPointers[1]
                             val prevDist = (p1.previousPosition - p2.previousPosition).getDistance()
                             val currDist = (p1.position - p2.position).getDistance()
                             val zoomFactor = if (prevDist > 0f) currDist / prevDist else 1f
-                            
-                            val panOffset = ((p1.position - p1.previousPosition) + (p2.position - p2.previousPosition)) / 2f
-                            
+                            // Zoom about the point between the fingers, then follow the fingers.
+                            val prevCentroid = (p1.previousPosition + p2.previousPosition) / 2f
+                            val currCentroid = (p1.position + p2.position) / 2f
+
                             event.changes.forEach { it.consume() }
-                            
+
                             if (zoomFactor != 1f) {
-                                latestOnEvent.value(DrawingEvent.UpdateZoom(zoomFactor))
+                                latestOnEvent.value(DrawingEvent.UpdateZoom(zoomFactor, prevCentroid))
                             }
+                            val panOffset = currCentroid - prevCentroid
                             if (panOffset != Offset.Zero) {
                                 latestOnEvent.value(DrawingEvent.UpdatePan(panOffset))
                             }
@@ -163,25 +186,33 @@ fun DrawingCanvas(
                             // A mouse (desktop, web) is as precise as a pen and is never palm-rejected.
                             val stylusPointer = event.changes.find { (it.type == PointerType.Stylus) || (it.type == PointerType.Eraser) || (it.type == PointerType.Mouse) }
                             val touchPointer = event.changes.find { it.type == PointerType.Touch }
-                            
-                            // If Stylus Only Drawing is enabled, ignore touch for drawing completely
-                            val pointer = if (rejectTouch) {
+
+                            // While touch is rejected for drawing, a lone finger pans the view instead
+                            // (pen draws, finger moves the page - as in Samsung Notes). It is only
+                            // ignored outright while the pen is hovering, when a touch is a resting palm.
+                            val fingerPans = rejectTouch && stylusPointer == null && touchPointer != null && !hasStylus
+                            val pointer = if (rejectTouch && !fingerPans) {
                                 touchPointer?.let { if (stylusPointer == null) it.consume() } // Consume touch to prevent further processing if no stylus
                                 stylusPointer
                             } else {
                                 stylusPointer ?: touchPointer
                             }
-                            
+
                             if (pointer != null) {
                                 if ((stylusPointer != null) && (touchPointer != null)) {
                                     touchPointer.consume()
                                 }
+                                val handTool = latestState.value.currentTool == DrawingTool.PAN
+                                val middleButton = pointer.type == PointerType.Mouse && event.buttons.isTertiaryPressed
 
                                 when (event.type) {
                                     PointerEventType.Press -> {
                                         // Final check: only start drawing if we're allowed to draw with this pointer type
                                         val canDraw = !rejectTouch || pointer.type != PointerType.Touch
-                                        if (canDraw) {
+                                        if (fingerPans || handTool || middleButton) {
+                                            panning = true
+                                            pointer.consume()
+                                        } else if (canDraw) {
                                             val transformedOffset = (pointer.position - latestState.value.pan) / latestState.value.zoom
                                             if (latestState.value.pendingPlacement != null) {
                                                 // A symbol, outline or room picked from a panel: show its ghost
@@ -204,7 +235,12 @@ fun DrawingCanvas(
                                         }
                                     }
                                     PointerEventType.Move -> {
-                                        if (latestState.value.pendingPlacement != null) {
+                                        if (panning) {
+                                            if (pointer.pressed) {
+                                                latestOnEvent.value(DrawingEvent.UpdatePan(pointer.position - pointer.previousPosition))
+                                                pointer.consume()
+                                            }
+                                        } else if (latestState.value.pendingPlacement != null) {
                                             // Hovering S Pen or a drag: keep the ghost under the pen.
                                             val transformedOffset = (pointer.position - latestState.value.pan) / latestState.value.zoom
                                             latestOnEvent.value(DrawingEvent.PreviewPlacementAt(transformedOffset))
@@ -229,7 +265,10 @@ fun DrawingCanvas(
                                     }
                                     PointerEventType.Release -> {
                                         wallDragging = false
-                                        if (placing) {
+                                        if (panning) {
+                                            panning = false
+                                            pointer.consume()
+                                        } else if (placing) {
                                             placing = false
                                             val transformedOffset = (pointer.position - latestState.value.pan) / latestState.value.zoom
                                             latestOnEvent.value(DrawingEvent.PlaceAt(transformedOffset))
@@ -247,6 +286,7 @@ fun DrawingCanvas(
                         if (event.changes.all { !it.pressed }) {
                             isTransforming = false
                             isDrawing = false
+                            panning = false
                             if (stylusButtonErasing) {
                                 // Stroke is over (End was sent from the Release branch above):
                                 // hand the previous tool back.
@@ -373,7 +413,11 @@ fun DrawingCanvas(
 // screen-constant sizes (label text, handle radii, grid line weights) by it.
 fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String? = null) {
     drawCanvasBackground(state.background, state)
-    state.elements.forEach { element ->
+    // Upper cabinets are an overlay layer: they sit above the cut plane, so they draw after
+    // everything else, dashed over the base cabinets and counters they hang above, whatever
+    // order things were placed in.
+    val (uppers, rest) = state.elements.partition { it is DrawingElement.Symbol && PlanSymbols.isUpperCabinet(it) }
+    (rest + uppers).forEach { element ->
         drawElement(element, isSelected = element.id == selectedElementId, state = state)
     }
 }
@@ -1140,35 +1184,8 @@ private fun formatDimension(value: Float, unit: UnitSystem, format: DimensionFor
         if (format == DimensionFormat.ENGINEERING) {
             "%.2f'".format(value)
         } else {
-            // Round to the nearest 1/8" BEFORE splitting - see splitFeetInches.
-            val (feet, inchesF) = splitFeetInches(value, 1f / 8f)
-            val inches = kotlin.math.floor(inchesF).toInt()
-            val fraction = inchesF - kotlin.math.floor(inchesF)
-            
-            val fractionText = when {
-                fraction >= 0.875f -> " 7/8"
-                fraction >= 0.75f -> " 3/4"
-                fraction >= 0.625f -> " 5/8"
-                fraction >= 0.5f -> " 1/2"
-                fraction >= 0.375f -> " 3/8"
-                fraction >= 0.25f -> " 1/4"
-                fraction >= 0.125f -> " 1/8"
-                else -> ""
-            }
-            
-            if (feet > 0) {
-                if (inches > 0 || fractionText.isNotEmpty()) {
-                    "$feet' - $inches$fractionText\""
-                } else {
-                    "$feet'"
-                }
-            } else {
-                if (inches > 0 || fractionText.isNotEmpty()) {
-                    "$inches$fractionText\""
-                } else {
-                    "0\""
-                }
-            }
+            // Feet and fractional inches to the nearest 1/16", as on a tape - see FeetInches.kt.
+            formatFeetInches(value)
         }
     }
 }

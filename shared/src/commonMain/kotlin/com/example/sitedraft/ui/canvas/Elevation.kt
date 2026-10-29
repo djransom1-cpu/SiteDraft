@@ -182,6 +182,11 @@ object Elevation {
                         line(from, (spec.sillIn + top) / 2f, to, (spec.sillIn + top) / 2f)
                         rect(from - inch, to + inch, spec.sillIn - 1.5f, spec.sillIn, light) // sill
                     }
+                    PlanSymbols.isOpening(name) -> {
+                        // Cased opening: the hole with its casing, nothing hung in it.
+                        rect(from, to, 0f, spec.doorHeightIn, medium)
+                        rect(from - 2f * inch, to + 2f * inch, 0f, spec.doorHeightIn + 2f, light)
+                    }
                     PlanSymbols.isSlidingDoor(name) -> {
                         rect(from, to, 0f, spec.doorHeightIn, medium)
                         line(xc, 0f, xc, spec.doorHeightIn)
@@ -308,8 +313,6 @@ object Elevation {
         return out
     }
 
-    private fun formatFeetInches(inches: Float): String {
-        val (ft, inn) = splitFeetInches(inches / 12f, 0.5f)
-        return if (inn == 0f) "$ft'" else "$ft'-${"%.1f".format(inn).trimEnd('0').trimEnd('.')}\""
-    }
+    private fun formatFeetInches(inches: Float): String =
+        com.example.sitedraft.ui.canvas.formatFeetInches(inches / 12f)
 }

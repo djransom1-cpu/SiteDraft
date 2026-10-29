@@ -39,9 +39,12 @@ object PlanSymbols {
     /** Base cabinets 24" deep, uppers 12" deep (drawn dashed: they are above the cut plane). */
     val cabinets = listOf(
         "Base 12\"", "Base 18\"", "Base 24\"", "Base 30\"", "Base 36\"", "Corner Base 36\"",
-        "Upper 12\"", "Upper 18\"", "Upper 24\"", "Upper 30\"", "Upper 36\"",
+        "Upper 12\"", "Upper 18\"", "Upper 24\"", "Upper 30\"", "Upper 36\"", UPPER_CORNER,
         "Pantry 24\"", "Island 3'x6'"
     )
+
+    /** Diagonal upper corner cabinet: 24" along each wall, 12"-deep arms, door across the corner. */
+    const val UPPER_CORNER = "Upper Corner 24\""
 
     val fixtures = listOf(
         "Bathtub", "Shower Stall", "Toilet", "Bathroom Sink", "Kitchen Sink", "Water Heater",
@@ -49,6 +52,7 @@ object PlanSymbols {
     )
     val doorsWindows = listOf(
         "Door 2'-6\"", "Door 2'-8\"", "Door 3'-0\"", "Sliding Door 6'-0\"",
+        "Opening 2'-6\"", "Opening 3'-0\"", "Opening 4'-0\"", "Opening 6'-0\"",
         "Window 3'-0\"", "Window 4'-0\"", "Window 6'-0\""
     )
     val walls = listOf(
@@ -76,6 +80,11 @@ object PlanSymbols {
         "Door 2'-8\"" to Pair(32f, 32f),
         "Door 3'-0\"" to Pair(36f, 36f),
         "Sliding Door 6'-0\"" to Pair(72f, WINDOW_DEPTH_IN),
+        // A cased opening: a doorway with no door. Sits in the wall like a window does.
+        "Opening 2'-6\"" to Pair(30f, WINDOW_DEPTH_IN),
+        "Opening 3'-0\"" to Pair(36f, WINDOW_DEPTH_IN),
+        "Opening 4'-0\"" to Pair(48f, WINDOW_DEPTH_IN),
+        "Opening 6'-0\"" to Pair(72f, WINDOW_DEPTH_IN),
         "Window 3'-0\"" to Pair(36f, WINDOW_DEPTH_IN),
         "Window 4'-0\"" to Pair(48f, WINDOW_DEPTH_IN),
         "Window 6'-0\"" to Pair(72f, WINDOW_DEPTH_IN),
@@ -97,6 +106,7 @@ object PlanSymbols {
         "Upper 24\"" to Pair(24f, 12f),
         "Upper 30\"" to Pair(30f, 12f),
         "Upper 36\"" to Pair(36f, 12f),
+        UPPER_CORNER to Pair(24f, 24f),
         "Pantry 24\"" to Pair(24f, 24f),
         "Island 3'x6'" to Pair(72f, 36f),
         // Lynx built-in 36" (Lynx "Built-In 36 w/ dimensions" drawing, 1/20/10): 36" wide, 26 3/8"
@@ -116,9 +126,14 @@ object PlanSymbols {
     /** 2" supply hole in the cutout floor: 2" from the right side, 2 1/4" from the front. */
     const val LYNX_36_HOLE_DIA = 2f
 
+    /** Upper (wall) cabinets: above the cut plane, drawn dashed as an overlay on whatever is below. */
+    fun isUpperCabinet(symbol: DrawingElement.Symbol) = symbol.category == CABINETS && symbol.symbolName.startsWith("Upper")
+
     fun isDoor(name: String) = name.startsWith("Door ")
     fun isSlidingDoor(name: String) = name.startsWith("Sliding Door")
     fun isWindow(name: String) = name.startsWith("Window ")
+    /** A cased opening (doorway without a door). */
+    fun isOpening(name: String) = name.startsWith("Opening ")
 
     /**
      * Symbols whose renderer draws them vertically when taller than wide (walls, windows,
@@ -126,7 +141,7 @@ object PlanSymbols {
      * rotation, so they stay axis-aligned for snapping and hit-testing.
      */
     fun turnsBySwappingSize(symbol: DrawingElement.Symbol) =
-        symbol.category == WALLS || isWindow(symbol.symbolName) || isSlidingDoor(symbol.symbolName)
+        symbol.category == WALLS || isWindow(symbol.symbolName) || isSlidingDoor(symbol.symbolName) || isOpening(symbol.symbolName)
 }
 
 /** World units for a length in inches at this document's scale, in either unit system. */
@@ -156,8 +171,10 @@ fun DrawScope.drawPlanSymbol(
 
     translate(element.center.x, element.center.y) {
         // Fixtures, windows and walls sit on top of whatever is under them (a hatch, a wall
-        // line), so blank their footprint first. A door's footprint is its swing, which stays open.
-        if (!PlanSymbols.isDoor(name)) {
+        // line), so blank their footprint first. A door's footprint is its swing, which stays
+        // open, and an upper cabinet is an overlay above the cut plane: the base cabinet or
+        // counter under it must still show through its dashed outline.
+        if (!PlanSymbols.isDoor(name) && !PlanSymbols.isUpperCabinet(element)) {
             drawRect(color = state.backgroundColor, topLeft = Offset(-hw, -hh), size = Size(w, h))
         }
         when {
@@ -181,7 +198,7 @@ fun DrawScope.drawPlanSymbol(
                     topLeft = Offset(-hw - w, hh - w), size = Size(2f * w, 2f * w), style = thin
                 )
             }
-            PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) -> {
+            PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) -> {
                 // Taller than wide = sitting in a vertical wall: draw it turned, like walls.
                 if (h > w) rotate(90f, pivot = Offset.Zero) { drawOpening(name, h, w, inch, state.backgroundColor, lineColor, accentColor, faint, line, thin) }
                 else drawOpening(name, w, h, inch, state.backgroundColor, lineColor, accentColor, faint, line, thin)
@@ -316,7 +333,13 @@ private fun DrawScope.drawOpening(
     // Blank the wall under the opening even when the wall is thicker than the symbol.
     val blank = max(h, inch * 8f)
     drawRect(color = background, topLeft = Offset(-hw, -blank / 2f), size = Size(w, blank))
-    if (PlanSymbols.isSlidingDoor(name)) {
+    if (PlanSymbols.isOpening(name)) {
+        // Cased opening: the wall stops at a jamb each side, a faint dashed header line between.
+        drawLine(color = lineColor, start = Offset(-hw, -blank / 2f), end = Offset(-hw, blank / 2f), strokeWidth = line.width)
+        drawLine(color = lineColor, start = Offset(hw, -blank / 2f), end = Offset(hw, blank / 2f), strokeWidth = line.width)
+        val dashed = Stroke(width = thin.width, pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 2f, inch * 1.5f)))
+        drawPath(Path().apply { moveTo(-hw, 0f); lineTo(hw, 0f) }, color = faint, style = dashed)
+    } else if (PlanSymbols.isSlidingDoor(name)) {
         val panel = inch * 1.5f
         val overlap = inch * 2f
         drawRect(color = faint, topLeft = Offset(-hw, -hh), size = Size(w, h), style = thin)
@@ -386,6 +409,23 @@ private fun DrawScope.drawCabinet(
     val hh = h / 2f
     val face = inch * 1.5f
     when {
+        name == PlanSymbols.UPPER_CORNER -> {
+            // Diagonal upper corner unit, dashed like the other uppers: 12"-deep arms along the
+            // back and left walls, the door across the 45-degree front-right face.
+            val dashed = Stroke(
+                width = line.width, cap = StrokeCap.Butt,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 3f, inch * 2f))
+            )
+            val d = inch * 12f
+            val outline = Path().apply {
+                moveTo(-hw, -hh); lineTo(hw, -hh); lineTo(hw, hh - d); lineTo(hw - d, hh); lineTo(-hw, hh); close()
+            }
+            drawPath(path = outline, color = accentColor, style = dashed)
+            // Inside corner of the two arms, and the door line just inside the diagonal face.
+            drawLine(color = accentColor.copy(alpha = 0.5f), start = Offset(hw - d, -hh + d), end = Offset(hw - d, hh), strokeWidth = thin.width)
+            drawLine(color = accentColor.copy(alpha = 0.5f), start = Offset(-hw, -hh + d), end = Offset(hw - d, -hh + d), strokeWidth = thin.width)
+            drawLine(color = accentColor, start = Offset(hw - face, hh - d + face * 0.4f), end = Offset(hw - d + face * 0.4f, hh - face), strokeWidth = thin.width)
+        }
         name.startsWith("Upper") -> {
             val dashed = Stroke(
                 width = line.width, cap = StrokeCap.Butt,

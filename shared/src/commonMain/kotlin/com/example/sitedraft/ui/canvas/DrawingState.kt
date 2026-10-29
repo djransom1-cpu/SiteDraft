@@ -24,7 +24,9 @@ import kotlin.math.roundToInt
 
 @Serializable
 enum class DrawingTool {
-    PEN, ERASER, LINE, RECTANGLE, CIRCLE, SELECT, SYMBOL, DIMENSION, TEXT, OVAL, TRIANGLE, OFFSET, MARKER, PENCIL, MOVE, MOVE_PRECISE, TRIM, EXTEND
+    PEN, ERASER, LINE, RECTANGLE, CIRCLE, SELECT, SYMBOL, DIMENSION, TEXT, OVAL, TRIANGLE, OFFSET, MARKER, PENCIL, MOVE, MOVE_PRECISE, TRIM, EXTEND,
+    // Hand tool: any pointer drags the view around; wheel/pinch still zoom.
+    PAN
 }
 
 @Serializable
@@ -398,12 +400,21 @@ data class CanvasState(
     // Where the pending placement would land right now (snapped), while the pen hovers or drags.
     @kotlinx.serialization.Transient
     @Serializable(with = OffsetSerializer::class)
-    val placementPreview: Offset? = null
+    val placementPreview: Offset? = null,
+    // The canvas's on-screen size (px), reported by DrawingCanvas, so the zoom buttons can zoom
+    // about the middle of the view and Fit can frame the drawing. Session state, never saved.
+    @kotlinx.serialization.Transient
+    @Serializable(with = SizeSerializer::class)
+    val viewportSize: Size = Size.Zero
 )
 
-fun DrawingElement.contains(offset: Offset, threshold: Float = 20f): Boolean {
-    // Basic implementation without full rotation support for now
-    // A robust implementation would use a transformation matrix or rotated Rect
+fun DrawingElement.contains(point: Offset, threshold: Float = 20f): Boolean {
+    // A rotated shape is tested in its own frame: the tap is turned back by the shape's
+    // rotation about the pivot the renderer turns it on. Testing the unrotated box (what this
+    // did before) meant a cabinet turned sideways against a wall could only be picked where
+    // its unrotated footprint happened to overlap its drawn one.
+    val pivot = rotationPivot() ?: Offset.Zero
+    val offset = if (rotation != 0f) rotateAbout(point, pivot, -rotation) else point
     return when (this) {
         is DrawingElement.Freehand -> {
             points.any { (it.offset - offset).getDistance() < threshold }
@@ -514,36 +525,78 @@ fun DrawingElement.boundingRect(): Rect {
     }
 }
 
-// Straight edges an element offers as a Trim/Extend boundary. Curved types (Circle, Oval) and
-// freeform/raster types (Freehand, Text, Image, Pdf, Dxf) aren't supported yet - trim/extend only
-// reason about straight-line intersections for now.
-fun DrawingElement.edgeSegments(): List<Pair<Offset, Offset>> = when (this) {
-    is DrawingElement.Line -> listOf(start to end)
-    is DrawingElement.Rectangle -> {
-        val tl = topLeft
-        val tr = topLeft + Offset(size.width, 0f)
-        val br = topLeft + Offset(size.width, size.height)
-        val bl = topLeft + Offset(0f, size.height)
-        listOf(tl to tr, tr to br, br to bl, bl to tl)
+/** [p] turned [degrees] clockwise about [pivot] (canvas y grows downwards). */
+fun rotateAbout(p: Offset, pivot: Offset, degrees: Float): Offset {
+    if (degrees == 0f) return p
+    val rad = com.example.sitedraft.util.toRadians(degrees.toDouble())
+    val c = kotlin.math.cos(rad).toFloat()
+    val s = kotlin.math.sin(rad).toFloat()
+    val d = p - pivot
+    return Offset(pivot.x + d.x * c - d.y * s, pivot.y + d.x * s + d.y * c)
+}
+
+/** The point a shape turns about when it has a rotation (what the renderer pivots on). */
+fun DrawingElement.rotationPivot(): Offset? = when (this) {
+    is DrawingElement.Rectangle -> topLeft + Offset(size.width / 2f, size.height / 2f)
+    is DrawingElement.Oval -> topLeft + Offset(size.width / 2f, size.height / 2f)
+    is DrawingElement.Triangle -> topLeft + Offset(size.width / 2f, size.height / 2f)
+    is DrawingElement.Symbol -> center
+    is DrawingElement.Circle -> center
+    is DrawingElement.Line -> start + (end - start) / 2f
+    else -> null
+}
+
+// Straight edges an element offers as a Trim/Extend boundary, where they are actually drawn
+// (a rotated rectangle or symbol gives its turned edges, so a wall at 90 degrees from the rotate
+// handle still stops what runs into it). Curved types (Circle, Oval) and freeform/raster types
+// (Freehand, Text, Image, Pdf, Dxf) aren't supported yet - trim/extend only reason about
+// straight-line intersections for now.
+fun DrawingElement.edgeSegments(): List<Pair<Offset, Offset>> {
+    val raw: List<Pair<Offset, Offset>> = when (this) {
+        is DrawingElement.Line -> listOf(start to end)
+        is DrawingElement.Rectangle -> {
+            val tl = topLeft
+            val tr = topLeft + Offset(size.width, 0f)
+            val br = topLeft + Offset(size.width, size.height)
+            val bl = topLeft + Offset(0f, size.height)
+            listOf(tl to tr, tr to br, br to bl, bl to tl)
+        }
+        is DrawingElement.Triangle -> {
+            val (p1, p2, p3) = getVertices()
+            listOf(p1 to p2, p2 to p3, p3 to p1)
+        }
+        is DrawingElement.Symbol -> {
+            val hw = size.width / 2f
+            val hh = size.height / 2f
+            val tl = center + Offset(-hw, -hh)
+            val tr = center + Offset(hw, -hh)
+            val br = center + Offset(hw, hh)
+            val bl = center + Offset(-hw, hh)
+            listOf(tl to tr, tr to br, br to bl, bl to tl)
+        }
+        is DrawingElement.Dimension -> {
+            val (dimStart, dimEnd) = dimLineEndpoints()
+            listOf(dimStart to dimEnd)
+        }
+        else -> emptyList()
     }
-    is DrawingElement.Triangle -> {
-        val (p1, p2, p3) = getVertices()
-        listOf(p1 to p2, p2 to p3, p3 to p1)
-    }
-    is DrawingElement.Symbol -> {
-        val hw = size.width / 2f
-        val hh = size.height / 2f
-        val tl = center + Offset(-hw, -hh)
-        val tr = center + Offset(hw, -hh)
-        val br = center + Offset(hw, hh)
-        val bl = center + Offset(-hw, hh)
-        listOf(tl to tr, tr to br, br to bl, bl to tl)
-    }
-    is DrawingElement.Dimension -> {
-        val (dimStart, dimEnd) = dimLineEndpoints()
-        listOf(dimStart to dimEnd)
-    }
-    else -> emptyList()
+    // Lines and dimensions already hold their turned points; shapes keep a rotation instead.
+    val pivot = if (this is DrawingElement.Line || this is DrawingElement.Dimension) null else rotationPivot()
+    if (rotation == 0f || pivot == null) return raw
+    return raw.map { (a, b) -> rotateAbout(a, pivot, rotation) to rotateAbout(b, pivot, rotation) }
+}
+
+/**
+ * A wall, window or sliding door that was turned to a right angle with the rotate handle (or the
+ * angle field) made axis-aligned again: its width and height swap for a quarter turn and its
+ * rotation goes back to 0, which is how the floor-plan tool, doors, trim/extend, elevations and
+ * snapping expect walls to be. Anything else, or any other angle, comes back unchanged.
+ */
+fun DrawingElement.squaredUp(): DrawingElement {
+    if (this !is DrawingElement.Symbol || rotation == 0f || !PlanSymbols.turnsBySwappingSize(this)) return this
+    val quarterTurns = kotlin.math.round(rotation / 90f).toInt()
+    if (abs(rotation - quarterTurns * 90f) > 0.5f) return this
+    return copy(rotation = 0f, size = if (quarterTurns % 2 != 0) Size(size.height, size.width) else size)
 }
 
 fun DrawingElement.move(delta: Offset): DrawingElement {

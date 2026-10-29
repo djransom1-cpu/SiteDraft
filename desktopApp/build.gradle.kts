@@ -22,7 +22,19 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
             )
             packageName = "SiteDraft"
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
+            description = "Construction drafting: floor plans, elevations, laser-measured walls"
+            vendor = "SiteDraft"
+            windows {
+                // Without these the MSI installs silently to C:\Program Files\SiteDraft and
+                // nothing shows up in the Start Menu or on the desktop - the app looked
+                // "not installed" on the laptop.
+                menu = true
+                menuGroup = "SiteDraft"
+                shortcut = true
+                dirChooser = true
+                upgradeUuid = "8c0a0e6e-2a0f-4f5a-9b7a-5e1b7d1c0a11"
+            }
         }
     }
 }

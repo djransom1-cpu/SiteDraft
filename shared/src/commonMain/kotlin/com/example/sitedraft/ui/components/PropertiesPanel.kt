@@ -721,12 +721,14 @@ private fun ColorButton(color: Color, isSelected: Boolean, onClick: () -> Unit) 
 
 @Composable
 private fun FeetInchesProperty(label: String, valueInFeet: Float, onUpdate: (Float) -> Unit) {
-    // Round to hundredths of an inch BEFORE splitting - see splitFeetInches.
-    val (initialFeet, initialInches) = splitFeetInches(valueInFeet, 0.01f)
-    
+    // Round to the nearest 1/16" BEFORE splitting - see splitFeetInches. Inches are shown and
+    // typed as fractions ("6 1/2"), the way they are read off a tape; decimals still parse.
+    val (initialFeet, initialInches) = splitFeetInches(valueInFeet, 1f / INCH_DENOMINATOR)
+
     var feetText by remember(valueInFeet) { mutableStateOf(initialFeet.toString()) }
-    var inchesText by remember(valueInFeet) { mutableStateOf("%.2f".format(initialInches)) }
-    
+    var inchesText by remember(valueInFeet) { mutableStateOf(formatInches(initialInches)) }
+    val inchesValid = inchesText.isBlank() || parseInches(inchesText) != null
+
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(text = label, style = MaterialTheme.typography.labelLarge)
         Row(
@@ -746,11 +748,13 @@ private fun FeetInchesProperty(label: String, valueInFeet: Float, onUpdate: (Flo
                 onValueChange = { inchesText = it },
                 modifier = Modifier.weight(1f),
                 label = { Text("In") },
+                placeholder = { Text("6 1/2") },
+                isError = !inchesValid,
                 singleLine = true
             )
             TextButton(onClick = {
                 val f = feetText.toFloatOrNull() ?: 0f
-                val i = inchesText.toFloatOrNull() ?: 0f
+                val i = parseInches(inchesText) ?: 0f
                 onUpdate(f + (i / 12f))
             }) {
                 Text("Set")

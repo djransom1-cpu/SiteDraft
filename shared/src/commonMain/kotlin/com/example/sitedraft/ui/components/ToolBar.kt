@@ -59,6 +59,15 @@ fun ToolBar(
                 onClick = { onEvent(DrawingEvent.SelectTool(DrawingTool.SELECT)) }
             )
 
+            // Hand: drag the view with anything (pen, finger, mouse). Two fingers, the mouse
+            // wheel and the middle mouse button zoom/pan regardless of the tool.
+            ToolItem(
+                icon = Icons.Rounded.PanTool,
+                label = "Pan",
+                isSelected = selectedTool == DrawingTool.PAN,
+                onClick = { onEvent(DrawingEvent.SelectTool(DrawingTool.PAN)) }
+            )
+
             ToolGroupDropdown(
                 tools = remember {
                     listOf(

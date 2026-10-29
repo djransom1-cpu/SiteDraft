@@ -28,9 +28,14 @@ sealed class Placement {
 
     /**
      * A room by INSIDE dimensions in document units; the tap is its top-left inside corner, so
-     * it can be snapped to the inside corner of the building or of another room.
+     * it can be snapped to the inside corner of the building or of another room. With [outside]
+     * set the width and depth are OUTSIDE (wall-to-wall) dimensions and the tap is the top-left
+     * outside corner, the way a framer lays out from the building outline.
      */
-    data class Room(val name: String, val width: Float, val depth: Float, val wallName: String, override val label: String) : Placement()
+    data class Room(
+        val name: String, val width: Float, val depth: Float, val wallName: String, override val label: String,
+        val outside: Boolean = false
+    ) : Placement()
 
     /** An elevation of a plan wall; the tap is the bottom-left corner of its floor line. */
     data class Elevation(val spec: ElevationSpec, override val label: String) : Placement()
@@ -55,9 +60,25 @@ object FloorPlan {
         "Garage" to Pair(22f, 22f)
     )
 
-    /** The outline of a wall symbol (walls are never rotated by this tool). */
-    fun bounds(wall: DrawingElement.Symbol): Rect =
-        Rect(wall.center - Offset(wall.size.width / 2f, wall.size.height / 2f), wall.size)
+    /**
+     * The axis-aligned footprint of a symbol AS DRAWN: a quarter-turned cabinet (set against a
+     * side wall) swaps its width and depth, any other angle gives the box around its turned
+     * corners. Ignoring the rotation (what this did before) made the elevation tool skip a
+     * turned 36" base cabinet as "not against the wall" and draw a turned upper half as wide.
+     * Walls themselves are never rotated by this tool.
+     */
+    fun bounds(symbol: DrawingElement.Symbol): Rect {
+        val half = Offset(symbol.size.width / 2f, symbol.size.height / 2f)
+        if (symbol.rotation == 0f) return Rect(symbol.center - half, symbol.size)
+        val quarterTurns = kotlin.math.round(symbol.rotation / 90f).toInt()
+        if (abs(symbol.rotation - quarterTurns * 90f) < 0.01f) {
+            val size = if (quarterTurns % 2 != 0) Size(symbol.size.height, symbol.size.width) else symbol.size
+            return Rect(symbol.center - Offset(size.width / 2f, size.height / 2f), size)
+        }
+        val corners = listOf(Offset(-half.x, -half.y), Offset(half.x, -half.y), Offset(half.x, half.y), Offset(-half.x, half.y))
+            .map { rotateAbout(symbol.center + it, symbol.center, symbol.rotation) }
+        return Rect(corners.minOf { it.x }, corners.minOf { it.y }, corners.maxOf { it.x }, corners.maxOf { it.y })
+    }
 
     /**
      * The four walls around a rectangle whose OUTSIDE is [outer], each [thickness] thick. A side
@@ -164,6 +185,22 @@ object FloorPlan {
         return insideCorner + Offset(dx, dy)
     }
 
+    /**
+     * The INSIDE rectangle of [room] placed with a tap at [point] (its top-left inside corner,
+     * or top-left outside corner for an outside-dimensioned room), after the magnet has pulled it
+     * onto any wall it nearly touches. [t] is the wall thickness in px. Shared by placement and
+     * the ghost preview so they always agree.
+     */
+    fun roomInside(room: Placement.Room, point: Offset, t: Float, state: CanvasState): Rect {
+        val ratio = state.scale.ratio
+        // Outside dimensions: step in by one wall on each side to get the inside size and corner.
+        val w = if (room.outside) room.width * ratio - 2f * t else room.width * ratio
+        val d = if (room.outside) room.depth * ratio - 2f * t else room.depth * ratio
+        val insideCorner = if (room.outside) point + Offset(t, t) else point
+        val corner = magnetRoomCorner(insideCorner, w, d, state.elements.filterIsInstance<DrawingElement.Symbol>(), state.inchesToPx(ROOM_MAGNET_IN))
+        return Rect(corner, Size(max(w, 1f), max(d, 1f)))
+    }
+
     /** Where a door or window goes once it is matched to the wall it was tapped on. */
     data class OpeningPlacement(val center: Offset, val rotation: Float, val size: Size?)
 
@@ -227,10 +264,7 @@ object FloorPlan {
             }
             is Placement.Room -> {
                 val t = state.inchesToPx(PlanSymbols.footprintInches[placement.wallName]?.second ?: 4.5f)
-                val w = placement.width * ratio
-                val d = placement.depth * ratio
-                val corner = magnetRoomCorner(point, w, d, state.elements.filterIsInstance<DrawingElement.Symbol>(), state.inchesToPx(ROOM_MAGNET_IN))
-                val inside = Rect(corner, Size(w, d))
+                val inside = roomInside(placement, point, t, state)
                 listOf(inside.inflate(t), inside)
             }
             is Placement.Elevation -> {
@@ -247,9 +281,9 @@ object FloorPlan {
         return if (unitSystem == UnitSystem.IMPERIAL) "${n(width)}' x ${n(depth)}'" else "${n(width)} x ${n(depth)} m"
     }
 
-    /** The room's name and size, centred in its inside area. */
+    /** The room's name and INSIDE size (what a room label means, whichever way it was entered), centred in its inside area. */
     fun roomLabel(room: Placement.Room, inside: Rect, state: CanvasState): DrawingElement.Text {
-        val dims = formatDims(room.width, room.depth, state.unitSystem)
+        val dims = formatDims(inside.width / state.scale.ratio, inside.height / state.scale.ratio, state.unitSystem)
         val text = if (room.name.isBlank()) dims else "${room.name}\n$dims"
         val fontSize = state.inchesToPx(6f).coerceIn(10f, 36f)
         val longest = text.lines().maxOf { it.length }
@@ -266,6 +300,6 @@ object FloorPlan {
     fun shellLabel(width: Float, depth: Float, unitSystem: UnitSystem) =
         "${formatDims(width, depth, unitSystem)} outline"
 
-    fun roomPlacementLabel(name: String, width: Float, depth: Float, unitSystem: UnitSystem) =
-        "${formatDims(width, depth, unitSystem)} ${name.ifBlank { "room" }}"
+    fun roomPlacementLabel(name: String, width: Float, depth: Float, unitSystem: UnitSystem, outside: Boolean = false) =
+        "${formatDims(width, depth, unitSystem)} ${name.ifBlank { "room" }}${if (outside) " (outside)" else ""}"
 }

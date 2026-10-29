@@ -52,6 +52,23 @@ class ElevationTest {
     }
 
     @Test
+    fun `cabinets turned against a side wall keep their real width in the elevation`() {
+        // A vertical wall at x = 0, viewed from the right; a Base 36" turned -90 so its back
+        // (now its left side) sits on the wall's right face, and an Upper 24" turned the same way.
+        val wall = sym("2x4 Wall", PlanSymbols.WALLS, 0f, 500f, t, 1000f)
+        val face = t / 2f
+        val base = sym("Base 36\"", PlanSymbols.CABINETS, face + 12f * inch, 300f, 36f * inch, 24f * inch).copy(rotation = -90f)
+        val upper = sym("Upper 24\"", PlanSymbols.CABINETS, face + 6f * inch, 600f, 24f * inch, 12f * inch).copy(rotation = -90f)
+        val state = CanvasState(elements = listOf(wall, base, upper))
+        val items = Elevation.itemsOnWall(wall, ViewerSide.RIGHT, state)
+        assertEquals(listOf("Upper 24\"", "Base 36\""), items.map { it.symbol.symbolName })
+        assertEquals(24f * inch, items[0].to - items[0].from, 0.01f)
+        assertEquals(36f * inch, items[1].to - items[1].from, 0.01f)
+        // Measured from the wall's bottom end (the viewer's left): the base is centred 300 px from the top.
+        assertEquals(1000f - 300f - 18f * inch, items[1].from, 0.01f)
+    }
+
+    @Test
     fun `viewed from the other side the run is mirrored`() {
         val (wall, state) = kitchen()
         val window = Elevation.itemsOnWall(wall, ViewerSide.ABOVE, state).single()

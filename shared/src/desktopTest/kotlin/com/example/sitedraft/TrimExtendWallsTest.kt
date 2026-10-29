@@ -38,7 +38,7 @@ class TrimExtendWallsTest {
 
     @Test
     fun `extend stretches a wall end until it meets the face of the next wall`() {
-        val vm = DrawingManager()
+        val vm = DrawingManager().also { it.onEvent(DrawingEvent.ToggleSnap(false)) }
         val a = horizontalWall(vm, cx = 250f, cy = 0f, feet = 4f)   // x 150..350
         verticalWall(vm, cx = 800f, cy = 0f, feet = 10f)            // faces at x = 800 -+ t/2
         vm.onEvent(DrawingEvent.SelectTool(DrawingTool.EXTEND))
@@ -52,8 +52,55 @@ class TrimExtendWallsTest {
     }
 
     @Test
+    fun `extend into the end of another wall closes the outside corner`() {
+        val vm = DrawingManager().also { it.onEvent(DrawingEvent.ToggleSnap(false)) }
+        val a = horizontalWall(vm, cx = 250f, cy = 0f, feet = 4f)   // x 150..350, faces y = -+ t/2
+        // B comes up from below and stops a little short of A's centre line: a corner, not a T.
+        val b = verticalWall(vm, cx = 800f, cy = 250f + t / 4f, feet = 10f) // y from ~ -0.25t/... to 500
+        val bTop = FloorPlan.bounds(b).top
+        assert(bTop > -t / 2f && bTop < t / 2f) { "B's end must start inside A's thickness band: $bTop" }
+        vm.onEvent(DrawingEvent.SelectTool(DrawingTool.EXTEND))
+        vm.onEvent(DrawingEvent.Start(Offset(345f, 0f)))            // near A's right end
+        val a2 = FloorPlan.bounds(walls(vm).first { it.id == a.id })
+        val b2 = FloorPlan.bounds(walls(vm).first { it.id == b.id })
+        // A runs on to B's far face; B's top is pulled up to A's outer face: outside corner closed.
+        assertEquals(800f + t / 2f, a2.right, 0.01f)
+        assertEquals(-t / 2f, b2.top, 0.01f)
+        assertEquals(FloorPlan.bounds(b).bottom, b2.bottom, 0.01f)
+    }
+
+    @Test
+    fun `extend into the middle of another wall still stops at its near face`() {
+        val vm = DrawingManager().also { it.onEvent(DrawingEvent.ToggleSnap(false)) }
+        val a = horizontalWall(vm, cx = 250f, cy = 0f, feet = 4f)
+        verticalWall(vm, cx = 800f, cy = 0f, feet = 10f)            // y -250..250: a T, not a corner
+        vm.onEvent(DrawingEvent.SelectTool(DrawingTool.EXTEND))
+        vm.onEvent(DrawingEvent.Start(Offset(345f, 0f)))
+        assertEquals(800f - t / 2f, FloorPlan.bounds(walls(vm).first { it.id == a.id }).right, 0.01f)
+    }
+
+    @Test
+    fun `a wall turned to 90 degrees squares up and can be trimmed`() {
+        val vm = DrawingManager().also { it.onEvent(DrawingEvent.ToggleSnap(false)) }
+        val a = horizontalWall(vm, cx = 500f, cy = 0f, feet = 20f)  // x 0..1000
+        // A 12' wall turned upright with the angle field (what the rotate handle also does).
+        val b = horizontalWall(vm, cx = 500f, cy = 0f, feet = 12f)
+        vm.onEvent(DrawingEvent.UpdateElementProperty(b.id, "rotation", "90"))
+        val b2 = walls(vm).first { it.id == b.id }
+        assertEquals(0f, b2.rotation, 0.001f)
+        assertEquals(t, b2.size.width, 0.01f)
+        assertEquals(600f, b2.size.height, 0.01f)
+        vm.onEvent(DrawingEvent.SelectTool(DrawingTool.TRIM))
+        vm.onEvent(DrawingEvent.Start(Offset(700f, 0f)))
+        val pieces = walls(vm).filter { FloorPlan.bounds(it).height < FloorPlan.bounds(it).width }
+        assertEquals(1, pieces.size)
+        assertEquals(500f + t / 2f, FloorPlan.bounds(pieces.single()).right, 0.01f)
+        assert(pieces.single().id == a.id)
+    }
+
+    @Test
     fun `trim cuts a wall back to the face of the wall crossing it`() {
-        val vm = DrawingManager()
+        val vm = DrawingManager().also { it.onEvent(DrawingEvent.ToggleSnap(false)) }
         val a = horizontalWall(vm, cx = 500f, cy = 0f, feet = 20f)  // x 0..1000
         verticalWall(vm, cx = 500f, cy = 0f, feet = 12f)            // crosses A at x = 500
         vm.onEvent(DrawingEvent.SelectTool(DrawingTool.TRIM))
@@ -67,7 +114,7 @@ class TrimExtendWallsTest {
 
     @Test
     fun `trim removes the piece between two crossing walls and leaves two walls`() {
-        val vm = DrawingManager()
+        val vm = DrawingManager().also { it.onEvent(DrawingEvent.ToggleSnap(false)) }
         horizontalWall(vm, cx = 500f, cy = 0f, feet = 20f)          // x 0..1000
         verticalWall(vm, cx = 300f, cy = 0f, feet = 12f)
         verticalWall(vm, cx = 700f, cy = 0f, feet = 12f)

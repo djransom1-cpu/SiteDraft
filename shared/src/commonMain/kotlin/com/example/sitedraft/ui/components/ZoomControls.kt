@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.FitScreen
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.*
@@ -77,6 +78,17 @@ fun ZoomControls(
                     .padding(horizontal = 4.dp),
                 color = MaterialTheme.colorScheme.outlineVariant
             )
+
+            // Fit the whole drawing in the view
+            IconButton(
+                onClick = { onEvent(DrawingEvent.ZoomToFit) },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.FitScreen,
+                    contentDescription = "Fit Drawing"
+                )
+            }
 
             // Reset Zoom
             IconButton(

@@ -98,6 +98,28 @@ class FloorPlanTest {
     }
 
     @Test
+    fun `a room by outside dimensions is placed from its outside corner and labelled inside`() {
+        val vm = DrawingManager()
+        vm.onEvent(DrawingEvent.ToggleSnap(false))
+        val ratio = vm.state.value.scale.ratio
+        val t = 4.5f / 12f * ratio
+        vm.onEvent(DrawingEvent.StartPlacement(Placement.Room("Bath", 10f, 8f, "2x4 Wall", "Bath", outside = true)))
+        vm.onEvent(DrawingEvent.PlaceAt(Offset(100f, 100f)))
+        val walls = vm.state.value.elements.filterIsInstance<DrawingElement.Symbol>().map { FloorPlan.bounds(it) }
+        assertEquals(4, walls.size)
+        val outer = walls.reduce { acc, r -> Rect(minOf(acc.left, r.left), minOf(acc.top, r.top), maxOf(acc.right, r.right), maxOf(acc.bottom, r.bottom)) }
+        // Outside is exactly what was typed, from the tapped corner.
+        assertEquals(100f, outer.left, 0.01f)
+        assertEquals(100f, outer.top, 0.01f)
+        assertEquals(10f * ratio, outer.width, 0.01f)
+        assertEquals(8f * ratio, outer.height, 0.01f)
+        // The label gives the clear inside size: 10' - 9" and 8' - 9".
+        val label = vm.state.value.elements.filterIsInstance<DrawingElement.Text>().single()
+        assertEquals("Bath\n9.25' x 7.25'", label.text)
+        assertEquals(t, walls.first().height.coerceAtMost(walls.first().width), 0.01f)
+    }
+
+    @Test
     fun `dimension labels`() {
         assertEquals("12' x 12'", FloorPlan.formatDims(12f, 12f, UnitSystem.IMPERIAL))
         assertEquals("12' x 3.5'", FloorPlan.formatDims(12f, 3.5f, UnitSystem.IMPERIAL))
@@ -115,6 +137,22 @@ class FloorPlanEditingTest {
 
     private fun stateWith(vararg walls: DrawingElement.Symbol) =
         com.example.sitedraft.ui.canvas.CanvasState(elements = walls.toList())
+
+    @Test
+    fun `a cased opening tapped on a wall sits in the wall and takes its thickness`() {
+        val t = 4.5f * inch
+        val state = stateWith(wall(cx = 500f, cy = 300f, w = 1000f, h = t))
+        val tap = Offset(400f, 305f)
+        val p = FloorPlan.alignOpening("Opening 3'-0\"", tap, tap, state)!!
+        assertEquals(400f, p.center.x, 0.01f)
+        assertEquals(300f, p.center.y, 0.01f)
+        assertEquals(androidx.compose.ui.geometry.Size(36f * inch, t), p.size)
+        // And it shows in an elevation of that wall as an opening, not a door.
+        val opening = DrawingElement.Symbol(symbolName = "Opening 3'-0\"", category = PlanSymbols.DOORS_WINDOWS, center = p.center, size = p.size!!, color = Color.White)
+        val wall = state.elements.first() as DrawingElement.Symbol
+        val items = com.example.sitedraft.ui.canvas.Elevation.itemsOnWall(wall, com.example.sitedraft.ui.canvas.ViewerSide.BELOW, state.copy(elements = listOf(wall, opening)))
+        assertEquals(listOf(com.example.sitedraft.ui.canvas.Elevation.Kind.OPENING), items.map { it.kind })
+    }
 
     @Test
     fun `a door tapped on a horizontal wall sits with its threshold on the wall centre line`() {
