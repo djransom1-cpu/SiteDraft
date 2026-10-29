@@ -7,6 +7,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -25,7 +26,14 @@ fun main() = application {
         title = "SiteDraft",
         // Title bar / taskbar icon (the installer's own icon comes from build.gradle.kts).
         icon = painterResource("icon.png"),
-        state = rememberWindowState(position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center), size = DpSize(1400.dp, 900.dp))
+        // Open maximized: a fixed 1400x900 window was taller than a laptop screen at 125-150%
+        // display scaling, so the title bar (close, minimize, maximize) sat above the top edge
+        // and could not be reached. The restore size fits a 1366x768 laptop at 125%.
+        state = rememberWindowState(
+            placement = WindowPlacement.Maximized,
+            position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center),
+            size = DpSize(1000.dp, 560.dp)
+        )
     ) {
         CompositionLocalProvider(LocalPlatform provides platform) {
             SiteDraftTheme {
