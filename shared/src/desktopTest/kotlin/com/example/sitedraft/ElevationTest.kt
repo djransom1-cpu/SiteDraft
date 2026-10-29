@@ -88,6 +88,33 @@ class ElevationTest {
     }
 
     @Test
+    fun `a window carries its own sill and height into the elevation`() {
+        val vm = DrawingManager().also { it.onEvent(DrawingEvent.ToggleSnap(false)) }
+        vm.onEvent(DrawingEvent.SelectSymbol("2x4 Wall", PlanSymbols.WALLS))
+        vm.onEvent(DrawingEvent.PlaceAt(Offset(500f, 0f)))
+        val placedWall = vm.state.value.elements.last() as DrawingElement.Symbol
+        vm.onEvent(DrawingEvent.UpdateElementProperty(placedWall.id, "width", "20"))
+        vm.onEvent(DrawingEvent.SelectSymbol("Window 4'-0\"", PlanSymbols.DOORS_WINDOWS))
+        vm.onEvent(DrawingEvent.PlaceAt(Offset(500f, 0f)))
+        val window = vm.state.value.elements.last() as DrawingElement.Symbol
+        // Placed with the defaults, then given a 30" sill and 60" height typed as fractions.
+        assertEquals(36f, window.properties[PlanSymbols.PROP_SILL_IN])
+        assertEquals(48f, window.properties[PlanSymbols.PROP_HEIGHT_IN])
+        vm.onEvent(DrawingEvent.UpdateElementProperty(window.id, PlanSymbols.PROP_SILL_IN, "30"))
+        vm.onEvent(DrawingEvent.UpdateElementProperty(window.id, PlanSymbols.PROP_HEIGHT_IN, "60 1/2"))
+        val state = vm.state.value
+        val w2 = state.elements.first { it.id == window.id } as DrawingElement.Symbol
+        assertEquals(60.5f, w2.properties[PlanSymbols.PROP_HEIGHT_IN]!!, 0.001f)
+        val wallNow = state.elements.first { it.id == placedWall.id } as DrawingElement.Symbol
+        val rects = Elevation.build(wallNow, ElevationSpec(wallNow.id, ViewerSide.BELOW), Offset(0f, 2000f), state)
+            .filterIsInstance<DrawingElement.Rectangle>()
+        // The window rectangle spans 30" to 90 1/2" above the floor line.
+        val windowRect = rects.first { kotlin.math.abs(it.size.width - 48f * inch) < 0.01f && it.strokeWidth == 2f }
+        assertEquals(60.5f * inch, windowRect.size.height, 0.01f)
+        assertEquals(2000f - 90.5f * inch, windowRect.topLeft.y, 0.01f)
+    }
+
+    @Test
     fun `viewed from the other side the run is mirrored`() {
         val (wall, state) = kitchen()
         val window = Elevation.itemsOnWall(wall, ViewerSide.ABOVE, state).single()

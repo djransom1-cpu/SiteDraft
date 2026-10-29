@@ -196,6 +196,10 @@ object PlanSymbols {
     /** A cased opening (doorway without a door). */
     fun isOpening(name: String) = name.startsWith("Opening ")
 
+    /** Per-opening heights kept in [DrawingElement.Symbol.properties], in inches. */
+    const val PROP_SILL_IN = "openingSillIn"
+    const val PROP_HEIGHT_IN = "openingHeightIn"
+
     /**
      * Symbols whose renderer draws them vertically when taller than wide (walls, windows,
      * sliding doors). A right-angle turn swaps their width and height instead of setting a

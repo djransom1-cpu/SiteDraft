@@ -482,6 +482,20 @@ fun PropertiesPanel(
                                     onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "height", it))
                                 }
                             }
+                            // Doors and windows: their own heights, in inches, used by elevations.
+                            if (selectedElement.category == PlanSymbols.DOORS_WINDOWS) {
+                                val isWindow = PlanSymbols.isWindow(selectedElement.symbolName)
+                                if (isWindow) {
+                                    val sill = selectedElement.properties[PlanSymbols.PROP_SILL_IN] ?: 36f
+                                    EditableProperty("Sill height (in)", formatInches(sill)) {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_SILL_IN, it))
+                                    }
+                                }
+                                val h = selectedElement.properties[PlanSymbols.PROP_HEIGHT_IN] ?: (if (isWindow) 48f else 80f)
+                                EditableProperty(if (isWindow) "Window height (in)" else "Opening height (in)", formatInches(h)) {
+                                    onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_HEIGHT_IN, it))
+                                }
+                            }
                         }
                     }
                     is DrawingElement.ElevationView -> {

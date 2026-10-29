@@ -2223,6 +2223,15 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
             category in PlanSymbols.categories -> {
                 val (wIn, dIn) = PlanSymbols.footprintInches[name] ?: Pair(24f, 24f)
                 properties = mapOf("widthInches" to wIn, "depthInches" to dIn)
+                // Doors and windows carry their own heights (and a window its sill), editable
+                // in Properties; elevations read these instead of the wall-wide defaults.
+                if (category == PlanSymbols.DOORS_WINDOWS) {
+                    properties = properties + if (PlanSymbols.isWindow(name)) {
+                        mapOf(PlanSymbols.PROP_SILL_IN to 36f, PlanSymbols.PROP_HEIGHT_IN to 48f)
+                    } else {
+                        mapOf(PlanSymbols.PROP_HEIGHT_IN to 80f)
+                    }
+                }
                 Size(_state.value.inchesToPx(wIn), _state.value.inchesToPx(dIn))
             }
             category == "Lumber" -> {
@@ -2366,6 +2375,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
                                 else -> spec.copy(doorHeightIn = v)
                             }
                             element.copy(spec = newSpec, size = Size(element.size.width, _state.value.inchesToPx(newSpec.wallHeightIn)))
+                        }
+                        // A door's or window's own height / a window's sill, in inches ("6 1/2" welcome).
+                        PlanSymbols.PROP_SILL_IN, PlanSymbols.PROP_HEIGHT_IN -> {
+                            val v = parseInches(value) ?: return@map element
+                            if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
                         }
                         "viewerSide" -> {
                             if (element is DrawingElement.ElevationView) {

@@ -192,28 +192,34 @@ object Elevation {
                     line(from, 0f, to, spec.wallHeightIn)
                     line(from, spec.wallHeightIn, to, 0f)
                 }
+                // Each door or window can carry its own height (and a window its sill) in its
+                // properties; the elevation's wall-wide numbers are only the fallback.
                 Kind.OPENING -> when {
                     PlanSymbols.isWindow(name) -> {
-                        val top = spec.sillIn + spec.windowHeightIn
-                        rect(from, to, spec.sillIn, top, medium)
-                        line(xc, spec.sillIn, xc, top)
-                        line(from, (spec.sillIn + top) / 2f, to, (spec.sillIn + top) / 2f)
-                        rect(from - inch, to + inch, spec.sillIn - 1.5f, spec.sillIn, light) // sill
+                        val sill = item.symbol.properties[PlanSymbols.PROP_SILL_IN] ?: spec.sillIn
+                        val top = sill + (item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.windowHeightIn)
+                        rect(from, to, sill, top, medium)
+                        line(xc, sill, xc, top)
+                        line(from, (sill + top) / 2f, to, (sill + top) / 2f)
+                        rect(from - inch, to + inch, sill - 1.5f, sill, light) // sill
                     }
                     PlanSymbols.isOpening(name) -> {
                         // Cased opening: the hole with its casing, nothing hung in it.
-                        rect(from, to, 0f, spec.doorHeightIn, medium)
-                        rect(from - 2f * inch, to + 2f * inch, 0f, spec.doorHeightIn + 2f, light)
+                        val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
+                        rect(from, to, 0f, doorH, medium)
+                        rect(from - 2f * inch, to + 2f * inch, 0f, doorH + 2f, light)
                     }
                     PlanSymbols.isSlidingDoor(name) -> {
-                        rect(from, to, 0f, spec.doorHeightIn, medium)
-                        line(xc, 0f, xc, spec.doorHeightIn)
+                        val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
+                        rect(from, to, 0f, doorH, medium)
+                        line(xc, 0f, xc, doorH)
                         line(xc - 2f * inch, 30f, xc - 2f * inch, 42f)
                         line(xc + 2f * inch, 30f, xc + 2f * inch, 42f)
                     }
                     else -> {
-                        rect(from, to, 0f, spec.doorHeightIn, medium)
-                        rect(from + 3f * inch, to - 3f * inch, 8f, spec.doorHeightIn - 8f, light)
+                        val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
+                        rect(from, to, 0f, doorH, medium)
+                        rect(from + 3f * inch, to - 3f * inch, 8f, doorH - 8f, light)
                         circle(to - 3f * inch, 36f, 1f)
                     }
                 }
