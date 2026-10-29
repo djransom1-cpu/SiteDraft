@@ -60,8 +60,13 @@ object PlanSymbols {
     val cabinets = listOf(
         "Base 12\"", "Base 18\"", "Base 24\"", "Base 30\"", "Base 36\"", "Corner Base 36\"",
         "Upper 12\"", "Upper 18\"", "Upper 24\"", "Upper 30\"", "Upper 36\"", UPPER_CORNER,
-        "Pantry 24\"", "Island 3'x6'"
+        "Pantry 24\"", "Island 3'x6'",
+        // Fillers close the gap between a run and a wall or appliance.
+        "Filler 1 1/2\"", "Filler 3\"", "Filler 6\"", "Upper Filler 3\"", "Upper Filler 6\""
     )
+
+    /** Filler strips, base (24" deep) or upper (12" deep, drawn dashed like the other uppers). */
+    fun isFiller(name: String) = name.contains("Filler")
 
     /** Diagonal upper corner cabinet: 24" along each wall, 12"-deep arms, door across the corner. */
     const val UPPER_CORNER = "Upper Corner 24\""
@@ -129,6 +134,11 @@ object PlanSymbols {
         UPPER_CORNER to Pair(24f, 24f),
         "Pantry 24\"" to Pair(24f, 24f),
         "Island 3'x6'" to Pair(72f, 36f),
+        "Filler 1 1/2\"" to Pair(1.5f, 24f),
+        "Filler 3\"" to Pair(3f, 24f),
+        "Filler 6\"" to Pair(6f, 24f),
+        "Upper Filler 3\"" to Pair(3f, 12f),
+        "Upper Filler 6\"" to Pair(6f, 12f),
         // Closet parts.
         "Shelf & Rod 36\"" to Pair(36f, 12f),
         "Shelf & Rod 48\"" to Pair(48f, 12f),
@@ -462,6 +472,16 @@ private fun DrawScope.drawCabinet(
     val hh = h / 2f
     val face = inch * 1.5f
     when {
+        PlanSymbols.isFiller(name) -> {
+            // A plain strip with a diagonal through it; upper fillers dashed like the uppers.
+            val upper = name.startsWith("Upper")
+            val style = if (upper) Stroke(
+                width = line.width, cap = StrokeCap.Butt,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 3f, inch * 2f))
+            ) else line
+            drawRect(color = if (upper) accentColor else lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = style)
+            drawLine(color = faint, start = Offset(-hw, hh), end = Offset(hw, -hh), strokeWidth = thin.width)
+        }
         name == PlanSymbols.UPPER_CORNER -> {
             // Diagonal upper corner unit, dashed like the other uppers: 12"-deep arms along the
             // back and left walls, the door across the 45-degree front-right face.

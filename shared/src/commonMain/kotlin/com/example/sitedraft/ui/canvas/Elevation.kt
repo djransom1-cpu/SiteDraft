@@ -218,6 +218,16 @@ object Elevation {
                     }
                 }
                 Kind.FIXTURE -> when {
+                    PlanSymbols.isFiller(name) -> {
+                        // A blank strip at base or upper height, no door.
+                        if (name.startsWith("Upper")) {
+                            rect(from, to, spec.upperBottomIn, spec.upperBottomIn + spec.upperHeightIn)
+                        } else {
+                            rect(from, to, 0f, counterTop - 1.5f)
+                            line(from, 4f, to, 4f) // toe kick
+                            counterRuns += Pair(from, to)
+                        }
+                    }
                     name.startsWith("Base") || name.startsWith("Corner Base") -> {
                         rect(from, to, 0f, counterTop - 1.5f)
                         line(from, 4f, to, 4f) // toe kick
