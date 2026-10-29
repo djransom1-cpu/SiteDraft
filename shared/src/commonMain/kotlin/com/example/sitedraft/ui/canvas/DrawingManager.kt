@@ -5,7 +5,10 @@ import com.example.sitedraft.platform.randomId
 import androidx.compose.runtime.State
 import androidx.compose.ui.graphics.ImageBitmap
 import com.example.sitedraft.platform.NoopPlatform
+import com.example.sitedraft.platform.PageSpec
 import com.example.sitedraft.platform.Platform
+import com.example.sitedraft.platform.todayDateText
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.example.sitedraft.platform.ioDispatcher
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
@@ -186,7 +189,8 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
             is DrawingEvent.SaveProject -> saveNow()
             is DrawingEvent.LoadProject -> loadProject()
             is DrawingEvent.RefreshProjectList -> refreshProjectList()
-            is DrawingEvent.ExportPdf -> exportToPdf(event.density)
+            is DrawingEvent.ExportPdf -> exportToPdf(event.settings, event.density)
+            is DrawingEvent.Print -> printPage(event.settings, event.density)
             is DrawingEvent.ExportDxf -> exportToDxf()
             is DrawingEvent.OffsetSelectedElement -> {
                 offsetSelectedElement(event.distance, event.direction)
@@ -2598,75 +2602,61 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
         }
     }
 
-    private fun exportToPdf(density: Float) {
-        val elements = _state.value.elements
-
-        // Page orientation follows the drawing, and the drawing is fit to the page with a
-        // margin. The old export used a fixed 1080x1920 page and copied canvas coordinates
-        // straight onto it, so anything drawn after panning away from the origin, or larger
-        // than one phone screen, simply fell off the page.
-        val bounds = elements.map { it.boundingRect() }
-            .reduceOrNull { acc, r ->
-                Rect(minOf(acc.left, r.left), minOf(acc.top, r.top), maxOf(acc.right, r.right), maxOf(acc.bottom, r.bottom))
-            }
-        val landscape = bounds != null && bounds.width > bounds.height
-        val pageWidth = if (landscape) 1920 else 1080
-        val pageHeight = if (landscape) 1080 else 1920
-        val margin = 60f
-
-        // Fit transform, expressed as the same pan/zoom pair the on-screen canvas uses. Never
-        // scale UP: a drawing smaller than the page keeps its on-screen size so the project's
-        // "1' = N px" scale survives into the PDF; larger drawings shrink to fit.
-        var exportScale = 1f
-        var exportPan = Offset.Zero
-        if (bounds != null) {
-            val fitScale = minOf(
-                (pageWidth - 2f * margin) / maxOf(bounds.width, 1f),
-                (pageHeight - 2f * margin) / maxOf(bounds.height, 1f)
-            )
-            exportScale = minOf(1f, fitScale)
-            val offsetX = (pageWidth - bounds.width * exportScale) / 2f
-            val offsetY = (pageHeight - bounds.height * exportScale) / 2f
-            exportPan = Offset(offsetX - bounds.left * exportScale, offsetY - bounds.top * exportScale)
-        }
+    /**
+     * Composes the sheet for [settings]: which elements, where they sit on the paper and at what
+     * scale (PrintPage.layout), and the title block. Print and Export PDF both come through here,
+     * so the PDF is exactly what the printer gets. Returns null, with a message to the user, when
+     * there is nothing to print (no elevation selected).
+     */
+    private fun composePage(settings: PrintSettings, density: Float): Pair<PageSpec, DrawScope.() -> Unit>? {
+        val state = _state.value
+        val elements = PrintPage.subjectElements(state, settings.subject)
+        if (elements == null) { platform.toast("Select an elevation view first"); return null }
+        val metric = state.unitSystem == UnitSystem.METRIC
+        val layout = PrintPage.layout(settings, PrintPage.subjectBounds(state, settings.subject), PrintPage.worldPxPerInch(state), metric)
 
         // Render through the SAME code path as the on-screen canvas (drawDocumentContents in
-        // DrawingCanvas.kt), so the PDF shows exactly what the screen shows - symbols,
-        // dimensions, text, rotation, images - instead of the old hand-rolled subset that
-        // silently dropped all of those. zoom/pan carry the fit transform so screen-constant
-        // sizes (dimension text, grid line weights) come out at their normal on-screen size;
-        // interactive-only state (selection, in-progress element, snap and precise-move
-        // markers) is cleared so none of it leaks into the document.
-        val exportState = _state.value.copy(
-            zoom = exportScale,
-            pan = exportPan,
-            selectedElementId = null,
-            selectedElementIds = emptySet(),
-            currentDrawingElement = null,
-            lastSnapPoint = null,
-            boxSelectStart = null,
-            boxSelectEnd = null,
-            preciseMoveFromPoint = null
+        // DrawingCanvas.kt), so the sheet shows exactly what the screen shows - symbols,
+        // dimensions, text, rotation, images - on a white page with labels sized for paper.
+        val pageState = PrintPage.pageState(state, elements, layout)
+        val titleBlock = TitleBlock(
+            project = state.projectName,
+            sheet = settings.sheetTitle.trim().ifEmpty { PrintPage.defaultSheetTitle(settings.subject) },
+            date = todayDateText(),
+            scale = layout.scaleText
         )
-        // Device density, not 1f: symbol icon strokes are specified in dp, and the PDF should
-        // match what the user sees on this device. The platform makes the page (a real PDF on
-        // Android and desktop, an image download in the browser) and tells the user where it went.
+        // Device density, not 1f: symbol icon strokes are specified in dp, and the sheet should
+        // match what the user sees on this device.
+        val spec = PageSpec(layout.widthPx, layout.heightPx, layout.dpi, density)
+        return spec to { drawPrintPage(layout, pageState, titleBlock) }
+    }
+
+    /** "Kitchen Remodel - Floor Plan" made safe for a file name. */
+    private fun sheetFileStem(settings: PrintSettings): String {
+        val sheet = settings.sheetTitle.trim().ifEmpty { PrintPage.defaultSheetTitle(settings.subject) }
+        return "${_state.value.projectName.trim()} - $sheet".replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+    }
+
+    private fun exportToPdf(settings: PrintSettings, density: Float) {
+        val (spec, draw) = composePage(settings, density) ?: return
+        // The platform makes the page (a real PDF on Android and desktop, an image download in
+        // the browser) and tells the user where it went.
         val message = try {
-            platform.exportPage("SiteDraft_Export.pdf", pageWidth, pageHeight, density) {
-                drawRect(exportState.backgroundColor)
-                withTransform(
-                    transformBlock = {
-                        translate(exportPan.x, exportPan.y)
-                        scale(exportScale, exportScale, Offset.Zero)
-                    }
-                ) {
-                    drawDocumentContents(exportState)
-                }
-            }
+            platform.exportPage("${sheetFileStem(settings)}.pdf", spec, draw)
         } catch (e: Exception) {
             "PDF export failed: ${e.message}"
         }
         platform.toast(message ?: "PDF export is not available here")
+    }
+
+    private fun printPage(settings: PrintSettings, density: Float) {
+        val (spec, draw) = composePage(settings, density) ?: return
+        val message = try {
+            platform.printPage(sheetFileStem(settings), spec, draw)
+        } catch (e: Exception) {
+            "Print failed: ${e.message}"
+        }
+        message?.let { platform.toast(it) }
     }
 
     private fun exportToDxf() {
@@ -2790,8 +2780,10 @@ sealed class DrawingEvent {
     object SaveProject : DrawingEvent()
     object LoadProject : DrawingEvent()
     object RefreshProjectList : DrawingEvent()
-    /** [density] = the screen density, so dp-sized strokes export at their on-screen weight. */
-    data class ExportPdf(val density: Float = 1f) : DrawingEvent()
+    /** A sheet laid out by [settings] (PrintPage); [density] = the screen density, so dp-sized strokes export at their on-screen weight. */
+    data class ExportPdf(val settings: PrintSettings = PrintSettings(), val density: Float = 1f) : DrawingEvent()
+    /** The same sheet as [ExportPdf], sent to the platform print system. */
+    data class Print(val settings: PrintSettings = PrintSettings(), val density: Float = 1f) : DrawingEvent()
     object ExportDxf : DrawingEvent()
     data class OffsetSelectedElement(val distance: Float, val direction: Int = 1) : DrawingEvent()
     data class ToggleStylusOnlyDrawing(val enabled: Boolean) : DrawingEvent()

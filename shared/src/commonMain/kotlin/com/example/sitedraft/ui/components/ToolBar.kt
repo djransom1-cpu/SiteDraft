@@ -37,6 +37,7 @@ fun ToolBar(
     onSaveProject: () -> Unit,
     onLoadProject: () -> Unit,
     onExportPdf: () -> Unit,
+    onPrint: () -> Unit,
     onExportDxf: () -> Unit,
     onEvent: (DrawingEvent) -> Unit,
     modifier: Modifier = Modifier
@@ -195,6 +196,9 @@ fun ToolBar(
             }
             IconButton(onClick = onExportPdf, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.FileDownload, contentDescription = "Export PDF")
+            }
+            IconButton(onClick = onPrint, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Rounded.Print, contentDescription = "Print")
             }
         }
     }

@@ -45,11 +45,17 @@ interface Platform {
     /** A short non-blocking notice to the user. */
     fun toast(message: String) {}
     /**
-     * Renders [draw] onto a [width] x [height] page and hands it to the user as a PDF where the
-     * platform can make one, otherwise as an image. Returns a message for the user (where it
-     * went) or null if nothing could be written.
+     * Renders [draw] onto [page] and hands it to the user as a PDF where the platform can make
+     * one (sized to the page's paper inches), otherwise as an image. Returns a message for the
+     * user (where it went) or null if nothing could be written.
      */
-    fun exportPage(fileName: String, width: Int, height: Int, density: Float, draw: DrawScope.() -> Unit): String?
+    fun exportPage(fileName: String, page: PageSpec, draw: DrawScope.() -> Unit): String?
+    /**
+     * Renders [draw] onto [page] and sends it to a printer through the platform's print system
+     * (Android's print framework, a desktop print dialog, the browser's print). Returns a message
+     * for the user, or null where printing is not available.
+     */
+    fun printPage(jobName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? = null
     /** Writes a text file (DXF) and returns a message for the user, or null if it could not. */
     fun exportText(fileName: String, text: String): String?
     /** The Bosch GLM Bluetooth client on platforms that have one; the Laser panel knows the type. */
@@ -62,9 +68,25 @@ object NoopPlatform : Platform {
     override val name = "test"
     override val storage: ProjectStorage? = null
     override val prefs: KeyValuePrefs = InMemoryPrefs()
-    override fun exportPage(fileName: String, width: Int, height: Int, density: Float, draw: DrawScope.() -> Unit): String? = null
+    override fun exportPage(fileName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? = null
     override fun exportText(fileName: String, text: String): String? = null
 }
+
+/**
+ * A page to render: [widthPx] x [heightPx] pixels standing for widthPx/dpi x heightPx/dpi inches
+ * of paper. [density] is the screen density, so dp-sized strokes come out at their on-screen weight.
+ */
+data class PageSpec(val widthPx: Int, val heightPx: Int, val dpi: Float, val density: Float) {
+    val widthIn: Float get() = widthPx / dpi
+    val heightIn: Float get() = heightPx / dpi
+    /** PDF points (1/72 in). */
+    val widthPt: Float get() = widthIn * 72f
+    val heightPt: Float get() = heightIn * 72f
+    val landscape: Boolean get() = widthPx > heightPx
+}
+
+/** Today's date in the local time zone as MM/DD/YYYY, for the title block. */
+expect fun todayDateText(): String
 
 val LocalPlatform = staticCompositionLocalOf<Platform> { NoopPlatform }
 

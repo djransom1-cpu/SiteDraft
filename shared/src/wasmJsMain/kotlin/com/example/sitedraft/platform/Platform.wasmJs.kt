@@ -54,6 +54,46 @@ actual fun randomId(): String {
 @JsFun("(name, b64, mime) => { const a = document.createElement('a'); a.href = 'data:' + mime + ';base64,' + b64; a.download = name; document.body.appendChild(a); a.click(); a.remove(); }")
 private external fun downloadBase64(name: String, b64: String, mime: String)
 
+/**
+ * Prints the sheet from a hidden iframe holding the image at its paper size: the browser's print
+ * dialog opens on that document alone (its @page size is the sheet), and no popup blocker is
+ * involved, which a new window would be. Returns false if the frame could not be made.
+ */
+@JsFun("""(b64, wIn, hIn, title) => {
+    try {
+        const old = document.getElementById('sitedraft-print');
+        if (old) old.remove();
+        const f = document.createElement('iframe');
+        f.id = 'sitedraft-print';
+        f.setAttribute('aria-hidden', 'true');
+        f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+        document.body.appendChild(f);
+        const d = f.contentDocument;
+        d.open();
+        d.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title>' +
+            '<style>@page { size: ' + wIn + 'in ' + hIn + 'in; margin: 0; } html, body { margin: 0; padding: 0; } ' +
+            'img { display: block; width: ' + wIn + 'in; height: ' + hIn + 'in; }</style></head><body>' +
+            '<img src="data:image/png;base64,' + b64 + '"></body></html>');
+        d.close();
+        const img = d.querySelector('img');
+        const go = () => setTimeout(() => {
+            try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { console.log('print failed: ' + e); }
+            setTimeout(() => f.remove(), 120000);
+        }, 50);
+        if (img.complete) go(); else img.onload = go;
+        return true;
+    } catch (e) {
+        console.log('print frame failed: ' + e);
+        return false;
+    }
+}""")
+private external fun printInFrame(b64: String, wIn: Double, hIn: Double, title: String): Boolean
+
+@JsFun("() => { const d = new Date(); return String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0') + '/' + d.getFullYear(); }")
+private external fun jsTodayText(): String
+
+actual fun todayDateText(): String = jsTodayText()
+
 /** Projects and settings live in the browser's local storage; exports download as files. */
 @OptIn(ExperimentalEncodingApi::class)
 class WebPlatform : Platform {
@@ -71,13 +111,31 @@ class WebPlatform : Platform {
     override fun log(tag: String, message: String) = println("$tag: $message")
     override fun toast(message: String) = println(message)
 
-    override fun exportPage(fileName: String, width: Int, height: Int, density: Float, draw: DrawScope.() -> Unit): String? {
-        val bitmap = ImageBitmap(width, height)
-        CanvasDrawScope().draw(Density(density), LayoutDirection.Ltr, Canvas(bitmap), Size(width.toFloat(), height.toFloat())) { draw() }
-        val png = encodePng(bitmap)
+    private fun renderPng(page: PageSpec, draw: DrawScope.() -> Unit): ByteArray {
+        val bitmap = ImageBitmap(page.widthPx, page.heightPx)
+        CanvasDrawScope().draw(Density(page.density), LayoutDirection.Ltr, Canvas(bitmap), Size(page.widthPx.toFloat(), page.heightPx.toFloat())) { draw() }
+        return encodePng(bitmap)
+    }
+
+    override fun exportPage(fileName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? {
         val name = fileName.removeSuffix(".pdf") + ".png"
-        downloadBase64(name, Base64.encode(png), "image/png")
+        downloadBase64(name, Base64.encode(renderPng(page, draw)), "image/png")
         return "Downloaded $name"
+    }
+
+    /**
+     * The browser's print: the sheet goes into a hidden frame as an image sized in paper inches
+     * (with a matching @page size) and that frame prints once the image has loaded. If the frame
+     * cannot be made the PNG is downloaded instead.
+     */
+    override fun printPage(jobName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? {
+        val png = renderPng(page, draw)
+        val title = jobName.replace(Regex("[<>&\"']"), " ")
+        val opened = printInFrame(Base64.encode(png), page.widthIn.toDouble(), page.heightIn.toDouble(), title)
+        if (opened) return null
+        val name = "$jobName.png"
+        downloadBase64(name, Base64.encode(png), "image/png")
+        return "The browser could not print; downloaded $name instead"
     }
 
     override fun exportText(fileName: String, text: String): String? {

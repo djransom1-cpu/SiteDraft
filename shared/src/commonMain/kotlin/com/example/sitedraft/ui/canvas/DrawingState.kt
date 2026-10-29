@@ -405,7 +405,12 @@ data class CanvasState(
     // about the middle of the view and Fit can frame the drawing. Session state, never saved.
     @kotlinx.serialization.Transient
     @Serializable(with = SizeSerializer::class)
-    val viewportSize: Size = Size.Zero
+    val viewportSize: Size = Size.Zero,
+    // Multiplier on the screen-constant label sizes (dimension text, size labels and their offsets,
+    // which the renderer divides by zoom). 1 on screen; a printed page sets it so dimension text
+    // comes out about 1/8" tall on paper whatever the drawing scale (PrintPage.pageState).
+    @kotlinx.serialization.Transient
+    val labelScale: Float = 1f
 )
 
 fun DrawingElement.contains(point: Offset, threshold: Float = 20f): Boolean {
@@ -778,5 +783,6 @@ fun DrawingElement.withColor(color: Color): DrawingElement = when (this) {
     is DrawingElement.Dimension -> copy(color = color)
     is DrawingElement.Symbol -> copy(color = color)
     is DrawingElement.Text -> copy(color = color)
+    is DrawingElement.ElevationView -> copy(color = color)
     else -> this
 }

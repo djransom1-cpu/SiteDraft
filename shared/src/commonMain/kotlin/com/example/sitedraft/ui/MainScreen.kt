@@ -40,6 +40,8 @@ fun MainScreen(
     // rememberSaveable: with configChanges handled in the manifest the Activity is no longer
     // recreated on rotation, but keep these safe across process death too.
     var showPropertiesDialog by rememberSaveable { mutableStateOf(value = false) }
+    // Which toolbar button opened the print/export sheet dialog; null = closed.
+    var printDialog by remember { mutableStateOf<PrintAction?>(null) }
     var currentNav by rememberSaveable { mutableStateOf("Home") }
 
     val platform = LocalPlatform.current
@@ -164,7 +166,8 @@ fun MainScreen(
                         onImportDxf = { importer.pickText { text -> parseDxf(text).takeIf { it.isNotEmpty() }?.let { viewModel.onEvent(DrawingEvent.ImportDxf(it)) } } },
                         onSaveProject = { viewModel.onEvent(DrawingEvent.SaveProject) },
                         onLoadProject = { viewModel.onEvent(DrawingEvent.LoadProject) },
-                        onExportPdf = { viewModel.onEvent(DrawingEvent.ExportPdf(density)) },
+                        onExportPdf = { printDialog = PrintAction.EXPORT_PDF },
+                        onPrint = { printDialog = PrintAction.PRINT },
                         onExportDxf = { viewModel.onEvent(DrawingEvent.ExportDxf) },
                         onEvent = { event ->
                             viewModel.onEvent(event)
@@ -402,6 +405,16 @@ fun MainScreen(
             onBackgroundSelect = { viewModel.onEvent(DrawingEvent.SelectBackground(it)) },
             onCanvasColorSelect = { viewModel.onEvent(DrawingEvent.SelectBackgroundColor(it)) },
             onDismiss = { showPropertiesDialog = false }
+        )
+    }
+
+    printDialog?.let { action ->
+        PrintDialog(
+            state = state,
+            primary = action,
+            onPrint = { viewModel.onEvent(DrawingEvent.Print(it, density)) },
+            onExportPdf = { viewModel.onEvent(DrawingEvent.ExportPdf(it, density)) },
+            onDismiss = { printDialog = null }
         )
     }
 }

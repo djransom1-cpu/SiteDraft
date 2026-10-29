@@ -367,7 +367,7 @@ fun DrawingCanvas(
                         val mid = (start + end) / 2f
                         // Divided by zoom so the label keeps a constant on-screen size inside the zoomed transform.
                         val labelColor = if (state.backgroundColor.luminance() > 0.5f) Color.Black else Color.White
-                        drawLabel(text, mid - Offset(0f, 20f / state.zoom), 32f / state.zoom, labelColor)
+                        drawLabel(text, mid - Offset(0f, 20f * state.labelScale / state.zoom), 32f * state.labelScale / state.zoom, labelColor)
                     }
                 } else if (element is DrawingElement.Rectangle) {
                     val w = element.size.width / state.scale.ratio
@@ -377,8 +377,8 @@ fun DrawingCanvas(
                     val hText = "H: " + formatDimension(h, state.unitSystem, state.dimensionFormat)
                     
                     val labelColor = if (state.backgroundColor.luminance() > 0.5f) Color.Black else Color.White
-                    drawLabel(wText, Offset(element.topLeft.x + element.size.width / 2, element.topLeft.y - 10f / state.zoom), 28f / state.zoom, labelColor)
-                    drawLabel(hText, Offset(element.topLeft.x - 10f / state.zoom, element.topLeft.y + element.size.height / 2), 28f / state.zoom, labelColor, rotationDegrees = -90f)
+                    drawLabel(wText, Offset(element.topLeft.x + element.size.width / 2, element.topLeft.y - 10f * state.labelScale / state.zoom), 28f * state.labelScale / state.zoom, labelColor)
+                    drawLabel(hText, Offset(element.topLeft.x - 10f * state.labelScale / state.zoom, element.topLeft.y + element.size.height / 2), 28f * state.labelScale / state.zoom, labelColor, rotationDegrees = -90f)
                 }
             }
 
@@ -851,8 +851,8 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                     val extLen = extVec.getDistance()
                     if (extLen > 0.5f) {
                         val extUnit = extVec / extLen
-                        val gap = 6f / zoom
-                        val overshoot = 6f / zoom
+                        val gap = 6f * state.labelScale / zoom
+                        val overshoot = 6f * state.labelScale / zoom
                         val from = truePoint + extUnit * minOf(gap, extLen * 0.4f)
                         val to = dimPoint + extUnit * overshoot
                         drawLine(color, from, to, strokeWidth = strokeWidth * 0.75f)
@@ -867,7 +867,7 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                 val dist = (dimEnd - dimStart).getDistance()
                 if (dist > 1f) {
                     val dir = (dimEnd - dimStart) / dist
-                    val perp = Offset(-dir.y, dir.x) * (15f / zoom)
+                    val perp = Offset(-dir.y, dir.x) * (15f * state.labelScale / zoom)
                     val slant = (dir + perp) * 0.7f
 
                     drawLine(color, dimStart - slant, dimStart + slant, strokeWidth = strokeWidth * 1.5f)
@@ -886,8 +886,8 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                 // 15 world units above the line in the label's own (rotated) frame; size divided by
                 // zoom so it stays readable at any zoom.
                 val rad = angle * PI / 180.0
-                val labelCenter = mid + Offset(sin(rad).toFloat(), -cos(rad).toFloat()) * (15f / zoom)
-                drawLabel(text, labelCenter, 36f / zoom, labelColor, rotationDegrees = angle)
+                val labelCenter = mid + Offset(sin(rad).toFloat(), -cos(rad).toFloat()) * (15f * state.labelScale / zoom)
+                drawLabel(text, labelCenter, 36f * state.labelScale / zoom, labelColor, rotationDegrees = angle)
             }
             is DrawingElement.Text -> drawTextElement(element)
             is DrawingElement.Image -> {

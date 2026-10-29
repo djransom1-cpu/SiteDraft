@@ -1,18 +1,33 @@
 package com.example.sitedraft.platform
 
+import com.example.sitedraft.util.formatFixed
+
 /**
  * A minimal single-page PDF holding one RGB image, for platforms without a PDF library. The
  * caller supplies the pixel data already compressed with Flate (zlib), or uncompressed when
  * no zlib is at hand ([flate] = false); either is valid PDF.
  */
 object PdfWriter {
-    fun singleImagePage(width: Int, height: Int, rgb: ByteArray, flate: Boolean): ByteArray {
+    /**
+     * [width] x [height] image pixels on a page of [pageWidthPt] x [pageHeightPt] PDF points
+     * (1/72 in); by default one pixel per point.
+     */
+    fun singleImagePage(
+        width: Int,
+        height: Int,
+        rgb: ByteArray,
+        flate: Boolean,
+        pageWidthPt: Float = width.toFloat(),
+        pageHeightPt: Float = height.toFloat()
+    ): ByteArray {
         val objects = ArrayList<ByteArray>()
         fun obj(text: String) = objects.add(text.encodeToByteArray())
+        val pw = formatFixed(pageWidthPt.toDouble(), 2)
+        val ph = formatFixed(pageHeightPt.toDouble(), 2)
         obj("<< /Type /Catalog /Pages 2 0 R >>")
         obj("<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-        obj("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $width $height] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>")
-        val content = "q $width 0 0 $height 0 0 cm /Im0 Do Q"
+        obj("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $pw $ph] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>")
+        val content = "q $pw 0 0 $ph 0 0 cm /Im0 Do Q"
         obj("<< /Length ${content.length} >>\nstream\n$content\nendstream")
         val filter = if (flate) " /Filter /FlateDecode" else ""
         val header = "<< /Type /XObject /Subtype /Image /Width $width /Height $height /ColorSpace /DeviceRGB /BitsPerComponent 8$filter /Length ${rgb.size} >>\nstream\n".encodeToByteArray()
