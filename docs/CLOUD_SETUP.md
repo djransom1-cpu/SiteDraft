@@ -8,9 +8,11 @@ committed**: the two config files are gitignored and CI recreates them from secr
 
 ## 1. Firebase console (https://console.firebase.google.com)
 
-Either reuse the CrewSync project (`gen-lang-client-0438127279`) or create a new one
-(recommended: a new project called `sitedraft`, so SiteDraft users, rules and billing stay
-separate from CrewSync). Then:
+**Done 2026-10-29:** the project is `sitedraft-djransom` (display name SiteDraft), with its
+Firestore database in `nam5` (US) and the rules and indexes from this repo deployed.
+`.firebaserc` makes it the default, so `firebase.cmd deploy` needs no `--project`.
+Do not deploy these rules to the CrewSync project: it has its own rules and would break.
+(On this PC PowerShell blocks `firebase`; use `firebase.cmd`.) Still to do:
 
 1. **Register the Android app**: Project settings > Your apps > Add app > Android.
    Package name `com.example.sitedraft`. Add the debug SHA-1 (needed for Google sign-in):
@@ -24,7 +26,7 @@ separate from CrewSync). Then:
    provider (Web SDK configuration), it is also `oauth_client[client_type=3]` in
    google-services.json.
 4. **Authentication > Settings > Authorized domains**: add `djransom1-cpu.github.io`.
-5. **Firestore Database > Create database** (production mode, nearest US region).
+5. ~~Firestore Database > Create database~~ (done, nam5).
    Deploy the rules and indexes from this repo: `firebase deploy --only firestore`.
    The indexes matter: "Shared with me" is a collection-group query that fails until the
    `memberEmails` index in firestore.indexes.json has finished building (a few minutes).
