@@ -16,6 +16,7 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
 import platform.Foundation.NSData
@@ -30,8 +31,11 @@ import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.dataWithBytes
 import platform.Foundation.stringWithContentsOfFile
+import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.writeToFile
 
+// Dispatchers.IO on Kotlin/Native is the extension in kotlinx.coroutines (imported above);
+// the member of the same name is internal, which is what the first iOS CI build tripped on.
 actual val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 
 actual fun encodePng(image: ImageBitmap): ByteArray =
@@ -72,9 +76,11 @@ class IosPlatform : Platform {
     override fun log(tag: String, message: String) = println("$tag: $message")
     override fun toast(message: String) = println(message)
 
-    override fun exportPage(fileName: String, width: Int, height: Int, density: Float, draw: DrawScope.() -> Unit): String? {
+    override fun exportPage(fileName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? {
+        val width = page.widthPx
+        val height = page.heightPx
         val bitmap = ImageBitmap(width, height)
-        CanvasDrawScope().draw(Density(density), LayoutDirection.Ltr, Canvas(bitmap), Size(width.toFloat(), height.toFloat())) { draw() }
+        CanvasDrawScope().draw(Density(page.density), LayoutDirection.Ltr, Canvas(bitmap), Size(width.toFloat(), height.toFloat())) { draw() }
         val pixels = bitmap.toPixelMap()
         val rgb = ByteArray(width * height * 3)
         var k = 0
@@ -84,7 +90,7 @@ class IosPlatform : Platform {
             rgb[k++] = (c.green * 255f).toInt().toByte()
             rgb[k++] = (c.blue * 255f).toInt().toByte()
         }
-        val pdf = PdfWriter.singleImagePage(width, height, rgb, flate = false)
+        val pdf = PdfWriter.singleImagePage(width, height, rgb, flate = false, pageWidthPt = page.widthPt, pageHeightPt = page.heightPt)
         val target = path(fileName)
         pdf.usePinned { pinned ->
             NSData.dataWithBytes(pinned.addressOf(0), pdf.size.toULong()).writeToFile(target, true)
@@ -92,8 +98,17 @@ class IosPlatform : Platform {
         return "Saved $target"
     }
 
+    /** No print sheet on iOS yet: the PDF is written to Documents, where Files can print it. */
+    override fun printPage(jobName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? = exportPage("$jobName.pdf", page, draw)
+
     override fun exportText(fileName: String, text: String): String? {
         (text as NSString).writeToFile(path(fileName), true, NSUTF8StringEncoding, null)
         return "Saved ${path(fileName)}"
     }
+}
+
+actual fun todayDateText(): String {
+    val formatter = platform.Foundation.NSDateFormatter()
+    formatter.dateFormat = "MM/dd/yyyy"
+    return formatter.stringFromDate(platform.Foundation.NSDate())
 }
