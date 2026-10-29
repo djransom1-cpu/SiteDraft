@@ -31,6 +31,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.luminance
 import com.example.sitedraft.ui.canvas.DrawingElement
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -365,7 +366,7 @@ fun DrawingCanvas(
                         
                         val mid = (start + end) / 2f
                         // Divided by zoom so the label keeps a constant on-screen size inside the zoomed transform.
-                        val labelColor = if (state.backgroundColor == Color.White) Color.Black else Color.White
+                        val labelColor = if (state.backgroundColor.luminance() > 0.5f) Color.Black else Color.White
                         drawLabel(text, mid - Offset(0f, 20f / state.zoom), 32f / state.zoom, labelColor)
                     }
                 } else if (element is DrawingElement.Rectangle) {
@@ -375,7 +376,7 @@ fun DrawingCanvas(
                     val wText = "W: " + formatDimension(w, state.unitSystem, state.dimensionFormat)
                     val hText = "H: " + formatDimension(h, state.unitSystem, state.dimensionFormat)
                     
-                    val labelColor = if (state.backgroundColor == Color.White) Color.Black else Color.White
+                    val labelColor = if (state.backgroundColor.luminance() > 0.5f) Color.Black else Color.White
                     drawLabel(wText, Offset(element.topLeft.x + element.size.width / 2, element.topLeft.y - 10f / state.zoom), 28f / state.zoom, labelColor)
                     drawLabel(hText, Offset(element.topLeft.x - 10f / state.zoom, element.topLeft.y + element.size.height / 2), 28f / state.zoom, labelColor, rotationDegrees = -90f)
                 }
@@ -520,8 +521,12 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                 )
             }
             is DrawingElement.Symbol -> {
-                val cyanColor = Color(0xFF80E0FF)
-                val whiteColor = if (state.backgroundColor == Color.White) Color.Black else Color.White
+                // On a light canvas every line is black: the cyan accents (door faces, uppers,
+                // glass, plywood) were hard to see on white. Judged by brightness, not only
+                // pure white, so a cream or light grey canvas gets black lines too.
+                val lightCanvas = state.backgroundColor.luminance() > 0.5f
+                val cyanColor = if (lightCanvas) Color.Black else Color(0xFF80E0FF)
+                val whiteColor = if (lightCanvas) Color.Black else Color.White
                 
                 // Use the standard stroke weight for parametric symbols
                 val stroke = Stroke(width = element.strokeWidth, cap = StrokeCap.Round)
@@ -877,7 +882,7 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                 // Keep the label upright and readable whichever way the dimension was drawn.
                 if (angle > 90f) angle -= 180f
                 if (angle < -90f) angle += 180f
-                val labelColor = if (state.backgroundColor == Color.White) Color.Black else color
+                val labelColor = if (state.backgroundColor.luminance() > 0.5f) Color.Black else color
                 // 15 world units above the line in the label's own (rotated) frame; size divided by
                 // zoom so it stays readable at any zoom.
                 val rad = angle * PI / 180.0
@@ -1090,7 +1095,7 @@ private fun DrawScope.drawCanvasBackground(background: DrawingBackground, state:
 
     when (background) {
         DrawingBackground.GRID -> {
-            val colorBase = if (state.backgroundColor == Color.White) Color.Black else Color.White
+            val colorBase = if (state.backgroundColor.luminance() > 0.5f) Color.Black else Color.White
             val minorColor = colorBase.copy(alpha = 0.12f)
             val majorColor = colorBase.copy(alpha = 0.3f)
 
