@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 
 /** The signed-in Firebase user, as much of it as the app needs. */
-data class CloudUser(val uid: String, val email: String?, val displayName: String? = null)
+data class CloudUser(val uid: String, val email: String?, val displayName: String? = null, val emailVerified: Boolean = false)
 
 /** Anything that went wrong talking to Firebase; [message] is already fit to show the user. */
 class CloudException(message: String, cause: Throwable? = null, val offline: Boolean = false) : Exception(message, cause)
@@ -37,6 +37,27 @@ data class ProjectMeta(val name: String, val updatedAt: Long, val device: String
 /** A whole cloud project. */
 data class ProjectDoc(val name: String, val updatedAt: Long, val device: String?, val json: String)
 
+/**
+ * Who a project is shared with, stored on the owner's project document. Emails are lowercase;
+ * [editorEmails] is always a subset of [memberEmails] (members not in it are view-only).
+ */
+@Serializable
+data class ProjectSharing(
+    val ownerUid: String,
+    val ownerEmail: String? = null,
+    val memberEmails: List<String> = emptyList(),
+    val editorEmails: List<String> = emptyList(),
+)
+
+/** A project someone else shared with the signed-in user, as the "shared with me" query lists it. */
+data class SharedProjectMeta(
+    val ownerUid: String,
+    val ownerEmail: String?,
+    val name: String,
+    val updatedAt: Long,
+    val canEdit: Boolean,
+)
+
 /** Firestore, as the few typed operations SiteDraft needs. */
 interface CloudStore {
     suspend fun readUser(uid: String): UserDoc?
@@ -48,6 +69,13 @@ interface CloudStore {
     suspend fun readProject(uid: String, name: String): ProjectDoc?
     suspend fun writeProject(uid: String, name: String, json: String, updatedAt: Long, device: String)
     suspend fun deleteProject(uid: String, name: String)
+
+    /** The sharing fields of `users/{ownerUid}/projects/{name}`, or null when there is no such project. */
+    suspend fun readSharing(ownerUid: String, name: String): ProjectSharing?
+    /** Merges the sharing fields into the owner's project document (only the owner may). */
+    suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing)
+    /** Every project, in any user's account, whose memberEmails contains [email]. */
+    suspend fun listSharedWithMe(email: String): List<SharedProjectMeta>
 }
 
 /** Authentication plus the store. One per platform; see [Platform.cloud]. */
@@ -65,6 +93,10 @@ interface CloudService {
     suspend fun sendPasswordReset(email: String)
     suspend fun signInWithGoogle() { throw CloudException("Google sign-in is not available on this device") }
     suspend fun signOut()
+    /** Emails a verification link; shared projects open only for verified emails. */
+    suspend fun sendEmailVerification() {}
+    /** Reloads the user (and a fresh token) so a just-verified email counts. */
+    suspend fun refreshUser() {}
     /** A fresh Firebase ID token for calling Cloud Functions, or null when signed out. */
     suspend fun idToken(): String?
 }
@@ -82,6 +114,9 @@ object UnavailableCloud : CloudService {
         override suspend fun readProject(uid: String, name: String): ProjectDoc? = null
         override suspend fun writeProject(uid: String, name: String, json: String, updatedAt: Long, device: String) {}
         override suspend fun deleteProject(uid: String, name: String) {}
+        override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? = null
+        override suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing) {}
+        override suspend fun listSharedWithMe(email: String) = emptyList<SharedProjectMeta>()
     }
     override suspend fun signIn(email: String, password: String) = throw CloudException(unavailableReason)
     override suspend fun signUp(email: String, password: String) = throw CloudException(unavailableReason)

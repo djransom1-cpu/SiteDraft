@@ -16,6 +16,11 @@ import androidx.compose.ui.unit.dp
 import com.example.sitedraft.ui.canvas.CanvasState
 import com.example.sitedraft.ui.canvas.DrawingEvent
 import com.example.sitedraft.ui.canvas.DrawingManager
+import com.example.sitedraft.ui.cloud.CurrentProjectSharing
+import com.example.sitedraft.ui.cloud.LocalCloudSession
+import com.example.sitedraft.ui.cloud.SharedWithMeSection
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 @Composable
 fun ProjectManagerPanel(
@@ -25,9 +30,14 @@ fun ProjectManagerPanel(
     onClose: () -> Unit
 ) {
     
+    val session = LocalCloudSession.current
     LaunchedEffect(Unit) {
         viewModel.onEvent(DrawingEvent.RefreshProjectList)
+        // Opening the panel fetches what other devices and other people saved since.
+        session?.sync?.syncAll()
     }
+    val sharedRefs = session?.sync?.shared?.collectAsState()?.value ?: emptyList()
+    val sharedNames = sharedRefs.map { it.localName }.toSet()
 
     Surface(
         modifier = modifier
@@ -37,7 +47,7 @@ fun ProjectManagerPanel(
         shape = MaterialTheme.shapes.large,
         shadowElevation = 8.dp
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -74,6 +84,7 @@ fun ProjectManagerPanel(
                             Text("Save")
                         }
                     }
+                    CurrentProjectSharing(state.projectName, session)
                 }
             }
 
@@ -95,8 +106,9 @@ fun ProjectManagerPanel(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(state.availableProjects) { projectName ->
+            // A plain Column: the panel itself scrolls now that Shared with me sits below.
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                state.availableProjects.filter { it !in sharedNames }.forEach { projectName ->
                     ListItem(
                         headlineContent = { Text(projectName) },
                         leadingContent = { Icon(Icons.Default.Folder, contentDescription = null) },
@@ -108,12 +120,20 @@ fun ProjectManagerPanel(
                 }
             }
             
-            if (state.availableProjects.isEmpty()) {
+            if (state.availableProjects.none { it !in sharedNames }) {
                 Text(
                     "No saved jobs found.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 16.dp)
                 )
+            }
+
+            if (session != null) {
+                Spacer(Modifier.height(24.dp))
+                SharedWithMeSection(session, onOpen = { name ->
+                    viewModel.loadProjectByName(name)
+                    onClose()
+                })
             }
         }
     }

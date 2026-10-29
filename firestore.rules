@@ -1,8 +1,9 @@
 rules_version = '2';
 
-// SiteDraft: every user owns users/{uid} and the projects under it. The subscription fields
-// are written only by the Stripe webhook Cloud Function (Admin SDK bypasses these rules).
-// Deploy with: firebase deploy --only firestore:rules
+// SiteDraft: every user owns users/{uid} and the projects under it, and may share a project
+// with other accounts by email (memberEmails = may read, editorEmails = may also write).
+// The subscription fields are written only by the Stripe webhook Cloud Function (the Admin
+// SDK bypasses these rules). Deploy with: firebase deploy --only firestore
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -14,7 +15,31 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    // Fields a client may never set or change.
+    // Sharing goes by email, so it only counts for a verified address: otherwise anyone could
+    // sign up with someone else's email and read what was shared with them.
+    function verifiedEmail() {
+      return isSignedIn()
+        && request.auth.token.email != null
+        && request.auth.token.email_verified == true;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function isMemberOf(data) {
+      return verifiedEmail() && myEmail() in data.get('memberEmails', []);
+    }
+
+    function isEditorOf(data) {
+      return verifiedEmail() && myEmail() in data.get('editorEmails', []);
+    }
+
+    function projectData(uid, projectName) {
+      return get(/databases/$(database)/documents/users/$(uid)/projects/$(projectName)).data;
+    }
+
+    // Fields a client may never set or change on users/{uid}.
     function touchesBillingFields() {
       return request.resource.data.keys().hasAny(['subscription', 'stripeCustomerId', 'subscriptionUpdatedAt']);
     }
@@ -32,12 +57,26 @@ service cloud.firestore {
 
       // Project JSON, split into chunks when it is bigger than one document (ProjectSync.kt).
       match /projects/{projectName} {
-        allow read, write: if isOwner(uid);
+        allow read: if isOwner(uid) || isMemberOf(resource.data);
+        allow create, delete: if isOwner(uid);
+        // Editors may save the drawing but never change who it is shared with.
+        allow update: if isOwner(uid) || (
+          isEditorOf(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['name', 'updatedAt', 'device', 'chunkCount', 'json'])
+        );
 
         match /chunks/{index} {
-          allow read, write: if isOwner(uid);
+          allow read: if isOwner(uid) || isMemberOf(projectData(uid, projectName));
+          allow write: if isOwner(uid) || isEditorOf(projectData(uid, projectName));
         }
       }
+    }
+
+    // "Shared with me": a collection-group query on projects filtered by
+    // memberEmails array-contains <my email>. Only queries that carry that filter pass.
+    match /{path=**}/projects/{projectName} {
+      allow list: if verifiedEmail() && myEmail() in resource.data.memberEmails;
     }
 
     // Beta testers: document id = lowercase email. A user may look up only their own entry;

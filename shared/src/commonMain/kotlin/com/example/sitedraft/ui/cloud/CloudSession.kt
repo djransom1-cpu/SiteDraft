@@ -42,7 +42,9 @@ class CloudSession(
     var busy by mutableStateOf(false)
         private set
 
-    private var sync: ProjectSync? = null
+    /** The sync engine while the user is past the gate; the Projects panel reads shares from it. */
+    var sync by mutableStateOf<ProjectSync?>(null)
+        private set
     private var checkedUid: String? = null
 
     val user: CloudUser? get() = cloud.user.value
@@ -104,6 +106,23 @@ class CloudSession(
     suspend fun refresh() {
         val user = user ?: return
         check(user)
+    }
+
+    /** Sends the verification email again. Returns a message for the user. */
+    suspend fun resendVerification(): String = try {
+        cloud.sendEmailVerification()
+        "Verification email sent to ${user?.email ?: "your address"}."
+    } catch (e: Exception) {
+        (e as? CloudException)?.message ?: "Could not send the email: ${e.message}"
+    }
+
+    /** After the user clicked the link: reload, and fetch shares if the email now counts. */
+    suspend fun recheckVerification(): String? {
+        runCatching { cloud.refreshUser() }
+        return if (cloud.user.value?.emailVerified == true) {
+            sync?.syncAll()
+            null
+        } else "Not verified yet. Open the link in the email, then try again."
     }
 
     /** Opens Stripe Checkout in the browser. Returns a message for the user, or null when it opened. */

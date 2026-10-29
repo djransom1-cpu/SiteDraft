@@ -34,7 +34,7 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
     private val _user = MutableStateFlow<CloudUser?>(null)
     override val user: StateFlow<CloudUser?> = _user
 
-    private fun FirebaseUser.toCloudUser() = CloudUser(uid, email, displayName)
+    private fun FirebaseUser.toCloudUser() = CloudUser(uid, email, displayName, isEmailVerified)
 
     init {
         if (isConfigured) {
@@ -70,6 +70,8 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
     override suspend fun signUp(email: String, password: String) {
         auth(true) { Firebase.auth.createUserWithEmailAndPassword(email.trim(), password) }
         _user.value = Firebase.auth.currentUser?.toCloudUser()
+        // Shared projects open only for verified emails; start that right away.
+        runCatching { Firebase.auth.currentUser?.sendEmailVerification() }
     }
 
     override suspend fun sendPasswordReset(email: String) {
@@ -79,6 +81,18 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
     /** Subclasses with a native Google flow hand the credential here. */
     protected suspend fun signInWith(credential: AuthCredential) {
         auth(false) { Firebase.auth.signInWithCredential(credential) }
+        _user.value = Firebase.auth.currentUser?.toCloudUser()
+    }
+
+    override suspend fun sendEmailVerification() {
+        auth(false) { Firebase.auth.currentUser?.sendEmailVerification() ?: throw CloudException("Sign in first.") }
+    }
+
+    override suspend fun refreshUser() {
+        if (!isConfigured) return
+        val current = Firebase.auth.currentUser ?: return
+        runCatching { current.reload() }
+        runCatching { current.getIdToken(true) }
         _user.value = Firebase.auth.currentUser?.toCloudUser()
     }
 
@@ -108,6 +122,9 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
 
     @Serializable
     private data class ChunkFields(val index: Int, val json: String)
+
+    @Serializable
+    private data class SharingFields(val ownerUid: String, val ownerEmail: String? = null, val memberEmails: List<String>, val editorEmails: List<String>)
 
     private inline fun <reified T> DocumentSnapshot.field(name: String): T? =
         if (contains(name)) runCatching { get<T?>(name) }.getOrNull() else null
@@ -184,7 +201,8 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
             val chunks = ProjectChunks.split(json)
             val oldCount = ref.get().takeIf { it.exists }?.toMeta(name)?.chunkCount ?: 1
             val batch = db.batch()
-            batch.set(ref, ProjectFields.serializer(), ProjectFields(name, updatedAt, device, chunks.size, chunks[0]))
+            // Merge: the sharing fields on the same document must survive every save.
+            batch.set(ref, ProjectFields.serializer(), ProjectFields(name, updatedAt, device, chunks.size, chunks[0]), merge = true)
             for (i in 1 until chunks.size) batch.set(ref.collection("chunks").document(i.toString()), ChunkFields.serializer(), ChunkFields(i, chunks[i]))
             for (i in chunks.size until oldCount) batch.delete(ref.collection("chunks").document(i.toString()))
             batch.commit()
@@ -198,6 +216,37 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
             for (i in 1 until snap.toMeta(name).chunkCount) batch.delete(ref.collection("chunks").document(i.toString()))
             batch.delete(ref)
             batch.commit()
+        }
+
+        override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? = store("Reading the sharing of '$name'") {
+            val snap = db.collection("users").document(ownerUid).collection("projects").document(CloudDocs.encodeDocId(name)).get()
+            if (!snap.exists) null else ProjectSharing(
+                ownerUid = snap.field<String>("ownerUid") ?: ownerUid,
+                ownerEmail = snap.field<String>("ownerEmail"),
+                memberEmails = snap.field<List<String>>("memberEmails") ?: emptyList(),
+                editorEmails = snap.field<List<String>>("editorEmails") ?: emptyList(),
+            )
+        }
+
+        override suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing) = store("Sharing '$name'") {
+            db.collection("users").document(ownerUid).collection("projects").document(CloudDocs.encodeDocId(name))
+                .set(SharingFields.serializer(), SharingFields(sharing.ownerUid, sharing.ownerEmail, sharing.memberEmails, sharing.editorEmails), merge = true)
+        }
+
+        override suspend fun listSharedWithMe(email: String): List<SharedProjectMeta> = store("Listing shared projects") {
+            val me = Sharing.normalize(email)
+            db.collectionGroup("projects").where { "memberEmails" contains me }.get().documents.mapNotNull { snap ->
+                val parts = snap.reference.path.split('/')
+                if (parts.size != 4 || parts[0] != "users" || parts[2] != "projects") return@mapNotNull null
+                val editors = snap.field<List<String>>("editorEmails") ?: emptyList()
+                SharedProjectMeta(
+                    ownerUid = parts[1],
+                    ownerEmail = snap.field<String>("ownerEmail"),
+                    name = snap.field<String>("name") ?: snap.id,
+                    updatedAt = snap.field<Long>("updatedAt") ?: 0L,
+                    canEdit = me in editors.map(Sharing::normalize),
+                )
+            }
         }
     }
 }

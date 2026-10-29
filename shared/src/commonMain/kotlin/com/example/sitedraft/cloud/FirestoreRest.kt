@@ -54,6 +54,35 @@ object FirestoreValues {
 
     /** The last path segment of a document resource name: `.../documents/users/abc` -> `abc`. */
     fun documentId(resourceName: String): String = resourceName.substringAfterLast('/')
+
+    /** The path relative to `.../documents/`: `users/abc/projects/x`. */
+    fun relativePath(resourceName: String): String = resourceName.substringAfter("/documents/", resourceName)
+
+    /**
+     * A document path for a REST URL: each segment percent-encoded (project names have spaces,
+     * and may hold `#`, `?` or `%`). Resource names inside request bodies stay raw.
+     */
+    fun urlPath(path: String): String = path.split('/').joinToString("/") { segment ->
+        buildString {
+            for (b in segment.encodeToByteArray()) {
+                val c = (b.toInt() and 0xFF).toChar()
+                if (c.isLetterOrDigit() && c.code < 128 || c in "-._~") append(c)
+                else { append('%'); append("0123456789ABCDEF"[(b.toInt() shr 4) and 0xF]); append("0123456789ABCDEF"[b.toInt() and 0xF]) }
+            }
+        }
+    }
+}
+
+/** Reads one boolean claim from a Firebase ID token (a JWT) without verifying it; the server does that. */
+object Jwt {
+    @OptIn(kotlin.io.encoding.ExperimentalEncodingApi::class)
+    fun booleanClaim(token: String, claim: String): Boolean? = try {
+        val payload = token.split('.')[1]
+        val bytes = kotlin.io.encoding.Base64.UrlSafe.withPadding(kotlin.io.encoding.Base64.PaddingOption.ABSENT_OPTIONAL).decode(payload)
+        Json.parseToJsonElement(bytes.decodeToString()).jsonObject[claim]?.jsonPrimitive?.booleanOrNull
+    } catch (e: Exception) {
+        null
+    }
 }
 
 /** Reads a decoded document into the typed classes the app uses. */
@@ -96,6 +125,37 @@ internal object CloudDocs {
     fun chunksPath(uid: String, name: String) = "${projectPath(uid, name)}/chunks"
     fun allowlistPath(email: String) = "allowlist/${email.trim().lowercase()}"
 
+    /** Content fields of a project document: what an editor may write. Sharing fields are separate. */
+    val projectContentFields = listOf("name", "updatedAt", "device", "chunkCount", "json")
+
+    fun sharingFields(sharing: ProjectSharing): JsonObject = buildJsonObject {
+        put("ownerUid", JsonPrimitive(sharing.ownerUid))
+        put("ownerEmail", sharing.ownerEmail?.let { JsonPrimitive(it) } ?: JsonNull)
+        put("memberEmails", JsonArray(sharing.memberEmails.map { JsonPrimitive(it) }))
+        put("editorEmails", JsonArray(sharing.editorEmails.map { JsonPrimitive(it) }))
+    }
+
+    fun sharingFrom(ownerUid: String, fields: JsonObject): ProjectSharing = ProjectSharing(
+        ownerUid = fields["ownerUid"]?.jsonPrimitive?.contentOrNull ?: ownerUid,
+        ownerEmail = fields["ownerEmail"]?.jsonPrimitive?.contentOrNull,
+        memberEmails = (fields["memberEmails"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+        editorEmails = (fields["editorEmails"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+    )
+
+    /** A "shared with me" hit: [path] is `users/{owner}/projects/{id}`. Null for anything else. */
+    fun sharedMetaFrom(path: String, fields: JsonObject, myEmail: String): SharedProjectMeta? {
+        val parts = path.split('/')
+        if (parts.size != 4 || parts[0] != "users" || parts[2] != "projects") return null
+        val sharing = sharingFrom(parts[1], fields)
+        return SharedProjectMeta(
+            ownerUid = parts[1],
+            ownerEmail = sharing.ownerEmail,
+            name = fields["name"]?.jsonPrimitive?.contentOrNull ?: parts[3],
+            updatedAt = fields["updatedAt"]?.jsonPrimitive?.longOrNull ?: 0L,
+            canEdit = Sharing.canEdit(sharing, myEmail),
+        )
+    }
+
     /**
      * Project names are the document ids. A slash would make a sub-path and "." / ".." are
      * reserved, so those few characters are replaced; everything else (spaces, unicode) is fine.
@@ -119,7 +179,17 @@ class RestCloudService(
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     @kotlinx.serialization.Serializable
-    private data class Session(val uid: String, val email: String?, val displayName: String? = null, val idToken: String, val refreshToken: String, val expiresAt: Long)
+    private data class Session(
+        val uid: String,
+        val email: String?,
+        val displayName: String? = null,
+        val idToken: String,
+        val refreshToken: String,
+        val expiresAt: Long,
+        val emailVerified: Boolean = false,
+    )
+
+    private fun Session.toUser() = CloudUser(uid, email, displayName, emailVerified)
 
     private val sessionKey = "cloud.session"
     private var session: Session? = prefs.getString(sessionKey)?.takeIf { it.isNotBlank() }
@@ -127,10 +197,10 @@ class RestCloudService(
         set(value) {
             field = value
             prefs.putString(sessionKey, value?.let { json.encodeToString(Session.serializer(), it) } ?: "")
-            _user.value = value?.let { CloudUser(it.uid, it.email, it.displayName) }
+            _user.value = value?.toUser()
         }
 
-    private val _user = kotlinx.coroutines.flow.MutableStateFlow(session?.let { CloudUser(it.uid, it.email, it.displayName) })
+    private val _user = kotlinx.coroutines.flow.MutableStateFlow(session?.toUser())
     override val user: kotlinx.coroutines.flow.StateFlow<CloudUser?> = _user
     override val isConfigured: Boolean get() = CloudConfig.isConfigured
     override val unavailableReason: String? get() = if (isConfigured) null else UnavailableCloud.unavailableReason
@@ -150,14 +220,29 @@ class RestCloudService(
 
     private fun sessionFrom(result: JsonObject): Session {
         val expiresIn = result["expiresIn"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 3600L
+        val idToken = result["idToken"]?.jsonPrimitive?.contentOrNull ?: ""
         return Session(
             uid = result["localId"]?.jsonPrimitive?.contentOrNull ?: throw CloudException("The server sent no user id."),
             email = result["email"]?.jsonPrimitive?.contentOrNull,
             displayName = result["displayName"]?.jsonPrimitive?.contentOrNull,
-            idToken = result["idToken"]?.jsonPrimitive?.contentOrNull ?: "",
+            idToken = idToken,
             refreshToken = result["refreshToken"]?.jsonPrimitive?.contentOrNull ?: "",
             expiresAt = now() + expiresIn * 1000,
+            emailVerified = Jwt.booleanClaim(idToken, "email_verified") ?: false,
         )
+    }
+
+    override suspend fun sendEmailVerification() {
+        requireConfigured()
+        val token = idToken() ?: throw CloudException("Sign in first.")
+        authCall("sendOobCode", buildJsonObject {
+            put("requestType", JsonPrimitive("VERIFY_EMAIL")); put("idToken", JsonPrimitive(token))
+        }, signingUp = false)
+    }
+
+    /** A forced token refresh carries the current email_verified claim. */
+    override suspend fun refreshUser() {
+        idToken(forceRefresh = true)
     }
 
     override suspend fun signIn(email: String, password: String) {
@@ -174,6 +259,8 @@ class RestCloudService(
             put("email", JsonPrimitive(email.trim())); put("password", JsonPrimitive(password)); put("returnSecureToken", JsonPrimitive(true))
         }, signingUp = true)
         session = sessionFrom(result)
+        // Shared projects open only for verified emails; start that right away.
+        runCatching { sendEmailVerification() }
     }
 
     override suspend fun sendPasswordReset(email: String) {
@@ -191,9 +278,11 @@ class RestCloudService(
         if (!isConfigured) throw CloudException(UnavailableCloud.unavailableReason)
     }
 
-    override suspend fun idToken(): String? {
+    override suspend fun idToken(): String? = idToken(forceRefresh = false)
+
+    private suspend fun idToken(forceRefresh: Boolean): String? {
         val s = session ?: return null
-        if (s.idToken.isNotEmpty() && s.expiresAt - now() > 60_000) return s.idToken
+        if (!forceRefresh && s.idToken.isNotEmpty() && s.expiresAt - now() > 60_000) return s.idToken
         val response = httpRequest(
             "POST", "https://securetoken.googleapis.com/v1/token?key=${CloudConfig.apiKey}",
             mapOf("Content-Type" to "application/json"),
@@ -210,10 +299,12 @@ class RestCloudService(
             }
             throw CloudException("Could not refresh the sign-in: ${code.ifBlank { "HTTP ${response.status}" }}", offline = response.status == 0)
         }
+        val newToken = parsed?.get("id_token")?.jsonPrimitive?.contentOrNull ?: s.idToken
         val refreshed = s.copy(
-            idToken = parsed?.get("id_token")?.jsonPrimitive?.contentOrNull ?: s.idToken,
+            idToken = newToken,
             refreshToken = parsed?.get("refresh_token")?.jsonPrimitive?.contentOrNull ?: s.refreshToken,
             expiresAt = now() + (parsed?.get("expires_in")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 3600L) * 1000,
+            emailVerified = Jwt.booleanClaim(newToken, "email_verified") ?: s.emailVerified,
         )
         session = refreshed
         return refreshed.idToken
@@ -231,8 +322,10 @@ class RestCloudService(
         return CloudException("$what failed: ${message ?: "HTTP ${response.status}"}")
     }
 
-    private suspend fun getDocument(path: String): JsonObject? {
-        val response = firestore("GET", path)
+    /** [onlyFields] limits the download to those fields (the project JSON can be large). */
+    private suspend fun getDocument(path: String, onlyFields: List<String>? = null): JsonObject? {
+        val mask = onlyFields?.joinToString("&", prefix = "?") { "mask.fieldPaths=$it" } ?: ""
+        val response = firestore("GET", FirestoreValues.urlPath(path) + mask)
         if (response.status == 404) return null
         if (!response.isSuccess) throw failure(response, "Reading $path")
         val doc = json.parseToJsonElement(response.body).jsonObject
@@ -243,7 +336,7 @@ class RestCloudService(
     private suspend fun mergeDocument(path: String, fields: JsonObject) {
         val mask = fields.keys.joinToString("&") { "updateMask.fieldPaths=$it" }
         val body = buildJsonObject { put("fields", FirestoreValues.encodeFields(fields)) }.toString()
-        val response = firestore("PATCH", "$path?$mask", body)
+        val response = firestore("PATCH", "${FirestoreValues.urlPath(path)}?$mask", body)
         if (!response.isSuccess) throw failure(response, "Writing $path")
     }
 
@@ -252,7 +345,7 @@ class RestCloudService(
         var pageToken: String? = null
         do {
             val query = "pageSize=300" + (pageToken?.let { "&pageToken=$it" } ?: "")
-            val response = firestore("GET", "$path?$query")
+            val response = firestore("GET", "${FirestoreValues.urlPath(path)}?$query")
             if (response.status == 404) return out
             if (!response.isSuccess) throw failure(response, "Listing $path")
             val page = json.parseToJsonElement(response.body).jsonObject
@@ -266,16 +359,25 @@ class RestCloudService(
         return out
     }
 
-    /** Atomic multi-document write through `:commit`. Each write replaces its document. */
-    private suspend fun commit(writes: List<Pair<String, JsonObject?>>) {
+    /**
+     * One write of a `:commit`. [fields] null deletes the document. [merge] true writes only the
+     * given fields (an update mask), leaving every other field of the document alone.
+     */
+    private class Write(val path: String, val fields: JsonObject?, val merge: Boolean = false)
+
+    /** Atomic multi-document write through `:commit`. */
+    private suspend fun commit(writes: List<Write>) {
         val root = "projects/${CloudConfig.projectId}/databases/(default)/documents"
         val body = buildJsonObject {
-            put("writes", JsonArray(writes.map { (path, fields) ->
-                if (fields == null) buildJsonObject { put("delete", JsonPrimitive("$root/$path")) }
+            put("writes", JsonArray(writes.map { w ->
+                if (w.fields == null) buildJsonObject { put("delete", JsonPrimitive("$root/${w.path}")) }
                 else buildJsonObject {
                     put("update", buildJsonObject {
-                        put("name", JsonPrimitive("$root/$path"))
-                        put("fields", FirestoreValues.encodeFields(fields))
+                        put("name", JsonPrimitive("$root/${w.path}"))
+                        put("fields", FirestoreValues.encodeFields(w.fields))
+                    })
+                    if (w.merge) put("updateMask", buildJsonObject {
+                        put("fieldPaths", JsonArray(w.fields.keys.map { JsonPrimitive(it) }))
                     })
                 }
             }))
@@ -322,22 +424,64 @@ class RestCloudService(
 
         override suspend fun writeProject(uid: String, name: String, json: String, updatedAt: Long, device: String) {
             val chunks = ProjectChunks.split(json)
-            val previous = getDocument(CloudDocs.projectPath(uid, name))?.let { CloudDocs.projectMetaFrom(name, it) }
-            val writes = ArrayList<Pair<String, JsonObject?>>()
-            writes += CloudDocs.projectPath(uid, name) to CloudDocs.projectFields(name, chunks[0], chunks.size, updatedAt, device)
-            for (i in 1 until chunks.size) writes += "${CloudDocs.chunksPath(uid, name)}/$i" to CloudDocs.chunkFields(i, chunks[i])
+            val previous = getDocument(CloudDocs.projectPath(uid, name), onlyFields = listOf("chunkCount"))
+                ?.let { CloudDocs.projectMetaFrom(name, it) }
+            val writes = ArrayList<Write>()
+            // Merge: the sharing fields on the same document must survive every save.
+            writes += Write(CloudDocs.projectPath(uid, name), CloudDocs.projectFields(name, chunks[0], chunks.size, updatedAt, device), merge = true)
+            for (i in 1 until chunks.size) writes += Write("${CloudDocs.chunksPath(uid, name)}/$i", CloudDocs.chunkFields(i, chunks[i]))
             // Chunks the new, smaller copy no longer needs.
             val oldCount = previous?.chunkCount ?: 1
-            for (i in chunks.size until oldCount) writes += "${CloudDocs.chunksPath(uid, name)}/$i" to null
+            for (i in chunks.size until oldCount) writes += Write("${CloudDocs.chunksPath(uid, name)}/$i", null)
             commit(writes)
         }
 
         override suspend fun deleteProject(uid: String, name: String) {
-            val previous = getDocument(CloudDocs.projectPath(uid, name))?.let { CloudDocs.projectMetaFrom(name, it) } ?: return
-            val writes = ArrayList<Pair<String, JsonObject?>>()
-            for (i in 1 until previous.chunkCount) writes += "${CloudDocs.chunksPath(uid, name)}/$i" to null
-            writes += CloudDocs.projectPath(uid, name) to null
+            val previous = getDocument(CloudDocs.projectPath(uid, name), onlyFields = listOf("chunkCount"))
+                ?.let { CloudDocs.projectMetaFrom(name, it) } ?: return
+            val writes = ArrayList<Write>()
+            for (i in 1 until previous.chunkCount) writes += Write("${CloudDocs.chunksPath(uid, name)}/$i", null)
+            writes += Write(CloudDocs.projectPath(uid, name), null)
             commit(writes)
+        }
+
+        override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? =
+            getDocument(CloudDocs.projectPath(ownerUid, name), onlyFields = listOf("ownerUid", "ownerEmail", "memberEmails", "editorEmails"))
+                ?.let { CloudDocs.sharingFrom(ownerUid, it) }
+
+        override suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing) =
+            mergeDocument(CloudDocs.projectPath(ownerUid, name), CloudDocs.sharingFields(sharing))
+
+        /** A collection-group query over every user's `projects`, metadata fields only. */
+        override suspend fun listSharedWithMe(email: String): List<SharedProjectMeta> {
+            val me = Sharing.normalize(email)
+            val select = listOf("name", "updatedAt", "ownerUid", "ownerEmail", "memberEmails", "editorEmails")
+            val body = buildJsonObject {
+                put("structuredQuery", buildJsonObject {
+                    put("from", JsonArray(listOf(buildJsonObject {
+                        put("collectionId", JsonPrimitive("projects")); put("allDescendants", JsonPrimitive(true))
+                    })))
+                    put("where", buildJsonObject {
+                        put("fieldFilter", buildJsonObject {
+                            put("field", buildJsonObject { put("fieldPath", JsonPrimitive("memberEmails")) })
+                            put("op", JsonPrimitive("ARRAY_CONTAINS"))
+                            put("value", buildJsonObject { put("stringValue", JsonPrimitive(me)) })
+                        })
+                    })
+                    put("select", buildJsonObject {
+                        put("fields", JsonArray(select.map { f -> buildJsonObject { put("fieldPath", JsonPrimitive(f)) } }))
+                    })
+                })
+            }.toString()
+            val token = idToken() ?: throw CloudException("Sign in first.")
+            val response = httpRequest("POST", "$docsBase:runQuery", mapOf("Content-Type" to "application/json", "Authorization" to "Bearer $token"), body)
+            if (!response.isSuccess) throw failure(response, "Listing shared projects")
+            val rows = json.parseToJsonElement(response.body) as? JsonArray ?: return emptyList()
+            return rows.mapNotNull { row ->
+                val doc = row.jsonObject["document"]?.jsonObject ?: return@mapNotNull null
+                val path = FirestoreValues.relativePath(doc["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null)
+                CloudDocs.sharedMetaFrom(path, FirestoreValues.decodeFields(doc["fields"] as? JsonObject ?: JsonObject(emptyMap())), me)
+            }
         }
     }
 }

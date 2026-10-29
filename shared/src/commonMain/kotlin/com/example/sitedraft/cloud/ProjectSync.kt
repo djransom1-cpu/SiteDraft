@@ -8,11 +8,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -68,6 +71,21 @@ data class SyncMeta(
     val pendingPush: Boolean = false,
 )
 
+/**
+ * A project another account shared with this user, as it is kept on this device. The local
+ * file is `project_<localName>.json`; the cloud copy is `users/{ownerUid}/projects/{cloudName}`.
+ * The `projectName` inside the JSON is [localName] on this device and [cloudName] in the cloud,
+ * so the owner's devices never save it under the wrong name.
+ */
+@Serializable
+data class SharedRef(
+    val localName: String,
+    val ownerUid: String,
+    val ownerEmail: String? = null,
+    val cloudName: String,
+    val canEdit: Boolean = false,
+)
+
 /** The listener the sync engine uses to tell the drawing side that a project changed on disk. */
 interface ProjectSyncListener {
     /** The local file for [name] was replaced with the cloud copy. */
@@ -77,7 +95,8 @@ interface ProjectSyncListener {
 }
 
 /**
- * Keeps `users/{uid}/projects/{name}` and the local project files in step. Local files remain
+ * Keeps the local project files in step with the cloud: the user's own projects at
+ * `users/{uid}/projects/{name}`, and projects other accounts shared with them. Local files remain
  * the source of truth for the drawing; the cloud copy is pushed after every save and pulled
  * at launch, at sign-in and whenever a project is opened. All I/O happens off the main thread.
  */
@@ -87,6 +106,7 @@ class ProjectSync(
     private val listener: ProjectSyncListener? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val prettyJson = Json { prettyPrint = true }
     private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val lock = Mutex()
     private var pullJob: Job? = null
@@ -96,8 +116,25 @@ class ProjectSync(
 
     companion object {
         const val PROJECT_LIST_FILE = "project_list.txt"
+        const val SHARED_FILE = "shared_projects.json"
         fun projectFileName(name: String) = "project_${name.replace(" ", "_")}.json"
         fun metaFileName(name: String) = "sync_${name.replace(" ", "_")}.json"
+    }
+
+    private val _shared = MutableStateFlow(loadShared())
+    /** Projects shared with this user that are known on this device. */
+    val shared: StateFlow<List<SharedRef>> = _shared
+
+    fun sharedRef(localName: String): SharedRef? = _shared.value.firstOrNull { it.localName == localName }
+
+    private fun loadShared(): List<SharedRef> =
+        storage?.read(SHARED_FILE)?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { json.decodeFromString(ListSerializer(SharedRef.serializer()), it) }.getOrNull() }
+            ?: emptyList()
+
+    private fun saveShared(refs: List<SharedRef>) {
+        storage?.write(SHARED_FILE, json.encodeToString(ListSerializer(SharedRef.serializer()), refs))
+        _shared.value = refs
     }
 
     fun readMeta(name: String): SyncMeta? =
@@ -105,6 +142,13 @@ class ProjectSync(
 
     private fun writeMeta(name: String, meta: SyncMeta) {
         storage?.write(metaFileName(name), json.encodeToString(SyncMeta.serializer(), meta))
+    }
+
+    private fun readList(): Set<String> =
+        storage?.read(PROJECT_LIST_FILE)?.lines()?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+
+    private fun writeList(names: Set<String>) {
+        storage?.write(PROJECT_LIST_FILE, names.sorted().joinToString("\n"))
     }
 
     /**
@@ -120,18 +164,25 @@ class ProjectSync(
 
     /** Called by the drawing side right after it wrote [json] for [name] locally. */
     fun onLocalSaved(name: String, json: String, savedAt: Long = nowMillis()) {
+        val ref = sharedRef(name)
         val previous = readMeta(name)
-        writeMeta(name, SyncMeta(updatedAt = savedAt, remoteUpdatedAt = previous?.remoteUpdatedAt, pendingPush = true))
+        val willPush = ref == null || ref.canEdit
+        writeMeta(name, SyncMeta(updatedAt = savedAt, remoteUpdatedAt = previous?.remoteUpdatedAt, pendingPush = willPush))
         val user = uid ?: return
-        scope.launch { push(user, name, json, savedAt) }
+        if (!willPush) return // view-only: the change stays on this device
+        scope.launch {
+            if (ref == null) push(user, name, json, savedAt, localName = name)
+            else push(ref.ownerUid, ref.cloudName, renameProjectJson(json, ref.cloudName), savedAt, localName = name)
+        }
     }
 
-    private suspend fun push(uid: String, name: String, json: String, updatedAt: Long) = lock.withLock {
+    /** Writes one project to the cloud and records it in the local meta of [localName]. */
+    private suspend fun push(ownerUid: String, cloudName: String, json: String, updatedAt: Long, localName: String) = lock.withLock {
         try {
-            cloud.store.writeProject(uid, name, json, updatedAt, platform.name)
-            writeMeta(name, SyncMeta(updatedAt = updatedAt, remoteUpdatedAt = updatedAt, pendingPush = false))
+            cloud.store.writeProject(ownerUid, cloudName, json, updatedAt, platform.name)
+            writeMeta(localName, SyncMeta(updatedAt = updatedAt, remoteUpdatedAt = updatedAt, pendingPush = false))
         } catch (e: Exception) {
-            platform.log("SiteDraftSync", "push of '$name' failed: ${e.message}")
+            platform.log("SiteDraftSync", "push of '$cloudName' failed: ${e.message}")
         }
     }
 
@@ -139,13 +190,29 @@ class ProjectSync(
     fun syncAll() {
         val user = uid ?: return
         pullJob?.cancel()
-        pullJob = scope.launch { syncAllNow(user) }
+        pullJob = scope.launch {
+            syncAllNow(user)
+            syncSharedNow()
+        }
     }
 
     /** Pulls one project if the cloud copy is newer; the drawing side calls this when opening it. */
     fun syncProject(name: String) {
         val user = uid ?: return
-        scope.launch { syncOne(user, name, remoteUpdatedAt = null, knownRemote = false) }
+        val ref = sharedRef(name)
+        scope.launch {
+            if (ref != null) syncShared(ref, remoteUpdatedAt = null) else syncOne(user, name, remoteUpdatedAt = null, knownRemote = false)
+        }
+    }
+
+    /**
+     * Fetches a shared project now (for opening it from the "Shared with me" list) and returns
+     * an error for the user, or null when the local copy is ready.
+     */
+    suspend fun fetchShared(localName: String): String? = withContext(ioDispatcher) {
+        val ref = sharedRef(localName) ?: return@withContext "That project is no longer shared with you."
+        syncShared(ref, remoteUpdatedAt = null)
+        if (storage?.exists(projectFileName(localName)) == true) null else "Could not download '${ref.cloudName}'. Check your connection."
     }
 
     private suspend fun syncAllNow(uid: String) {
@@ -156,23 +223,108 @@ class ProjectSync(
             platform.log("SiteDraftSync", "list failed: ${e.message}")
             return
         }
-        val localNames = st.read(PROJECT_LIST_FILE)?.lines()?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+        val sharedNames = _shared.value.map { it.localName }.toSet()
+        val localNames = readList() - sharedNames
         val remoteByName = remote.associateBy { it.name }
         var listChanged = false
         for (meta in remote) {
             val existedLocally = st.exists(projectFileName(meta.name))
+            if (meta.name in sharedNames) continue // an own project may not shadow a share's local name
             syncOne(uid, meta.name, meta.updatedAt, knownRemote = true)
             if (!existedLocally && st.exists(projectFileName(meta.name))) listChanged = true
         }
         for (name in localNames - remoteByName.keys) {
             val text = st.read(projectFileName(name)) ?: continue
             val at = readMeta(name)?.updatedAt?.takeIf { it > 0 } ?: nowMillis()
-            push(uid, name, text, at)
+            push(uid, name, text, at, localName = name)
         }
         if (listChanged) {
-            val merged = (localNames + remoteByName.keys).sorted()
-            st.write(PROJECT_LIST_FILE, merged.joinToString("\n"))
+            lock.withLock { writeList(readList() + remoteByName.keys.filter { st.exists(projectFileName(it)) }) }
             withContext(Dispatchers.Main) { listener?.onProjectListChanged() }
+        }
+    }
+
+    /**
+     * Refreshes the "shared with me" list and syncs every share. A share the owner withdrew is
+     * dropped from the project list (the file stays on disk, nothing is deleted). Needs a
+     * verified email: the security rules hide shares from unverified accounts.
+     */
+    private suspend fun syncSharedNow() {
+        val user = cloud.user.value ?: return
+        val email = user.email?.let(Sharing::normalize) ?: return
+        if (!user.emailVerified) return
+        val found: List<SharedProjectMeta> = try {
+            cloud.store.listSharedWithMe(email).filter { it.ownerUid != user.uid }
+        } catch (e: Exception) {
+            platform.log("SiteDraftSync", "shared list failed: ${e.message}")
+            return
+        }
+        var listChanged = false
+        val refs: List<SharedRef> = lock.withLock {
+            val previous = _shared.value
+            val taken = readList().toMutableSet()
+            val next = ArrayList<SharedRef>()
+            for (meta in found) {
+                val existing = previous.firstOrNull { it.ownerUid == meta.ownerUid && it.cloudName == meta.name }
+                if (existing != null) {
+                    next += existing.copy(canEdit = meta.canEdit, ownerEmail = meta.ownerEmail ?: existing.ownerEmail)
+                } else {
+                    val localName = sharedLocalName(meta.name, meta.ownerEmail, taken + next.map { it.localName })
+                    next += SharedRef(localName, meta.ownerUid, meta.ownerEmail, meta.name, meta.canEdit)
+                }
+            }
+            val revoked = previous.filter { old -> next.none { it.localName == old.localName } }.map { it.localName }.toSet()
+            if (revoked.isNotEmpty()) {
+                writeList(readList() - revoked)
+                listChanged = true
+            }
+            saveShared(next)
+            next
+        }
+        val metaByKey = found.associateBy { it.ownerUid to it.name }
+        for (ref in refs) {
+            val had = storage?.exists(projectFileName(ref.localName)) == true && ref.localName in readList()
+            syncShared(ref, metaByKey[ref.ownerUid to ref.cloudName]?.updatedAt)
+            if (!had && storage?.exists(projectFileName(ref.localName)) == true) listChanged = true
+        }
+        if (listChanged) withContext(Dispatchers.Main) { listener?.onProjectListChanged() }
+    }
+
+    private suspend fun syncShared(ref: SharedRef, remoteUpdatedAt: Long?) {
+        val st = storage ?: return
+        var remoteAt = remoteUpdatedAt
+        var doc: ProjectDoc? = null
+        if (remoteAt == null) {
+            doc = try {
+                cloud.store.readProject(ref.ownerUid, ref.cloudName)
+            } catch (e: Exception) {
+                platform.log("SiteDraftSync", "read of shared '${ref.cloudName}' failed: ${e.message}")
+                return
+            } ?: return
+            remoteAt = doc.updatedAt
+        }
+        when (chooseSharedSyncAction(ref.canEdit, localUpdatedAt(ref.localName), remoteAt)) {
+            SyncAction.PULL -> {
+                val pulled = doc ?: try {
+                    cloud.store.readProject(ref.ownerUid, ref.cloudName) ?: return
+                } catch (e: Exception) {
+                    platform.log("SiteDraftSync", "read of shared '${ref.cloudName}' failed: ${e.message}")
+                    return
+                }
+                lock.withLock {
+                    st.write(projectFileName(ref.localName), renameProjectJson(pulled.json, ref.localName))
+                    writeMeta(ref.localName, SyncMeta(updatedAt = pulled.updatedAt, remoteUpdatedAt = pulled.updatedAt))
+                    val list = readList()
+                    if (ref.localName !in list) writeList(list + ref.localName)
+                }
+                withContext(Dispatchers.Main) { listener?.onProjectPulled(ref.localName) }
+            }
+            SyncAction.PUSH -> {
+                val text = st.read(projectFileName(ref.localName)) ?: return
+                val at = localUpdatedAt(ref.localName)?.takeIf { it > 0 } ?: nowMillis()
+                push(ref.ownerUid, ref.cloudName, renameProjectJson(text, ref.cloudName), at, localName = ref.localName)
+            }
+            SyncAction.NONE -> Unit
         }
     }
 
@@ -208,11 +360,11 @@ class ProjectSync(
                     keptCopy = keepNeverSyncedLocalCopy(name, doc.json)
                     st.write(projectFileName(name), doc.json)
                     writeMeta(name, SyncMeta(updatedAt = doc.updatedAt, remoteUpdatedAt = doc.updatedAt, pendingPush = false))
-                    val list = st.read(PROJECT_LIST_FILE)?.lines()?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+                    val list = readList()
                     val extra = listOfNotNull(name, keptCopy?.first)
-                    if (!list.containsAll(extra)) st.write(PROJECT_LIST_FILE, (list + extra).sorted().joinToString("\n"))
+                    if (!list.containsAll(extra)) writeList(list + extra)
                 }
-                keptCopy?.let { (copyName, copyJson) -> push(uid, copyName, copyJson, readMeta(copyName)?.updatedAt ?: nowMillis()) }
+                keptCopy?.let { (copyName, copyJson) -> push(uid, copyName, copyJson, readMeta(copyName)?.updatedAt ?: nowMillis(), localName = copyName) }
                 withContext(Dispatchers.Main) {
                     listener?.onProjectPulled(name)
                     if (keptCopy != null) listener?.onProjectListChanged()
@@ -221,7 +373,7 @@ class ProjectSync(
             SyncAction.PUSH -> {
                 val text = st.read(projectFileName(name)) ?: return
                 val at = localAt?.takeIf { it > 0 } ?: nowMillis()
-                push(uid, name, text, at)
+                push(uid, name, text, at, localName = name)
             }
             SyncAction.NONE -> {
                 // Same write on both sides; make sure a stale pendingPush flag does not linger.
@@ -230,6 +382,32 @@ class ProjectSync(
             }
         }
     }
+
+    // ------------------------------------------------------------------ sharing (owner side)
+
+    /** Who the user's own project [name] is shared with (empty when nobody). */
+    suspend fun sharingFor(name: String): ProjectSharing = withContext(ioDispatcher) {
+        val user = cloud.user.value ?: throw CloudException("Sign in first.")
+        cloud.store.readSharing(user.uid, name) ?: ProjectSharing(user.uid, user.email?.let(Sharing::normalize))
+    }
+
+    /**
+     * Saves a new sharing list for the user's own project [name]. The project is uploaded first
+     * so the people it is shared with find a complete copy.
+     */
+    suspend fun updateSharing(name: String, sharing: ProjectSharing) = withContext(ioDispatcher) {
+        val user = cloud.user.value ?: throw CloudException("Sign in first.")
+        if (sharedRef(name) != null) throw CloudException("Only the owner can change who this project is shared with.")
+        val text = storage?.read(projectFileName(name)) ?: throw CloudException("Save the project before sharing it.")
+        val at = readMeta(name)?.updatedAt?.takeIf { it > 0 } ?: nowMillis()
+        lock.withLock {
+            cloud.store.writeProject(user.uid, name, text, at, platform.name)
+            writeMeta(name, SyncMeta(updatedAt = at, remoteUpdatedAt = at, pendingPush = false))
+        }
+        cloud.store.writeSharing(user.uid, name, sharing.copy(ownerUid = user.uid, ownerEmail = user.email?.let(Sharing::normalize)))
+    }
+
+    // ------------------------------------------------------------------ helpers
 
     /**
      * A project saved before sync existed has no sync meta. If the cloud already holds a
@@ -262,8 +440,6 @@ class ProjectSync(
     } catch (e: Exception) {
         text
     }
-
-    private val prettyJson = Json { prettyPrint = true }
 
     fun dispose() {
         pullJob?.cancel()

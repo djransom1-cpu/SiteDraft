@@ -7,6 +7,8 @@ import com.example.sitedraft.cloud.ProjectChunks
 import com.example.sitedraft.cloud.ProjectDoc
 import com.example.sitedraft.cloud.ProjectMeta
 import com.example.sitedraft.cloud.ProjectSync
+import com.example.sitedraft.cloud.ProjectSharing
+import com.example.sitedraft.cloud.SharedProjectMeta
 import com.example.sitedraft.cloud.ProjectSyncListener
 import com.example.sitedraft.cloud.SyncAction
 import com.example.sitedraft.cloud.UserDoc
@@ -89,6 +91,9 @@ class ProjectSyncTest {
             projects[name] = ProjectDoc(name, updatedAt, device, json)
         }
         override suspend fun deleteProject(uid: String, name: String) { projects.remove(name) }
+        override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? = null
+        override suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing) {}
+        override suspend fun listSharedWithMe(email: String) = emptyList<SharedProjectMeta>()
     }
 
     private class FakeCloud(override val store: FakeStore = FakeStore()) : CloudService {

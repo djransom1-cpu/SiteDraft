@@ -25,7 +25,9 @@ separate from CrewSync). Then:
    google-services.json.
 4. **Authentication > Settings > Authorized domains**: add `djransom1-cpu.github.io`.
 5. **Firestore Database > Create database** (production mode, nearest US region).
-   Deploy the rules from this repo: `firebase deploy --only firestore:rules`.
+   Deploy the rules and indexes from this repo: `firebase deploy --only firestore`.
+   The indexes matter: "Shared with me" is a collection-group query that fails until the
+   `memberEmails` index in firestore.indexes.json has finished building (a few minutes).
 6. **Beta testers**: Firestore > `allowlist` collection > add a document whose **id is the
    tester's email in lowercase** (fields are optional, e.g. `note: "beta"`). Those accounts
    pass the gate without a subscription.
@@ -105,3 +107,23 @@ which is uploaded too. After that, the newest save of a project wins everywhere.
 | Android | yes | yes (Credential Manager; needs `googleWebClientId` and the SHA-1s) |
 | Desktop | yes | not yet |
 | Web | yes | not yet |
+
+## 8. Sharing projects
+
+In the Projects panel, **Share** under the current project opens a dialog where you add
+someone's email as **Can edit** or **View only**, change their role, or remove them.
+
+- The other person signs in to SiteDraft with that email and finds the project under
+  **Shared with me**, named "<project> (<owner>)". Nobody is emailed by SiteDraft, so tell them.
+- Their email must be **verified**. New email/password accounts are sent a verification
+  link at sign-up; the Projects panel has "Send email" and "I've verified" buttons.
+  Google accounts are verified already.
+- Each person needs their own access (a subscription or an `allowlist` entry); sharing a
+  project does not let someone past the gate.
+- Editors' saves go to the owner's copy, newest save wins. Viewers can look and draw
+  locally, but their changes are never uploaded and are replaced by the owner's copy at the
+  next sync.
+- Removing someone drops the project from their list at their next sync. The file stays on
+  their device.
+- The security rules enforce all of this server-side (firestore.rules): only the owner can
+  change who a project is shared with, and only verified emails count.
