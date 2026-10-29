@@ -225,17 +225,18 @@ object Elevation {
             }
         }
 
-        /** A closet rod at [rodIn] off the floor with a 3/4" shelf 2" above it and a few hangers. */
+        /**
+         * A closet rod at [rodIn] off the floor with a 3/4" shelf 2" above it. Just the shelf
+         * and the rod (with its end brackets): hanging clothes made the drawing too busy.
+         */
         fun shelfAndRod(xFrom: Float, xTo: Float, rodIn: Float) {
             val shelfIn = rodIn + 2f
-            rect(xFrom + 0.75f * inch, xTo - 0.75f * inch, shelfIn, shelfIn + 0.75f, light)
-            line(xFrom + 0.75f * inch, rodIn, xTo - 0.75f * inch, rodIn, medium)
-            var x = xFrom + 5f * inch
-            while (x < xTo - 3f * inch) {
-                line(x, rodIn, x, rodIn - 4f)
-                rect(x - 7f * inch, x + 7f * inch, rodIn - 36f, rodIn - 4f, light)
-                x += 9f * inch
-            }
+            val p = 0.75f * inch
+            rect(xFrom + p, xTo - p, shelfIn, shelfIn + 0.75f, light)
+            line(xFrom + p, rodIn, xTo - p, rodIn, medium)
+            // Rod brackets up to the shelf at each end.
+            line(xFrom + p + inch, rodIn, xFrom + p + inch, shelfIn)
+            line(xTo - p - inch, rodIn, xTo - p - inch, shelfIn)
         }
         /** The carcass every closet unit shares: a 3/4" pilaster at each end, 84" tall, with a top. */
         fun closetUnit(xFrom: Float, xTo: Float) {
