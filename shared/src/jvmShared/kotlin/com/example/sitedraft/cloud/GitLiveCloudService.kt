@@ -34,14 +34,33 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
     private val _user = MutableStateFlow<CloudUser?>(null)
     override val user: StateFlow<CloudUser?> = _user
 
-    private fun FirebaseUser.toCloudUser() = CloudUser(uid, email, displayName, isEmailVerified)
+    // GitLive's desktop port (firebase-java-sdk 0.6.x) leaves several FirebaseUser / FirebaseAuth
+    // calls as Kotlin TODO()s, which throw NotImplementedError: isEmailVerified,
+    // sendEmailVerification and sendPasswordResetEmail among them. NotImplementedError is an
+    // Error, not an Exception, so it went past every catch and closed the desktop app right
+    // after a successful sign-in ("An operation is not implemented"). Each such call now has a
+    // fallback that works everywhere: the verified flag from the ID token's email_verified
+    // claim, and the two emails through the Identity Toolkit REST API (IdentityToolkitRest).
+
+    /** The user as the app sees it; the verified flag falls back to the token claim. */
+    private suspend fun cloudUserOf(fu: FirebaseUser, token: String? = null): CloudUser =
+        CloudUser(fu.uid, fu.email, fu.displayName, emailVerifiedOf({ fu.isEmailVerified }) {
+            token ?: runCatching { fu.getIdToken(false) }.getOrNull()
+        })
+
+    /** Without suspending (startup): the verified flag only when the SDK knows it directly. */
+    private fun quickCloudUserOf(fu: FirebaseUser): CloudUser =
+        CloudUser(fu.uid, fu.email, fu.displayName, try { fu.isEmailVerified } catch (e: NotImplementedError) { false })
 
     init {
         if (isConfigured) {
-            runCatching { _user.value = Firebase.auth.currentUser?.toCloudUser() }
+            runCatching { _user.value = Firebase.auth.currentUser?.let { quickCloudUserOf(it) } }
             scope.launch {
+                // Per event, so one failure cannot end the listener for the rest of the session.
                 runCatching {
-                    Firebase.auth.authStateChanged.collect { _user.value = it?.toCloudUser() }
+                    Firebase.auth.authStateChanged.collect { fu ->
+                        _user.value = fu?.let { runCatching { cloudUserOf(it) }.getOrElse { _ -> quickCloudUserOf(fu) } }
+                    }
                 }
             }
         }
@@ -57,43 +76,69 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
             block()
         } catch (e: CloudException) {
             throw e
+        } catch (e: NotImplementedError) {
+            throw CloudException("That is not available in this version of the app yet.", e)
         } catch (e: Exception) {
             throw CloudException(friendlyAuthError(e.message, signingUp), e)
         }
     }
 
+    private suspend fun refreshUserValue(token: String? = null) {
+        _user.value = Firebase.auth.currentUser?.let { cloudUserOf(it, token) }
+    }
+
     override suspend fun signIn(email: String, password: String) {
         auth(false) { Firebase.auth.signInWithEmailAndPassword(email.trim(), password) }
-        _user.value = Firebase.auth.currentUser?.toCloudUser()
+        refreshUserValue()
     }
 
     override suspend fun signUp(email: String, password: String) {
         auth(true) { Firebase.auth.createUserWithEmailAndPassword(email.trim(), password) }
-        _user.value = Firebase.auth.currentUser?.toCloudUser()
+        refreshUserValue()
         // Shared projects open only for verified emails; start that right away.
-        runCatching { Firebase.auth.currentUser?.sendEmailVerification() }
+        runCatching { sendEmailVerification() }
     }
 
     override suspend fun sendPasswordReset(email: String) {
-        auth(false) { Firebase.auth.sendPasswordResetEmail(email.trim()) }
+        requireReady()
+        try {
+            Firebase.auth.sendPasswordResetEmail(email.trim())
+        } catch (e: NotImplementedError) {
+            IdentityToolkitRest.sendPasswordReset(email.trim())
+        } catch (e: CloudException) {
+            throw e
+        } catch (e: Exception) {
+            throw CloudException(friendlyAuthError(e.message, false), e)
+        }
     }
 
     /** Subclasses with a native Google flow hand the credential here. */
     protected suspend fun signInWith(credential: AuthCredential) {
         auth(false) { Firebase.auth.signInWithCredential(credential) }
-        _user.value = Firebase.auth.currentUser?.toCloudUser()
+        refreshUserValue()
     }
 
     override suspend fun sendEmailVerification() {
-        auth(false) { Firebase.auth.currentUser?.sendEmailVerification() ?: throw CloudException("Sign in first.") }
+        requireReady()
+        val current = Firebase.auth.currentUser ?: throw CloudException("Sign in first.")
+        try {
+            current.sendEmailVerification()
+        } catch (e: NotImplementedError) {
+            val token = idToken() ?: throw CloudException("Sign in first.")
+            IdentityToolkitRest.sendEmailVerification(token)
+        } catch (e: CloudException) {
+            throw e
+        } catch (e: Exception) {
+            throw CloudException(friendlyAuthError(e.message, false), e)
+        }
     }
 
     override suspend fun refreshUser() {
         if (!isConfigured) return
         val current = Firebase.auth.currentUser ?: return
         runCatching { current.reload() }
-        runCatching { current.getIdToken(true) }
-        _user.value = Firebase.auth.currentUser?.toCloudUser()
+        val token = runCatching { current.getIdToken(true) }.getOrNull()
+        runCatching { refreshUserValue(token) }
     }
 
     override suspend fun signOut() {
@@ -151,6 +196,8 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
             block()
         } catch (e: CloudException) {
             throw e
+        } catch (e: NotImplementedError) {
+            throw CloudException("$what is not available in this version of the app yet.", e)
         } catch (e: Exception) {
             val offline = e.message?.contains("UNAVAILABLE", ignoreCase = true) == true || e.message?.contains("offline", ignoreCase = true) == true
             throw CloudException("$what failed: ${e.message}", e, offline)

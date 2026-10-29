@@ -80,7 +80,8 @@ class CloudSession(
             cache.save(user.uid, decision)
             userDoc = doc
             access = decision
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
             val cached = AccessGate.decideOffline(cache.load(user.uid), nowMillis())
             if (cached != null) {
                 access = cached

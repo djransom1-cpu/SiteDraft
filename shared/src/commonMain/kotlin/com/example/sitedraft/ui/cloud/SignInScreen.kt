@@ -75,6 +75,10 @@ fun SignInScreen(cloud: CloudService, modifier: Modifier = Modifier) {
             } catch (e: Exception) {
                 isError = true
                 message = (e as? CloudException)?.message ?: e.message ?: "Something went wrong."
+            } catch (e: NotImplementedError) {
+                // A Firebase SDK stub (desktop): report it instead of closing the app.
+                isError = true
+                message = "That is not available in this version of the app yet."
             } finally {
                 busy = false
             }
