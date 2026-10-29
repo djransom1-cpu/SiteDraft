@@ -40,6 +40,12 @@ object Elevation {
     /** How far (inches) an item's back may stand off the wall face and still count as against it. */
     const val BACK_REACH_IN = 6f
 
+    /** Closet units: 84" tall carcasses; rods at the standard 66" (single) and 40" / 80" (double). */
+    const val CLOSET_UNIT_HEIGHT_IN = 84f
+    const val SINGLE_ROD_IN = 66f
+    const val DOUBLE_ROD_LOWER_IN = 40f
+    const val DOUBLE_ROD_UPPER_IN = 80f
+
     enum class Kind { OPENING, FIXTURE, CUT_WALL }
 
     /** A plan symbol seen in the elevation, with its extent along the wall measured from the viewer's left end (px). */
@@ -153,16 +159,24 @@ object Elevation {
             if (xTo - xFrom >= 30f * inch) line((xFrom + xTo) / 2f, hBottom + 1f, (xFrom + xTo) / 2f, hTop - 1f)
         }
 
-        /** A 3/4" shelf at [shelfIn] with a closet rod 2" below it and a few hangers. */
-        fun shelfAndRod(xFrom: Float, xTo: Float, shelfIn: Float) {
-            rect(xFrom, xTo, shelfIn, shelfIn + 0.75f, light)
-            line(xFrom, shelfIn - 2f, xTo, shelfIn - 2f, medium)
-            var x = xFrom + 4f * inch
-            while (x < xTo - 2f * inch) {
-                line(x, shelfIn - 2f, x, shelfIn - 6f)
-                rect(x - 7f * inch, x + 7f * inch, shelfIn - 38f, shelfIn - 6f, light)
+        /** A closet rod at [rodIn] off the floor with a 3/4" shelf 2" above it and a few hangers. */
+        fun shelfAndRod(xFrom: Float, xTo: Float, rodIn: Float) {
+            val shelfIn = rodIn + 2f
+            rect(xFrom + 0.75f * inch, xTo - 0.75f * inch, shelfIn, shelfIn + 0.75f, light)
+            line(xFrom + 0.75f * inch, rodIn, xTo - 0.75f * inch, rodIn, medium)
+            var x = xFrom + 5f * inch
+            while (x < xTo - 3f * inch) {
+                line(x, rodIn, x, rodIn - 4f)
+                rect(x - 7f * inch, x + 7f * inch, rodIn - 36f, rodIn - 4f, light)
                 x += 9f * inch
             }
+        }
+        /** The carcass every closet unit shares: a 3/4" pilaster at each end, 84" tall, with a top. */
+        fun closetUnit(xFrom: Float, xTo: Float) {
+            val p = 0.75f * inch
+            rect(xFrom, xFrom + p, 0f, CLOSET_UNIT_HEIGHT_IN, medium)
+            rect(xTo - p, xTo, 0f, CLOSET_UNIT_HEIGHT_IN, medium)
+            rect(xFrom + p, xTo - p, CLOSET_UNIT_HEIGHT_IN - 0.75f, CLOSET_UNIT_HEIGHT_IN, light)
         }
         /** A table or desk top at [topIn] on legs set 2" in from the ends. */
         fun tableWithLegs(xFrom: Float, xTo: Float, topIn: Float) {
@@ -321,34 +335,39 @@ object Elevation {
                         line(from + 4f * inch, 6f, from + 4f * inch, 78f, light)
                     }
                     // ---- Closet parts ----
+                    // Every closet unit is 84" tall with a pilaster at each end (closetUnit);
+                    // rods sit at the standard heights: single hang 66", double hang 40" and 80".
                     name.startsWith("Shelf & Rod") -> {
-                        // Single hang: shelf at 66", rod 2" below it, a few hangers under the rod.
-                        shelfAndRod(from, to, 66f)
+                        closetUnit(from, to)
+                        shelfAndRod(from, to, SINGLE_ROD_IN)
                     }
                     name.startsWith("Double Hang") -> {
-                        shelfAndRod(from, to, 84f)
-                        shelfAndRod(from, to, 42f)
+                        closetUnit(from, to)
+                        shelfAndRod(from, to, DOUBLE_ROD_UPPER_IN)
+                        shelfAndRod(from, to, DOUBLE_ROD_LOWER_IN)
                     }
                     name.startsWith("Shelving") -> {
-                        // Uprights to 84" with 3/4" shelves every 12".
-                        line(from, 0f, from, 84f, medium)
-                        line(to, 0f, to, 84f, medium)
+                        // 3/4" shelves every 12" between the pilasters.
+                        closetUnit(from, to)
                         var hIn = 12f
-                        while (hIn <= 84f) { rect(from, to, hIn, hIn + 0.75f, light); hIn += 12f }
+                        while (hIn < CLOSET_UNIT_HEIGHT_IN - 1f) { rect(from + 0.75f * inch, to - 0.75f * inch, hIn, hIn + 0.75f, light); hIn += 12f }
                     }
                     name.startsWith("Drawers") -> {
-                        // A bank of four 8" drawers on a 4" base, pulls centred.
-                        rect(from, to, 0f, 36f)
+                        // A bank of four 8" drawers on a 4" base, pulls centred, shelves above.
+                        closetUnit(from, to)
+                        val p = 0.75f * inch
+                        rect(from + p, to - p, 36f, 36.75f, light)
                         for (i in 0 until 4) {
                             val bottom = 4f + 8f * i
-                            rect(from + inch, to - inch, bottom + 0.5f, bottom + 7.5f, light)
+                            rect(from + p + inch, to - p - inch, bottom + 0.5f, bottom + 7.5f, light)
                             line(xc - 2f * inch, bottom + 4f, xc + 2f * inch, bottom + 4f, medium)
                         }
+                        for (hIn in listOf(48f, 60f, 72f)) rect(from + p, to - p, hIn, hIn + 0.75f, light)
                     }
                     name.startsWith("Shoe") -> {
-                        line(from, 0f, from, 24f, medium)
-                        line(to, 0f, to, 24f, medium)
-                        for (hIn in listOf(6f, 14f, 22f)) rect(from, to, hIn, hIn + 0.75f, light)
+                        // Shoe tiers low down, open above.
+                        closetUnit(from, to)
+                        for (hIn in listOf(6f, 14f, 22f, 30f)) rect(from + 0.75f * inch, to - 0.75f * inch, hIn, hIn + 0.75f, light)
                     }
                     // ---- Furniture ----
                     name.startsWith("Sofa") || name.startsWith("Loveseat") || name == "Armchair" || name == "Recliner" -> {

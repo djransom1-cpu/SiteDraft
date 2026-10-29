@@ -83,8 +83,10 @@ class ElevationTest {
         val rodHeights = parts.filterIsInstance<DrawingElement.Line>()
             .filter { it.strokeWidth == 2f && it.start.y == it.end.y && (it.end.x - it.start.x) > 40f * inch }
             .map { (2000f - it.start.y) / inch }
-        assertTrue(rodHeights.any { kotlin.math.abs(it - 82f) < 0.01f })
+        assertTrue(rodHeights.any { kotlin.math.abs(it - 80f) < 0.01f })
         assertTrue(rodHeights.any { kotlin.math.abs(it - 40f) < 0.01f })
+        // And the unit stands 84" tall: a pilaster rectangle of that height.
+        assertTrue(parts.filterIsInstance<DrawingElement.Rectangle>().any { kotlin.math.abs(it.size.height - 84f * inch) < 0.01f })
     }
 
     @Test
