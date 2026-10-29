@@ -3,6 +3,8 @@ package com.example.sitedraft.ui.components
 import com.example.sitedraft.util.format
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
@@ -32,7 +34,9 @@ fun SettingsPanel(
         shape = MaterialTheme.shapes.large,
         shadowElevation = 8.dp
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        // Scrolls: on a laptop window or a phone the sections below the colour swatches
+        // (Background Style, snapping) sat off the bottom with no way to reach them.
+        Column(modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
