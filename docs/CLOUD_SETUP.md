@@ -14,17 +14,22 @@ Firestore database in `nam5` (US) and the rules and indexes from this repo deplo
 Do not deploy these rules to the CrewSync project: it has its own rules and would break.
 (On this PC PowerShell blocks `firebase`; use `firebase.cmd`.) Still to do:
 
-1. **Register the Android app**: Project settings > Your apps > Add app > Android.
+1. ~~Register the Android app~~ (done: `1:551328376608:android:9a328840f44d9140ad1945`, debug SHA-1 and
+   SHA-256 added, google-services.json written locally). Still add the release and Play
+   App Signing SHA-1s before Google sign-in works in a Play build.
+   Was: Project settings > Your apps > Add app > Android.
    Package name `com.example.sitedraft`. Add the debug SHA-1 (needed for Google sign-in):
    `keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android`
    and later the release keystore's SHA-1. Download `google-services.json` into `app/`.
-2. **Register a Web app**: Add app > Web, nickname "SiteDraft web". Copy the config
+2. ~~Register a Web app~~ (done: `1:551328376608:web:7ea068f533641644ad1945`, values in the local
+   firebase.properties). Was: Add app > Web, nickname "SiteDraft web". Copy the config
    values (`apiKey`, `authDomain`, `projectId`, `storageBucket`, `appId`). The desktop app
    uses this same web app id, as CrewSync does.
-3. **Authentication > Sign-in method**: enable **Email/Password** and **Google**.
+3. **Authentication > Get started**, then **Sign-in method**: enable **Email/Password** and **Google**.
    For Google, set the support email; note the **Web client ID** shown under the Google
    provider (Web SDK configuration), it is also `oauth_client[client_type=3]` in
-   google-services.json.
+   google-services.json. Put it in firebase.properties as googleWebClientId, then refresh
+   the Android config: `firebase.cmd apps:sdkconfig ANDROID 1:551328376608:android:9a328840f44d9140ad1945 --out app/google-services.json`
 4. **Authentication > Settings > Authorized domains**: add `djransom1-cpu.github.io`.
 5. ~~Firestore Database > Create database~~ (done, nam5).
    Deploy the rules and indexes from this repo: `firebase deploy --only firestore`.
