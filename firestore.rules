@@ -3,7 +3,9 @@ rules_version = '2';
 // SiteDraft: every user owns users/{uid} and the projects under it, and may share a project
 // with other accounts by email (memberEmails = may read, editorEmails = may also write).
 // The subscription fields are written only by the Stripe webhook Cloud Function (the Admin
-// SDK bypasses these rules). Deploy with: firebase deploy --only firestore
+// SDK bypasses these rules). Admins (admins/{email}, made in the console) may list accounts
+// and manage the allowlist and access codes, but not read anyone's projects.
+// Deploy with: firebase.cmd deploy --only firestore
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -15,8 +17,8 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    // Sharing goes by email, so it only counts for a verified address: otherwise anyone could
-    // sign up with someone else's email and read what was shared with them.
+    // Sharing and admin rights go by email, so they only count for a verified address:
+    // otherwise anyone could sign up with someone else's email.
     function verifiedEmail() {
       return isSignedIn()
         && request.auth.token.email != null
@@ -25,6 +27,10 @@ service cloud.firestore {
 
     function myEmail() {
       return request.auth.token.email.lower();
+    }
+
+    function isAdmin() {
+      return verifiedEmail() && exists(/databases/$(database)/documents/admins/$(myEmail()));
     }
 
     function isMemberOf(data) {
@@ -39,6 +45,37 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(uid)/projects/$(projectName)).data;
     }
 
+    // ---------------- access codes ----------------
+    // A code is usable while active (default true) and before its optional `expires`
+    // timestamp. The client never sees the list of codes.
+    function codeUsable(data) {
+      return data.get('active', true) == true
+        && (!('expires' in data) || data.expires > request.time);
+    }
+
+    function codeRedeemable(code) {
+      return code is string
+        && code.matches('^[A-Z0-9-]{3,32}$')
+        && exists(/databases/$(database)/documents/accessCodes/$(code))
+        && codeUsable(get(/databases/$(database)/documents/accessCodes/$(code)).data);
+    }
+
+    // users/{uid}.accessCode may only be set to {code, redeemedAt} with a redeemable code,
+    // or left as it was.
+    function accessCodeOk() {
+      return !('accessCode' in request.resource.data)
+        || (resource != null && 'accessCode' in resource.data
+            && request.resource.data.accessCode == resource.data.accessCode)
+        || (request.resource.data.accessCode is map
+            && request.resource.data.accessCode.keys().hasOnly(['code', 'redeemedAt'])
+            && codeRedeemable(request.resource.data.accessCode.code));
+    }
+
+    function myRedeemedCode() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        .get('accessCode', {}).get('code', '');
+    }
+
     // Fields a client may never set or change on users/{uid}.
     function touchesBillingFields() {
       return request.resource.data.keys().hasAny(['subscription', 'stripeCustomerId', 'subscriptionUpdatedAt']);
@@ -50,12 +87,13 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if isOwner(uid);
-      allow create: if isOwner(uid) && !touchesBillingFields();
-      allow update: if isOwner(uid) && !changesBillingFields();
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) && !touchesBillingFields() && accessCodeOk();
+      allow update: if isOwner(uid) && !changesBillingFields() && accessCodeOk();
       allow delete: if false;
 
       // Project JSON, split into chunks when it is bigger than one document (ProjectSync.kt).
+      // Admins deliberately have no access here.
       match /projects/{projectName} {
         allow read: if isOwner(uid) || isMemberOf(resource.data);
         allow create, delete: if isOwner(uid);
@@ -80,13 +118,27 @@ service cloud.firestore {
     }
 
     // Beta testers: document id = lowercase email. A user may look up only their own entry;
-    // listing is never allowed, so the set of testers stays private. Managed in the console.
+    // admins may list and change it from the Admin screen.
     match /allowlist/{email} {
-      allow get: if isSignedIn()
-        && request.auth.token.email != null
-        && request.auth.token.email.lower() == email;
-      allow list: if false;
-      allow write: if false;
+      allow get: if (isSignedIn()
+          && request.auth.token.email != null
+          && request.auth.token.email.lower() == email)
+        || isAdmin();
+      allow list, write: if isAdmin();
+    }
+
+    // Access codes: a user may read only the code they redeemed, and only while it is usable
+    // (that read is how the app re-checks it). Admins may list and change them.
+    match /accessCodes/{code} {
+      allow get: if (isSignedIn() && myRedeemedCode() == code && codeUsable(resource.data)) || isAdmin();
+      allow list, write: if isAdmin();
+    }
+
+    // Admins: made by hand in the console (document id = lowercase email). A user may only
+    // check whether they are one; nobody can add an admin from the app.
+    match /admins/{email} {
+      allow get: if verifiedEmail() && myEmail() == email;
+      allow list, write: if false;
     }
   }
 }

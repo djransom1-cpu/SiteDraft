@@ -28,6 +28,7 @@ fun AccountSection(modifier: Modifier = Modifier) {
     val user = session.user ?: return
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<String?>(null) }
+    var showAdmin by remember { mutableStateOf(false) }
 
     Column(modifier) {
         Text("Account", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
@@ -37,7 +38,9 @@ fun AccountSection(modifier: Modifier = Modifier) {
         Text(
             when {
                 access == null -> "Subscription: not checked"
+                access.reason == "admin" -> "Admin (owner)"
                 access.reason == "allowlist" -> "Beta access (no subscription needed)"
+                access.reason == "code" -> "Access code ${session.userDoc?.accessCode?.code ?: ""}"
                 access.reason == "offline-cache" -> "Subscription: last verified offline"
                 status != null -> "Subscription: $status"
                 else -> "Subscription: none"
@@ -52,8 +55,12 @@ fun AccountSection(modifier: Modifier = Modifier) {
                     Text("Manage subscription")
                 }
             }
+            if (session.isAdmin) {
+                OutlinedButton(onClick = { showAdmin = true }) { Text("Admin") }
+            }
             TextButton(onClick = { scope.launch { session.signOut() } }, enabled = !session.busy) { Text("Sign out") }
         }
         message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
+    if (showAdmin) AdminDialog(session) { showAdmin = false }
 }

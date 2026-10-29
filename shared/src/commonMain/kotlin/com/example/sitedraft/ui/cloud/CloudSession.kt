@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.example.sitedraft.cloud.AccessCache
 import com.example.sitedraft.cloud.AccessDecision
+import com.example.sitedraft.cloud.AccessCodes
 import com.example.sitedraft.cloud.AccessGate
 import com.example.sitedraft.cloud.CloudException
 import com.example.sitedraft.cloud.CloudFunctions
@@ -41,6 +42,9 @@ class CloudSession(
         private set
     var busy by mutableStateOf(false)
         private set
+    /** The owner (an `admins/{email}` document): sees the Admin screen in Settings. */
+    var isAdmin by mutableStateOf(false)
+        private set
 
     /** The sync engine while the user is past the gate; the Projects panel reads shares from it. */
     var sync by mutableStateOf<ProjectSync?>(null)
@@ -63,9 +67,16 @@ class CloudSession(
             } catch (e: Exception) {
                 platform.log("SiteDraftCloud", "touchUser: ${e.message}")
             }
+            // A just-verified email only counts once the token says so (admin and sharing
+            // rules require email_verified), so refresh while it still reads unverified.
+            if (!user.emailVerified) runCatching { cloud.refreshUser() }
+            val email = cloud.user.value?.email ?: user.email
             val doc = cloud.store.readUser(user.uid)
-            val listed = user.email?.let { cloud.store.isAllowlisted(it) } ?: false
-            val decision = AccessGate.decide(doc, listed, nowMillis())
+            isAdmin = email?.let { cloud.store.isAdmin(it) } ?: false
+            val listed = email?.let { cloud.store.isAllowlisted(it) } ?: false
+            // Checked every time, so switching a code off in the console shuts it again.
+            val codeUsable = doc?.accessCode?.code?.takeIf { it.isNotBlank() }?.let { cloud.store.isAccessCodeUsable(it) } ?: false
+            val decision = AccessGate.decide(doc, listed, nowMillis(), codeUsable, admin = isAdmin)
             cache.save(user.uid, decision)
             userDoc = doc
             access = decision
@@ -108,6 +119,26 @@ class CloudSession(
         check(user)
     }
 
+    /**
+     * Redeems an access code typed on the Subscribe screen, then checks again. Returns an error
+     * for the user, or null when the code was accepted (the gate then opens by itself).
+     */
+    suspend fun redeemCode(input: String): String? {
+        val user = user ?: return "Sign in first."
+        val code = AccessCodes.normalize(input)
+        if (!AccessCodes.isWellFormed(code)) return "Codes are 3 to 32 letters, numbers or dashes."
+        busy = true
+        return try {
+            cloud.store.redeemAccessCode(user.uid, code)
+            check(user)
+            if (access?.allowed == true) null else "That code is not valid, or it has expired."
+        } catch (e: Exception) {
+            (e as? CloudException)?.message ?: "Could not use the code: ${e.message}"
+        } finally {
+            busy = false
+        }
+    }
+
     /** Sends the verification email again. Returns a message for the user. */
     suspend fun resendVerification(): String = try {
         cloud.sendEmailVerification()
@@ -145,6 +176,7 @@ class CloudSession(
 
     suspend fun signOut() {
         detachSync()
+        isAdmin = false
         access = null
         userDoc = null
         error = null

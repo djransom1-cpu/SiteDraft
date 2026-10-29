@@ -29,7 +29,19 @@ data class UserDoc(
     val stripeCustomerId: String? = null,
     val lastSeenAt: Long = 0L,
     val lastDevice: String? = null,
+    /** Set when the user typed a valid access code on the Subscribe screen (see [AccessCodes]). */
+    val accessCode: AccessCodeRedemption? = null,
 )
+
+/** One account as the admin screen lists it. */
+data class AccountSummary(val uid: String, val user: UserDoc)
+
+/** An access code as the admin screen lists it (`accessCodes/{code}`). */
+data class AccessCodeInfo(val code: String, val active: Boolean, val note: String?, val hasExpiry: Boolean)
+
+/** `users/{uid}.accessCode`: which code the user redeemed, and when. The rules check the code on write. */
+@Serializable
+data class AccessCodeRedemption(val code: String = "", val redeemedAt: Long = 0L)
 
 /** One entry of `users/{uid}/projects` without its JSON (for listing). */
 data class ProjectMeta(val name: String, val updatedAt: Long, val device: String?, val chunkCount: Int)
@@ -76,6 +88,29 @@ interface CloudStore {
     suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing)
     /** Every project, in any user's account, whose memberEmails contains [email]. */
     suspend fun listSharedWithMe(email: String): List<SharedProjectMeta>
+
+    /**
+     * Records [code] on `users/{uid}`. The security rules accept it only when
+     * `accessCodes/{code}` exists, is active and has not expired; otherwise this throws a
+     * [CloudException] saying so.
+     */
+    suspend fun redeemAccessCode(uid: String, code: String)
+    /**
+     * Whether the code this user redeemed still works. The rules let a user read only their
+     * own redeemed code, and only while it is active and unexpired, so "readable" = "good".
+     */
+    suspend fun isAccessCodeUsable(code: String): Boolean
+
+    // ---- Admin (an `admins/{email}` document made in the console; the rules check it). ----
+
+    /** True when `admins/{email}` exists and the signed-in email is verified. */
+    suspend fun isAdmin(email: String): Boolean = false
+    suspend fun listAccounts(): List<AccountSummary> = emptyList()
+    suspend fun listAllowlist(): List<String> = emptyList()
+    suspend fun setAllowlisted(email: String, allowed: Boolean) {}
+    suspend fun listAccessCodes(): List<AccessCodeInfo> = emptyList()
+    /** Creates or updates `accessCodes/{code}`; expiry dates are set in the console. */
+    suspend fun saveAccessCode(code: String, active: Boolean, note: String?) {}
 }
 
 /** Authentication plus the store. One per platform; see [Platform.cloud]. */
@@ -117,6 +152,8 @@ object UnavailableCloud : CloudService {
         override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? = null
         override suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing) {}
         override suspend fun listSharedWithMe(email: String) = emptyList<SharedProjectMeta>()
+        override suspend fun redeemAccessCode(uid: String, code: String) {}
+        override suspend fun isAccessCodeUsable(code: String) = false
     }
     override suspend fun signIn(email: String, password: String) = throw CloudException(unavailableReason)
     override suspend fun signUp(email: String, password: String) = throw CloudException(unavailableReason)

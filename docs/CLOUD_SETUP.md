@@ -134,3 +134,25 @@ someone's email as **Can edit** or **View only**, change their role, or remove t
   their device.
 - The security rules enforce all of this server-side (firestore.rules): only the owner can
   change who a project is shared with, and only verified emails count.
+
+## 9. Admin (the owner) and access codes
+
+**Admin.** An admin always gets in, and Settings > Account shows an **Admin** button with
+three tabs: every account (email, subscription or code, last seen, device), the beta email
+allowlist (add/remove), and access codes (create, switch on/off, how many accounts used each).
+Admins see accounts only, never anyone's drawings. To make yourself admin, once:
+
+1. Verify your email (the link in the verification email SiteDraft sent at sign-up; the
+   Subscribe screen can send it again). Admin rights only count for a verified email.
+2. Firestore > **+ Start collection** > ID `admins` > document ID = your email in lowercase
+   (e.g. `djransom1@gmail.com`) > any field (e.g. `note` = `owner`) > Save.
+3. In the app, tap **I have subscribed, check again** (or sign in again).
+
+Admins can only be added in the console; nobody can make themselves admin from the app.
+
+**Access codes.** Testers tap **Have a code?** on the Subscribe screen and type a code. Create
+codes on the Admin screen's Codes tab (or in the console: collection `accessCodes`, document
+ID = the code in capitals, 3 to 32 letters, digits or dashes; field `active` = true). Switching
+a code off shuts out everyone who used it, at their next check. For an end date, add a field
+named `expires` of type **timestamp** to the code in the console. The security rules check
+every code, so the list of codes is never visible to users.

@@ -160,6 +160,8 @@ class SharingTest {
             val doc = projects[key]!!
             SharedProjectMeta(s.ownerUid, s.ownerEmail, doc.name, doc.updatedAt, email in s.editorEmails)
         }
+        override suspend fun redeemAccessCode(uid: String, code: String) {}
+        override suspend fun isAccessCodeUsable(code: String) = false
     }
 
     private class FakeCloud(val store0: FakeStore, user: CloudUser) : CloudService {

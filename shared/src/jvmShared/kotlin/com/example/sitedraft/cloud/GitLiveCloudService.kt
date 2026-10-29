@@ -124,6 +124,15 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
     private data class ChunkFields(val index: Int, val json: String)
 
     @Serializable
+    private data class RedeemFields(val accessCode: AccessCodeRedemption)
+
+    @Serializable
+    private data class AllowFields(val note: String, val addedAt: Long)
+
+    @Serializable
+    private data class CodeFields(val active: Boolean, val note: String? = null)
+
+    @Serializable
     private data class SharingFields(val ownerUid: String, val ownerEmail: String? = null, val memberEmails: List<String>, val editorEmails: List<String>)
 
     private inline fun <reified T> DocumentSnapshot.field(name: String): T? =
@@ -160,6 +169,7 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
                 stripeCustomerId = snap.field<String>("stripeCustomerId"),
                 lastSeenAt = snap.field<Long>("lastSeenAt") ?: 0L,
                 lastDevice = snap.field<String>("lastDevice"),
+                accessCode = snap.field<AccessCodeRedemption>("accessCode"),
             )
         }
 
@@ -231,6 +241,68 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
         override suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing) = store("Sharing '$name'") {
             db.collection("users").document(ownerUid).collection("projects").document(CloudDocs.encodeDocId(name))
                 .set(SharingFields.serializer(), SharingFields(sharing.ownerUid, sharing.ownerEmail, sharing.memberEmails, sharing.editorEmails), merge = true)
+        }
+
+        // ---- admin ----
+
+        private fun DocumentSnapshot.toUserDoc() = UserDoc(
+            email = field<String>("email"),
+            displayName = field<String>("displayName"),
+            subscription = field<SubscriptionDoc>("subscription"),
+            stripeCustomerId = field<String>("stripeCustomerId"),
+            lastSeenAt = field<Long>("lastSeenAt") ?: 0L,
+            lastDevice = field<String>("lastDevice"),
+            accessCode = field<AccessCodeRedemption>("accessCode"),
+        )
+
+        override suspend fun isAdmin(email: String): Boolean {
+            if (email.isBlank()) return false
+            return try {
+                store("Checking admin") { db.collection("admins").document(Sharing.normalize(email)).get().exists }
+            } catch (e: CloudException) {
+                if (e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true) false else throw e
+            }
+        }
+
+        override suspend fun listAccounts(): List<AccountSummary> = store("Listing accounts") {
+            db.collection("users").get().documents.map { AccountSummary(it.id, it.toUserDoc()) }
+        }
+
+        override suspend fun listAllowlist(): List<String> = store("Listing the allowlist") {
+            db.collection("allowlist").get().documents.map { it.id }.sorted()
+        }
+
+        override suspend fun setAllowlisted(email: String, allowed: Boolean) = store("Updating the allowlist") {
+            val ref = db.collection("allowlist").document(Sharing.normalize(email))
+            if (allowed) ref.set(AllowFields.serializer(), AllowFields("added in SiteDraft", nowMillis())) else ref.delete()
+        }
+
+        override suspend fun listAccessCodes(): List<AccessCodeInfo> = store("Listing access codes") {
+            db.collection("accessCodes").get().documents.map { d ->
+                AccessCodeInfo(d.id, d.field<Boolean>("active") ?: true, d.field<String>("note"), d.contains("expires"))
+            }.sortedBy { it.code }
+        }
+
+        override suspend fun saveAccessCode(code: String, active: Boolean, note: String?) = store("Saving the code") {
+            db.collection("accessCodes").document(code).set(CodeFields.serializer(), CodeFields(active, note), merge = true)
+        }
+
+        override suspend fun redeemAccessCode(uid: String, code: String) {
+            try {
+                store("Using the code") {
+                    db.collection("users").document(uid).set(RedeemFields.serializer(), RedeemFields(AccessCodeRedemption(code, nowMillis())), merge = true)
+                }
+            } catch (e: CloudException) {
+                if (e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true) throw CloudException("That code is not valid, or it has expired.", e)
+                throw e
+            }
+        }
+
+        override suspend fun isAccessCodeUsable(code: String): Boolean = try {
+            store("Checking the code") { db.collection("accessCodes").document(code).get().exists }
+        } catch (e: CloudException) {
+            // The rules refuse to show a code that was switched off or has expired.
+            if (e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true) false else throw e
         }
 
         override suspend fun listSharedWithMe(email: String): List<SharedProjectMeta> = store("Listing shared projects") {

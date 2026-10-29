@@ -452,6 +452,76 @@ class RestCloudService(
         override suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing) =
             mergeDocument(CloudDocs.projectPath(ownerUid, name), CloudDocs.sharingFields(sharing))
 
+        // ---- admin ----
+
+        private fun denied(e: CloudException) =
+            e.message?.contains("PERMISSION_DENIED") == true || e.message?.contains("HTTP 403") == true
+
+        override suspend fun isAdmin(email: String): Boolean {
+            if (email.isBlank()) return false
+            return try {
+                getDocument("admins/${Sharing.normalize(email)}") != null
+            } catch (e: CloudException) {
+                if (denied(e)) false else throw e
+            }
+        }
+
+        override suspend fun listAccounts(): List<AccountSummary> =
+            listCollection("users").map { (id, fields) -> AccountSummary(id, CloudDocs.userFrom(fields)) }
+
+        override suspend fun listAllowlist(): List<String> = listCollection("allowlist").map { it.first }.sorted()
+
+        override suspend fun setAllowlisted(email: String, allowed: Boolean) {
+            val path = "allowlist/${Sharing.normalize(email)}"
+            if (allowed) {
+                mergeDocument(path, buildJsonObject {
+                    put("note", JsonPrimitive("added in SiteDraft"))
+                    put("addedAt", JsonPrimitive(now()))
+                })
+            } else {
+                commit(listOf(Write(path, null)))
+            }
+        }
+
+        override suspend fun listAccessCodes(): List<AccessCodeInfo> = listCollection("accessCodes").map { (id, f) ->
+            AccessCodeInfo(
+                code = id,
+                active = f["active"]?.jsonPrimitive?.booleanOrNull ?: true,
+                note = f["note"]?.jsonPrimitive?.contentOrNull,
+                hasExpiry = f.containsKey("expires"),
+            )
+        }.sortedBy { it.code }
+
+        override suspend fun saveAccessCode(code: String, active: Boolean, note: String?) =
+            mergeDocument("accessCodes/$code", buildJsonObject {
+                put("active", JsonPrimitive(active))
+                put("note", note?.let { JsonPrimitive(it) } ?: JsonNull)
+            })
+
+        override suspend fun redeemAccessCode(uid: String, code: String) {
+            val fields = buildJsonObject {
+                put("accessCode", buildJsonObject {
+                    put("code", JsonPrimitive(code))
+                    put("redeemedAt", JsonPrimitive(now()))
+                })
+            }
+            try {
+                mergeDocument(CloudDocs.usersPath(uid), fields)
+            } catch (e: CloudException) {
+                if (e.message?.contains("PERMISSION_DENIED") == true || e.message?.contains("HTTP 403") == true) {
+                    throw CloudException("That code is not valid, or it has expired.", e)
+                }
+                throw e
+            }
+        }
+
+        override suspend fun isAccessCodeUsable(code: String): Boolean = try {
+            getDocument("accessCodes/$code") != null
+        } catch (e: CloudException) {
+            // The rules refuse to show a code that was switched off or has expired.
+            if (e.message?.contains("PERMISSION_DENIED") == true || e.message?.contains("HTTP 403") == true) false else throw e
+        }
+
         /** A collection-group query over every user's `projects`, metadata fields only. */
         override suspend fun listSharedWithMe(email: String): List<SharedProjectMeta> {
             val me = Sharing.normalize(email)

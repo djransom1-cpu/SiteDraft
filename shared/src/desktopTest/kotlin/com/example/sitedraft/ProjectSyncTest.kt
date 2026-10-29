@@ -95,6 +95,8 @@ class ProjectSyncTest {
         override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? = null
         override suspend fun writeSharing(ownerUid: String, name: String, sharing: ProjectSharing) {}
         override suspend fun listSharedWithMe(email: String) = emptyList<SharedProjectMeta>()
+        override suspend fun redeemAccessCode(uid: String, code: String) {}
+        override suspend fun isAccessCodeUsable(code: String) = false
     }
 
     private class FakeCloud(override val store: FakeStore = FakeStore()) : CloudService {

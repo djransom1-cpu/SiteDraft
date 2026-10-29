@@ -20,6 +20,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -77,6 +81,19 @@ fun SubscribeScreen(session: CloudSession, modifier: Modifier = Modifier) {
                         Spacer(Modifier.height(4.dp))
                         Text("Signed in as $email", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    if (session.user?.emailVerified == false) {
+                        // Admin access (the owner) only counts for a verified email.
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Your email is not verified yet. Open the link in the verification email, then tap check again.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        TextButton(onClick = { scope.launch { message = session.resendVerification() } }, enabled = !session.busy) {
+                            Text("Send the verification email again")
+                        }
+                    }
                     Spacer(Modifier.height(24.dp))
 
                     if (!couldNotCheck) {
@@ -98,6 +115,10 @@ fun SubscribeScreen(session: CloudSession, modifier: Modifier = Modifier) {
                         if (session.checking) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         else Text(if (couldNotCheck) "Try again" else "I have subscribed, check again")
                     }
+                    if (!couldNotCheck) {
+                        Spacer(Modifier.height(8.dp))
+                        AccessCodeBox(session) { message = it }
+                    }
                     Spacer(Modifier.height(8.dp))
                     TextButton(onClick = { scope.launch { session.signOut() } }, enabled = !session.busy) { Text("Sign out") }
 
@@ -109,4 +130,34 @@ fun SubscribeScreen(session: CloudSession, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+/**
+ * "Have a code?": closed until tapped, then a field and a Use code button. A good code opens
+ * the gate (the root sees the new decision); a bad one reports through [onMessage].
+ */
+@Composable
+private fun AccessCodeBox(session: CloudSession, onMessage: (String?) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var open by remember { mutableStateOf(false) }
+    var code by remember { mutableStateOf("") }
+    if (!open) {
+        TextButton(onClick = { open = true; onMessage(null) }, enabled = !session.busy) { Text("Have a code?") }
+        return
+    }
+    OutlinedTextField(
+        value = code,
+        onValueChange = { code = it; onMessage(null) },
+        label = { Text("Access code") },
+        singleLine = true,
+        enabled = !session.busy,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(
+        onClick = { scope.launch { onMessage(session.redeemCode(code)) } },
+        enabled = !session.busy && code.isNotBlank(),
+        modifier = Modifier.fillMaxWidth()
+    ) { Text("Use code") }
 }

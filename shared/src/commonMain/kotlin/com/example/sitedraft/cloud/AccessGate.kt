@@ -32,10 +32,16 @@ object AccessGate {
         return subscription.status == "canceled" && subscription.currentPeriodEnd > now
     }
 
-    /** The decision when Firestore answered. */
-    fun decide(user: UserDoc?, allowlisted: Boolean, now: Long): AccessDecision = when {
+    /**
+     * The decision when Firestore answered. An admin (the owner) always gets in; then a paid
+     * subscription, the email allowlist, and an access code the user redeemed that is still
+     * active ([codeUsable]).
+     */
+    fun decide(user: UserDoc?, allowlisted: Boolean, now: Long, codeUsable: Boolean = false, admin: Boolean = false): AccessDecision = when {
+        admin -> AccessDecision(true, "admin", now)
         isSubscriptionGood(user?.subscription, now) -> AccessDecision(true, user!!.subscription!!.status, now)
         allowlisted -> AccessDecision(true, "allowlist", now)
+        codeUsable && user?.accessCode != null -> AccessDecision(true, "code", now)
         else -> AccessDecision(false, "none", now)
     }
 
@@ -62,4 +68,18 @@ class AccessCache(private val prefs: KeyValuePrefs) {
     fun save(uid: String, decision: AccessDecision) = prefs.putString(key(uid), json.encodeToString(AccessDecision.serializer(), decision))
 
     fun clear(uid: String) = prefs.putString(key(uid), "")
+}
+
+/**
+ * Access codes the owner hands out (beta testers, friends): `accessCodes/{CODE}` documents
+ * made in the Firebase console. The same shape is enforced by firestore.rules.
+ */
+object AccessCodes {
+    private val shape = Regex("^[A-Z0-9-]{3,32}$")
+
+    /** What the user typed, the way codes are stored: trimmed, upper case, inner spaces as dashes. */
+    fun normalize(input: String): String = input.trim().uppercase().replace(Regex("""\s+"""), "-")
+
+    /** 3 to 32 letters, digits or dashes; anything else can never be a code. */
+    fun isWellFormed(code: String): Boolean = shape.matches(code)
 }
