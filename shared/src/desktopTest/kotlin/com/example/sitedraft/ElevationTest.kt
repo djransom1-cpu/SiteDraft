@@ -144,6 +144,37 @@ class ElevationTest {
     }
 
     @Test
+    fun `a corner base shows a side panel and a narrow angled door at the room end`() {
+        // Wall along y = 0, viewed from below; the corner unit sits at the wall's left end with
+        // its back on the wall and its left side on a side wall, so the door faces right.
+        val wall = sym("2x4 Wall", PlanSymbols.WALLS, 500f, 0f, 1000f, t)
+        val face = t / 2f
+        val corner = sym("Corner Base 36\"", PlanSymbols.CABINETS, 18f * inch, face + 18f * inch, 36f * inch, 36f * inch)
+        val state = CanvasState(elements = listOf(wall, corner))
+        assertTrue(Elevation.cornerDoorAtToEnd(corner, wall, ViewerSide.BELOW, state))
+        val rects = Elevation.build(wall, ElevationSpec(wall.id, ViewerSide.BELOW), Offset(0f, 2000f), state)
+            .filterIsInstance<DrawingElement.Rectangle>().filter { it.strokeWidth == 1f }
+        // One door front, 10" wide (12" less the 1" insets), starting 25" along: the first 24" is the side.
+        val door = rects.single { it.size.height > 20f * inch }
+        assertEquals(10f * inch, door.size.width, 0.01f)
+        assertEquals(25f * inch, door.topLeft.x, 0.01f)
+        // Turned 180 (into the opposite corner), the door lands at the other end.
+        val turned = corner.copy(rotation = 180f, center = Offset(1000f - 18f * inch, face + 18f * inch))
+        val s2 = CanvasState(elements = listOf(wall, turned))
+        assertTrue(!Elevation.cornerDoorAtToEnd(turned, wall, ViewerSide.BELOW, s2))
+    }
+
+    @Test
+    fun `upper cabinet knobs sit near the bottom of the door`() {
+        val (wall, state) = kitchen()
+        val circles = Elevation.build(wall, ElevationSpec(wall.id, ViewerSide.BELOW), Offset(0f, 2000f), state)
+            .filterIsInstance<DrawingElement.Circle>()
+        val heights = circles.map { (2000f - it.center.y) / inch }
+        // The Upper 30" starts at 54": its knobs are at 57"; the base's knobs are high on its doors.
+        assertTrue(heights.any { kotlin.math.abs(it - 57f) < 0.01f })
+    }
+
+    @Test
     fun `viewed from the other side the run is mirrored`() {
         val (wall, state) = kitchen()
         val window = Elevation.itemsOnWall(wall, ViewerSide.ABOVE, state).single()

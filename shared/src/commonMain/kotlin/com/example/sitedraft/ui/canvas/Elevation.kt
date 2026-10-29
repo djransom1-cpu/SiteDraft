@@ -65,6 +65,27 @@ object Elevation {
     fun sizePx(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): Size =
         Size(lengthPx(wall), state.inchesToPx(spec.wallHeightIn))
 
+    /** Where a point sits along the wall, measured from the end on the viewer's LEFT. */
+    fun alongOf(wall: Rect, side: ViewerSide, p: Offset): Float = when (side) {
+        ViewerSide.BELOW -> p.x - wall.left
+        ViewerSide.ABOVE -> wall.right - p.x
+        ViewerSide.RIGHT -> wall.bottom - p.y
+        ViewerSide.LEFT -> p.y - wall.top
+    }
+
+    /**
+     * For a diagonal corner cabinet: is its angled door at the right-hand (to) end of its run
+     * along this wall? The door sits across the front-right corner of the unrotated symbol
+     * (see drawCabinet), so turn that point by the symbol's rotation and see which way it lies.
+     */
+    fun cornerDoorAtToEnd(symbol: DrawingElement.Symbol, wall: DrawingElement.Symbol, side: ViewerSide, state: CanvasState): Boolean {
+        val wb = FloorPlan.bounds(wall)
+        val d = state.inchesToPx(12f)
+        val doorLocal = Offset(symbol.size.width / 2f - d / 2f, symbol.size.height / 2f - d / 2f)
+        val doorWorld = rotateAbout(symbol.center + doorLocal, symbol.center, symbol.rotation)
+        return alongOf(wb, side, doorWorld) > alongOf(wb, side, symbol.center)
+    }
+
     /** Extent of a footprint along the wall, measured from the end on the viewer's LEFT. */
     fun alongExtent(wall: Rect, side: ViewerSide, b: Rect): Pair<Float, Float> = when (side) {
         ViewerSide.BELOW -> Pair(b.left - wall.left, b.right - wall.left)
@@ -152,16 +173,32 @@ object Elevation {
         fun circle(xc: Float, hc: Float, rIn: Float, sw: Float = light) {
             out += DrawingElement.Circle(center = px(xc, hc), radius = rIn * inch, color = color, strokeWidth = sw)
         }
-        /** Door fronts across [xFrom]..[xTo] between two heights; [count] doors (two from 30" when 0). */
-        fun doors(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, count: Int = 0) {
+        /**
+         * Door fronts across [xFrom]..[xTo] between two heights; [count] doors (two from 30"
+         * when 0). Knobs sit near the top of a base door and near the BOTTOM of an upper's
+         * ([knobsLow]), where a hand reaches them.
+         */
+        fun doors(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, count: Int = 0, knobsLow: Boolean = false) {
             val inset = inch
             rect(xFrom + inset, xTo - inset, hBottom + 1f, hTop - 1f, light)
             val two = if (count in 1..2) count == 2 else xTo - xFrom >= 30f * inch
             if (two) line((xFrom + xTo) / 2f, hBottom + 1f, (xFrom + xTo) / 2f, hTop - 1f)
-            // Knobs near the top inside corner(s).
-            val knobH = minOf(hTop - 3f, hBottom + (hTop - hBottom) * 0.8f)
+            val knobH = if (knobsLow) hBottom + 3f else minOf(hTop - 3f, hBottom + (hTop - hBottom) * 0.8f)
             if (two) { circle((xFrom + xTo) / 2f - 1.5f * inch, knobH, 0.5f); circle((xFrom + xTo) / 2f + 1.5f * inch, knobH, 0.5f) }
             else circle(xTo - 2.5f * inch, knobH, 0.5f)
+        }
+        /**
+         * A diagonal corner unit seen from one of its walls: most of its width is the blank
+         * side of the cabinet, and the angled door shows foreshortened, [doorIn] wide, at the
+         * end that faces the room ([doorAtTo]).
+         */
+        fun cornerUnit(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, doorAtTo: Boolean, doorIn: Float, upper: Boolean) {
+            val doorW = minOf(doorIn * inch, xTo - xFrom)
+            val doorFrom = if (doorAtTo) xTo - doorW else xFrom
+            val doorTo = if (doorAtTo) xTo else xFrom + doorW
+            val edge = if (doorAtTo) doorFrom else doorTo
+            line(edge, hBottom, edge, hTop, light) // where the side panel meets the angled door
+            doors(doorFrom, doorTo, hBottom, hTop, 1, knobsLow = upper)
         }
         /** A stack of [n] equal drawers between two heights, pulls centred. */
         fun drawers(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, n: Int) {
@@ -280,7 +317,7 @@ object Elevation {
                     name.startsWith("Base") || name.startsWith("Corner Base") -> {
                         rect(from, to, 0f, counterTop - 1.5f)
                         line(from, 4f, to, 4f) // toe kick
-                        if (name.startsWith("Corner")) doors(from, to, 4f, counterTop - 1.5f, PlanSymbols.doorCount(item.symbol, w / inch))
+                        if (name.startsWith("Corner")) cornerUnit(from, to, 4f, counterTop - 1.5f, cornerDoorAtToEnd(item.symbol, wall, spec.side, state), 12f, upper = false)
                         else fronts(item.symbol, from, to, 4f, counterTop - 1.5f)
                         counterRuns += Pair(from, to)
                     }
@@ -316,10 +353,15 @@ object Elevation {
                         line(xc, 33.5f, xc, 41f, medium)
                         line(xc, 41f, xc + 4f * inch, 39.5f, medium)
                     }
+                    name == PlanSymbols.UPPER_CORNER -> {
+                        val top = spec.upperBottomIn + spec.upperHeightIn
+                        rect(from, to, spec.upperBottomIn, top)
+                        cornerUnit(from, to, spec.upperBottomIn, top, cornerDoorAtToEnd(item.symbol, wall, spec.side, state), 12f, upper = true)
+                    }
                     name.startsWith("Upper") -> {
                         val top = spec.upperBottomIn + spec.upperHeightIn
                         rect(from, to, spec.upperBottomIn, top)
-                        doors(from, to, spec.upperBottomIn, top, PlanSymbols.doorCount(item.symbol, w / inch))
+                        doors(from, to, spec.upperBottomIn, top, PlanSymbols.doorCount(item.symbol, w / inch), knobsLow = true)
                     }
                     name.startsWith("Pantry") -> {
                         val top = spec.upperBottomIn + spec.upperHeightIn
