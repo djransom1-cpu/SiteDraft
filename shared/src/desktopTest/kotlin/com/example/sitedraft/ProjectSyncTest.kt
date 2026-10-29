@@ -17,6 +17,7 @@ import com.example.sitedraft.platform.InMemoryPrefs
 import com.example.sitedraft.platform.InMemoryStorage
 import com.example.sitedraft.platform.KeyValuePrefs
 import com.example.sitedraft.platform.Platform
+import com.example.sitedraft.platform.PageSpec
 import com.example.sitedraft.platform.ProjectStorage
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -110,7 +111,7 @@ class ProjectSyncTest {
         override val name = "test"
         override val storage: ProjectStorage = InMemoryStorage()
         override val prefs: KeyValuePrefs = InMemoryPrefs()
-        override fun exportPage(fileName: String, width: Int, height: Int, density: Float, draw: DrawScope.() -> Unit): String? = null
+        override fun exportPage(fileName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? = null
         override fun exportText(fileName: String, text: String): String? = null
     }
 
