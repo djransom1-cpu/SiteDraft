@@ -692,8 +692,14 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
         // an upper cabinet's back edge sits on the base cabinet's back edge, give or take a px -
         // and the smaller object wins the tie.
         val tie = 8f / _state.value.zoom
+        // Among the tied: an annotation (dimension, text) beats the geometry it sits on - a
+        // dimension run along the middle of a wall is otherwise unreachable - then the
+        // smaller object wins.
         return scored.filter { it.second <= best + tie }
-            .minByOrNull { it.first.boundingRect().let { r -> r.width * r.height } }?.first
+            .minWithOrNull(
+                compareBy<Pair<DrawingElement, Float>> { if (it.first is DrawingElement.Dimension || it.first is DrawingElement.Text) 0 else 1 }
+                    .thenBy { it.first.boundingRect().let { r -> r.width * r.height } }
+            )?.first
     }
 
     /** The point an element turns about when it has a rotation; null for elements never drawn rotated. */
@@ -742,7 +748,17 @@ class DrawingManager(private val platform: Platform = NoopPlatform) {
         return when (element) {
             is DrawingElement.Line -> getNearestPointOnSegment(p, element.start, element.end)
             is DrawingElement.Freehand -> nearestPointOnStroke(p, element)
-            is DrawingElement.Dimension -> getNearestPointOnSegment(p, element.start, element.end)
+            is DrawingElement.Dimension -> {
+                // The dimension LINE as drawn (offset from the measured points) and its two
+                // extension lines - what the pen actually lands on. Measuring to the measured
+                // points made a dimension sitting on a wall lose every tap to the wall.
+                val (dimStart, dimEnd) = element.dimLineEndpoints()
+                listOf(
+                    getNearestPointOnSegment(p, dimStart, dimEnd),
+                    getNearestPointOnSegment(p, element.start, dimStart),
+                    getNearestPointOnSegment(p, element.end, dimEnd)
+                ).minByOrNull { (it - p).getDistance() }
+            }
             is DrawingElement.Triangle -> {
                 val (a, b, c) = element.getVertices()
                 listOf(

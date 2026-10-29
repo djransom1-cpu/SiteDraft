@@ -1,10 +1,12 @@
 package com.example.sitedraft
 
 import androidx.compose.ui.geometry.Offset
+import com.example.sitedraft.ui.canvas.DrawingElement
 import com.example.sitedraft.ui.canvas.DrawingEvent
 import com.example.sitedraft.ui.canvas.DrawingManager
 import com.example.sitedraft.ui.canvas.DrawingTool
 import com.example.sitedraft.ui.canvas.PlanSymbols
+import com.example.sitedraft.ui.canvas.dimLineEndpoints
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -58,6 +60,31 @@ class PickingTest {
         vm.onEvent(DrawingEvent.DeselectElement)
         // The front half of the base, same height.
         assertEquals(base.id, tap(vm, Offset(500f + 6f * inch, 500f - 14f * inch)))
+    }
+
+    @Test
+    fun `a dimension run along a wall is picked over the wall`() {
+        val vm = DrawingManager().also { it.onEvent(DrawingEvent.ToggleSnap(false)) }
+        vm.onEvent(DrawingEvent.SelectSymbol("2x6 Wall", PlanSymbols.WALLS))
+        vm.onEvent(DrawingEvent.PlaceAt(Offset(500f, 300f)))
+        val wall = vm.state.value.elements.last()
+        vm.onEvent(DrawingEvent.UpdateElementProperty(wall.id, "width", "10"))   // x 250..750, 6.5" thick about y = 300
+        // A dimension measured along the wall's top face, its line offset 2" down INTO the wall.
+        vm.onEvent(DrawingEvent.SelectTool(DrawingTool.DIMENSION))
+        vm.onEvent(DrawingEvent.Start(Offset(250f, 300f - 3.25f * inch)))
+        vm.onEvent(DrawingEvent.Move(Offset(750f, 300f - 3.25f * inch)))
+        vm.onEvent(DrawingEvent.End)
+        vm.onEvent(DrawingEvent.Start(Offset(500f, 300f - 1.25f * inch)))
+        vm.onEvent(DrawingEvent.Move(Offset(500f, 300f - 1.25f * inch)))
+        vm.onEvent(DrawingEvent.End)
+        val dim = vm.state.value.elements.filterIsInstance<DrawingElement.Dimension>().single()
+        vm.onEvent(DrawingEvent.DeselectElement)
+        // Tap on the dimension line, inside the wall's thickness.
+        val (a, b) = dim.dimLineEndpoints()
+        assertEquals(dim.id, tap(vm, (a + b) / 2f + Offset(60f, 1f)))
+        vm.onEvent(DrawingEvent.DeselectElement)
+        // Tap the wall well away from the dimension: still the wall.
+        assertEquals(wall.id, tap(vm, Offset(300f, 300f + 2.5f * inch)))
     }
 
     @Test
