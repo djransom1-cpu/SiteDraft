@@ -197,8 +197,27 @@ fun ToolBar(
             IconButton(onClick = onSaveProject, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.Save, contentDescription = "Save Project")
             }
-            IconButton(onClick = onExportPdf, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Rounded.FileDownload, contentDescription = "Export PDF")
+            // Export: PDF (the print layout) or DXF for AutoCAD. One button so the bar stays the
+            // same width on the tablet.
+            var showExportMenu by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { showExportMenu = true }, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Rounded.FileDownload, contentDescription = "Export")
+                }
+                DropdownMenu(
+                    expanded = showExportMenu,
+                    onDismissRequest = { showExportMenu = false },
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Export PDF") },
+                        onClick = { showExportMenu = false; onExportPdf() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Export DXF (AutoCAD)") },
+                        onClick = { showExportMenu = false; onExportDxf() }
+                    )
+                }
             }
             IconButton(onClick = onPrint, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.Print, contentDescription = "Print")

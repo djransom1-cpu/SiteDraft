@@ -1182,7 +1182,7 @@ private fun DrawScope.drawCanvasBackground(background: DrawingBackground, state:
     }
 }
 
-private fun formatDimension(value: Float, unit: UnitSystem, format: DimensionFormat): String {
+internal fun formatDimension(value: Float, unit: UnitSystem, format: DimensionFormat): String {
     return if (unit == UnitSystem.METRIC) {
         "%.2f m".format(value)
     } else {

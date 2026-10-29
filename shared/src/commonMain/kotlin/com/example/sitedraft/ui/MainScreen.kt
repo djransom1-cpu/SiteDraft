@@ -180,7 +180,7 @@ fun MainScreen(
                         onPaletteClick = { showPropertiesDialog = true },
                         onImportImage = { importer.pickImage { viewModel.onEvent(DrawingEvent.ImportImage(it)) } },
                         onImportPdf = { importer.pickPdf { viewModel.onEvent(DrawingEvent.ImportPdf(it)) } },
-                        onImportDxf = { importer.pickText { text -> parseDxf(text).takeIf { it.isNotEmpty() }?.let { viewModel.onEvent(DrawingEvent.ImportDxf(it)) } } },
+                        onImportDxf = { importer.pickText { text -> parseDxf(text, state).takeIf { it.isNotEmpty() }?.let { viewModel.onEvent(DrawingEvent.ImportDxf(it)) } } },
                         onSaveProject = { viewModel.onEvent(DrawingEvent.SaveProject) },
                         onLoadProject = { viewModel.onEvent(DrawingEvent.LoadProject) },
                         onExportPdf = { printDialog = PrintAction.EXPORT_PDF },

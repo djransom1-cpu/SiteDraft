@@ -2688,68 +2688,14 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     }
 
     private fun exportToDxf() {
-        val dxf = StringBuilder()
-        dxf.append("0\nSECTION\n2\nENTITIES\n")
-        
-        _state.value.elements.forEach { element ->
-            when (element) {
-                is DrawingElement.Line -> addLineToDxf(dxf, element.start, element.end)
-                is DrawingElement.Rectangle -> {
-                    val tr = Offset(element.topLeft.x + element.size.width, element.topLeft.y)
-                    val br = Offset(element.topLeft.x + element.size.width, element.topLeft.y + element.size.height)
-                    val bl = Offset(element.topLeft.x, element.topLeft.y + element.size.height)
-                    addLineToDxf(dxf, element.topLeft, tr)
-                    addLineToDxf(dxf, tr, br)
-                    addLineToDxf(dxf, br, bl)
-                    addLineToDxf(dxf, bl, element.topLeft)
-                }
-                is DrawingElement.Circle -> {
-                    dxf.append("0\nCIRCLE\n8\n0\n")
-                    dxf.append("10\n${element.center.x}\n20\n${element.center.y}\n")
-                    dxf.append("40\n${element.radius}\n")
-                }
-                is DrawingElement.Freehand -> {
-                    for (i in 0 until element.points.size - 1) {
-                        addLineToDxf(dxf, element.points[i].offset, element.points[i+1].offset)
-                    }
-                }
-                is DrawingElement.ElevationView -> {
-                    // Export what the live view shows: its lines and boxes.
-                    Elevation.partsOf(element, _state.value).forEach { part ->
-                        when (part) {
-                            is DrawingElement.Line -> addLineToDxf(dxf, part.start, part.end)
-                            is DrawingElement.Rectangle -> {
-                                val tr = Offset(part.topLeft.x + part.size.width, part.topLeft.y)
-                                val br = Offset(part.topLeft.x + part.size.width, part.topLeft.y + part.size.height)
-                                val bl = Offset(part.topLeft.x, part.topLeft.y + part.size.height)
-                                addLineToDxf(dxf, part.topLeft, tr)
-                                addLineToDxf(dxf, tr, br)
-                                addLineToDxf(dxf, br, bl)
-                                addLineToDxf(dxf, bl, part.topLeft)
-                            }
-                            else -> {}
-                        }
-                    }
-                }
-                is DrawingElement.Oval, is DrawingElement.Triangle,
-                is DrawingElement.Image, is DrawingElement.Pdf, is DrawingElement.Dxf,
-                is DrawingElement.Symbol,
-                is DrawingElement.Dimension,
-                is DrawingElement.Text -> {
-                    // Not supported for DXF export in this simple version
-                }
-            }
+        val state = _state.value
+        val name = state.projectName.trim().ifEmpty { "SiteDraft" }.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        val message = try {
+            platform.exportText("$name.dxf", DxfExport.export(state))
+        } catch (e: Exception) {
+            "DXF export failed: ${e.message}"
         }
-        
-        dxf.append("0\nENDSEC\n0\nEOF\n")
-        val message = platform.exportText("SiteDraft_Export.dxf", dxf.toString())
         platform.toast(message ?: "DXF export is not available here")
-    }
-
-    private fun addLineToDxf(sb: StringBuilder, start: Offset, end: Offset) {
-        sb.append("0\nLINE\n8\n0\n")
-        sb.append("10\n${start.x}\n20\n${start.y}\n")
-        sb.append("11\n${end.x}\n21\n${end.y}\n")
     }
 }
 
