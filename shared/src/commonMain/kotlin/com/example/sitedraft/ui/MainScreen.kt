@@ -40,6 +40,8 @@ fun MainScreen(
     // rememberSaveable: with configChanges handled in the manifest the Activity is no longer
     // recreated on rotation, but keep these safe across process death too.
     var showPropertiesDialog by rememberSaveable { mutableStateOf(value = false) }
+    // Which toolbar button opened the print/export sheet dialog; null = closed.
+    var printDialog by remember { mutableStateOf<PrintAction?>(null) }
     var currentNav by rememberSaveable { mutableStateOf("Home") }
 
     val platform = LocalPlatform.current
@@ -58,6 +60,16 @@ fun MainScreen(
 
 
 
+    // Selected rail item in safety orange: the default selected label colour is the theme's
+    // "secondary" (navy 0xFF003366), which was dark blue text on the blue rail.
+    val railColors = NavigationRailItemDefaults.colors(
+        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+        selectedTextColor = MaterialTheme.colorScheme.primary,
+        indicatorColor = MaterialTheme.colorScheme.primary,
+        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
     Row(modifier = modifier.fillMaxSize()) {
         // Navigation Rail
         NavigationRail(
@@ -65,24 +77,28 @@ fun MainScreen(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Home",
                 onClick = { currentNav = if (currentNav == "Home") "Drawing" else "Home" },
                 icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
                 label = { Text("Home") },
             )
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Symbols",
                 onClick = { currentNav = if (currentNav == "Symbols") "Drawing" else "Symbols" },
                 icon = { Icon(Icons.Default.Widgets, contentDescription = "Symbols") },
                 label = { Text("Symbols") },
             )
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Tools",
                 onClick = { currentNav = if (currentNav == "Tools") "Drawing" else "Tools" },
                 icon = { Icon(Icons.Default.Build, contentDescription = "Tools") },
                 label = { Text("Tools") },
             )
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Settings",
                 onClick = { currentNav = if (currentNav == "Settings") "Drawing" else "Settings" },
                 icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
@@ -90,18 +106,21 @@ fun MainScreen(
             )
             Spacer(modifier = Modifier.weight(1f))
             NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Plan",
                 onClick = { currentNav = if (currentNav == "Plan") "Drawing" else "Plan" },
                 icon = { Icon(Icons.Default.Architecture, contentDescription = "Floor plan") },
                 label = { Text("Plan") },
             )
             if (platform.supportsLaser) NavigationRailItem(
+                colors = railColors,
                 selected = currentNav == "Laser",
                 onClick = { currentNav = if (currentNav == "Laser") "Drawing" else "Laser" },
                 icon = { Icon(Icons.Default.Straighten, contentDescription = "Laser") },
                 label = { Text("Laser") },
             )
             NavigationRailItem(
+                colors = railColors,
                 selected = false,
                 onClick = { },
                 icon = { Icon(Icons.AutoMirrored.Filled.Help, contentDescription = "Help") },
@@ -164,7 +183,8 @@ fun MainScreen(
                         onImportDxf = { importer.pickText { text -> parseDxf(text).takeIf { it.isNotEmpty() }?.let { viewModel.onEvent(DrawingEvent.ImportDxf(it)) } } },
                         onSaveProject = { viewModel.onEvent(DrawingEvent.SaveProject) },
                         onLoadProject = { viewModel.onEvent(DrawingEvent.LoadProject) },
-                        onExportPdf = { viewModel.onEvent(DrawingEvent.ExportPdf(density)) },
+                        onExportPdf = { printDialog = PrintAction.EXPORT_PDF },
+                        onPrint = { printDialog = PrintAction.PRINT },
                         onExportDxf = { viewModel.onEvent(DrawingEvent.ExportDxf) },
                         onEvent = { event ->
                             viewModel.onEvent(event)
@@ -402,6 +422,16 @@ fun MainScreen(
             onBackgroundSelect = { viewModel.onEvent(DrawingEvent.SelectBackground(it)) },
             onCanvasColorSelect = { viewModel.onEvent(DrawingEvent.SelectBackgroundColor(it)) },
             onDismiss = { showPropertiesDialog = false }
+        )
+    }
+
+    printDialog?.let { action ->
+        PrintDialog(
+            state = state,
+            primary = action,
+            onPrint = { viewModel.onEvent(DrawingEvent.Print(it, density)) },
+            onExportPdf = { viewModel.onEvent(DrawingEvent.ExportPdf(it, density)) },
+            onDismiss = { printDialog = null }
         )
     }
 }

@@ -38,6 +38,9 @@ fun LaserUnavailablePanel(modifier: Modifier = Modifier, onClose: () -> Unit) {
     Surface(
         modifier = modifier.fillMaxHeight(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+        // Explicit: a translucent colour matches no theme colour, so contentColorFor() fell back to
+        // black and the panel's titles were black on blue.
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         shape = MaterialTheme.shapes.large,
         shadowElevation = 8.dp
     ) {

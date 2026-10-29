@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavEntry
@@ -52,6 +53,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val holder: DrawingManagerHolder = viewModel()
+            // The print framework (PrintManager.print) must be driven from an Activity, not the
+            // Application the platform was built with; lend it this one while it is on screen.
+            DisposableEffect(holder) {
+                holder.platform.printActivity = this@MainActivity
+                onDispose { if (holder.platform.printActivity === this@MainActivity) holder.platform.printActivity = null }
+            }
             CompositionLocalProvider(LocalPlatform provides holder.platform) {
                 SiteDraftTheme {
                     val backStack = rememberNavBackStack(SiteDraftNavKey.Main)

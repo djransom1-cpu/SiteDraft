@@ -37,6 +37,7 @@ fun ToolBar(
     onSaveProject: () -> Unit,
     onLoadProject: () -> Unit,
     onExportPdf: () -> Unit,
+    onPrint: () -> Unit,
     onExportDxf: () -> Unit,
     onEvent: (DrawingEvent) -> Unit,
     modifier: Modifier = Modifier
@@ -45,6 +46,9 @@ fun ToolBar(
         modifier = modifier,
         shape = RoundedCornerShape(32.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+        // Explicit: a translucent colour matches no theme colour, so contentColorFor() fell back to
+        // black and the panel's titles were black on blue.
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         tonalElevation = 4.dp
     ) {
         Row(
@@ -195,6 +199,9 @@ fun ToolBar(
             }
             IconButton(onClick = onExportPdf, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.FileDownload, contentDescription = "Export PDF")
+            }
+            IconButton(onClick = onPrint, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Rounded.Print, contentDescription = "Print")
             }
         }
     }

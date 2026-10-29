@@ -21,7 +21,22 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = ArchitecturalBlueContainer.copy(alpha = 0.8f),
     onBackground = BlueprintWhite,
     onSurface = BlueprintWhite,
-    onSurfaceVariant = BlueprintWhite
+    onSurfaceVariant = BlueprintWhite,
+    surfaceContainerLowest = BlueDeep,
+    surfaceContainerLow = ArchitecturalBlue,
+    surfaceContainer = BlueMid,
+    surfaceContainerHigh = ArchitecturalBlueContainer,
+    surfaceContainerHighest = BlueRaised,
+    surfaceBright = BlueRaised,
+    surfaceDim = BlueDeep,
+    inverseSurface = BlueprintWhite,
+    inverseOnSurface = ArchitecturalBlue,
+    outline = BlueOutline,
+    outlineVariant = BlueOutlineVariant,
+    error = ErrorOnBlue,
+    onError = OnErrorOnBlue,
+    errorContainer = ErrorContainerOnBlue,
+    onErrorContainer = OnErrorContainerOnBlue
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -38,7 +53,22 @@ private val LightColorScheme = lightColorScheme(
     onBackground = BlueprintWhite,
     onSurface = BlueprintWhite,
     surfaceVariant = ArchitecturalBlueContainer,
-    onSurfaceVariant = BlueprintWhite
+    onSurfaceVariant = BlueprintWhite,
+    surfaceContainerLowest = BlueDeep,
+    surfaceContainerLow = ArchitecturalBlue,
+    surfaceContainer = BlueMid,
+    surfaceContainerHigh = ArchitecturalBlueContainer,
+    surfaceContainerHighest = BlueRaised,
+    surfaceBright = BlueRaised,
+    surfaceDim = BlueDeep,
+    inverseSurface = BlueprintWhite,
+    inverseOnSurface = ArchitecturalBlue,
+    outline = BlueOutline,
+    outlineVariant = BlueOutlineVariant,
+    error = ErrorOnBlue,
+    onError = OnErrorOnBlue,
+    errorContainer = ErrorContainerOnBlue,
+    onErrorContainer = OnErrorContainerOnBlue
 )
 
 

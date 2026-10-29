@@ -25,6 +25,8 @@ fun ZoomControls(
         modifier = modifier,
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
+        // Explicit: a translucent colour matches no theme colour (contentColorFor() fell back to black).
+        contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 4.dp,
         shadowElevation = 6.dp
     ) {

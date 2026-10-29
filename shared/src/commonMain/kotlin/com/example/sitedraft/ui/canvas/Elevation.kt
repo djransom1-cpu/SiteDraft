@@ -56,9 +56,47 @@ object Elevation {
     fun sidesFor(wall: DrawingElement.Symbol): List<ViewerSide> =
         if (isHorizontal(wall)) listOf(ViewerSide.BELOW, ViewerSide.ABOVE) else listOf(ViewerSide.RIGHT, ViewerSide.LEFT)
 
-    /** The side with more on it; ties go to the first. */
-    fun defaultSide(wall: DrawingElement.Symbol, state: CanvasState): ViewerSide =
-        sidesFor(wall).maxByOrNull { itemsOnWall(wall, it, state).size } ?: ViewerSide.BELOW
+    /**
+     * The side with more cabinets and fixtures against it. Doors and windows show from both
+     * sides, so they do not count. On a tie (a bare wall, or one with only a door) the viewer
+     * stands inside the room: on the side facing the rest of the plan's walls. Before, a tie went
+     * to the first side in the list, which put the viewer OUTSIDE an east or south wall.
+     */
+    fun defaultSide(wall: DrawingElement.Symbol, state: CanvasState): ViewerSide {
+        val sides = sidesFor(wall)
+        val counts = sides.associateWith { side -> itemsOnWall(wall, side, state).count { it.kind != Kind.OPENING } }
+        val best = counts.values.maxOrNull() ?: 0
+        val tied = sides.filter { counts[it] == best }
+        if (tied.size == 1) return tied[0]
+        return interiorSide(wall, state) ?: tied[0]
+    }
+
+    /** The side of [wall] that faces the middle of the plan's other walls, or null with no other walls. */
+    fun interiorSide(wall: DrawingElement.Symbol, state: CanvasState): ViewerSide? {
+        val others = state.elements.filterIsInstance<DrawingElement.Symbol>()
+            .filter { it.category == PlanSymbols.WALLS && it.id != wall.id }
+            .map { FloorPlan.bounds(it).center }
+        if (others.isEmpty()) return null
+        val middle = Offset(others.map { it.x }.average().toFloat(), others.map { it.y }.average().toFloat())
+        val wb = FloorPlan.bounds(wall)
+        return if (isHorizontal(wall)) {
+            if (middle.y >= wb.center.y) ViewerSide.BELOW else ViewerSide.ABOVE
+        } else {
+            if (middle.x >= wb.center.x) ViewerSide.RIGHT else ViewerSide.LEFT
+        }
+    }
+
+    /**
+     * The point of a door or window that lies in its wall. Windows, sliding doors and cased
+     * openings are centred in the wall. A hinged door is a square the size of its swing whose
+     * threshold (the unrotated bottom edge) sits on the wall's centre line, so its centre is half
+     * a door-width off the wall; testing the centre is why doors never showed in elevations.
+     */
+    fun openingAnchor(symbol: DrawingElement.Symbol): Offset {
+        if (!PlanSymbols.isDoor(symbol.symbolName)) return symbol.center
+        val threshold = symbol.center + Offset(0f, symbol.size.height / 2f)
+        return rotateAbout(threshold, symbol.center, symbol.rotation)
+    }
 
     fun lengthPx(wall: DrawingElement.Symbol): Float = if (isHorizontal(wall)) wall.size.width else wall.size.height
 
@@ -106,7 +144,7 @@ object Elevation {
             val (from, to) = alongExtent(wb, side, b)
             if (to <= 0f || from >= length) continue
             val kind: Kind = when (s.category) {
-                PlanSymbols.DOORS_WINDOWS -> if (wb.inflate(2f * inch).contains(b.center)) Kind.OPENING else continue
+                PlanSymbols.DOORS_WINDOWS -> if (wb.inflate(2f * inch).contains(openingAnchor(s))) Kind.OPENING else continue
                 PlanSymbols.WALLS -> {
                     val perpendicular = (b.width >= b.height) != horizontalWall
                     val touches = when (side) {

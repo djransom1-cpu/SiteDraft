@@ -1,6 +1,19 @@
 package com.example.sitedraft.platform
 
+import android.app.Activity
 import android.content.Context
+import android.os.Bundle
+import android.os.CancellationSignal
+import android.os.ParcelFileDescriptor
+import android.print.PageRange
+import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
+import android.print.PrintDocumentInfo
+import android.print.PrintManager
+import android.print.pdf.PrintedPdfDocument
+import java.util.Calendar
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -80,17 +93,124 @@ class AndroidPlatform(private val context: Context) : Platform {
         }
     }
 
-    override fun exportPage(fileName: String, width: Int, height: Int, density: Float, draw: DrawScope.() -> Unit): String? {
+    override fun exportPage(fileName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? {
         val pdfDocument = PdfDocument()
-        val page = pdfDocument.startPage(PdfDocument.PageInfo.Builder(width, height, 1).create())
-        CanvasDrawScope().draw(Density(density), LayoutDirection.Ltr, Canvas(page.canvas), Size(width.toFloat(), height.toFloat())) { draw() }
-        pdfDocument.finishPage(page)
+        // PDF pages are in points (1/72 in): the paper size, with the page pixels scaled onto it,
+        // so the drawing scale is true when the file is printed from any PDF viewer.
+        val info = PdfDocument.PageInfo.Builder(page.widthPt.roundToInt(), page.heightPt.roundToInt(), 1).create()
+        val pdfPage = pdfDocument.startPage(info)
+        drawPageOnto(pdfPage.canvas, page, 72f / page.dpi, 0f, 0f, draw)
+        pdfDocument.finishPage(pdfPage)
         val dir = app.getExternalFilesDir(null) ?: app.filesDir
         val file = File(dir, fileName)
         FileOutputStream(file).use { pdfDocument.writeTo(it) }
         pdfDocument.close()
         share(file, "application/pdf")
         return "Saved ${file.absolutePath}"
+    }
+
+    /**
+     * The Activity the print framework needs (PrintManager.print must be called from one); set by
+     * MainActivity while it is on screen.
+     */
+    @Volatile
+    var printActivity: Activity? = null
+
+    /**
+     * Android's print framework: the system print dialog (any printer, or "Save as PDF"), fed by a
+     * one-page PdfDocument of the sheet. The paper asked for is pre-selected; if the user picks
+     * another, the sheet is fitted to it uniformly (no longer true scale, but never cropped).
+     */
+    override fun printPage(jobName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? {
+        val activity = printActivity ?: return "Printing needs the app window; try again"
+        val printManager = activity.getSystemService(Context.PRINT_SERVICE) as? PrintManager
+            ?: return "Printing is not available on this device"
+        val adapter = object : PrintDocumentAdapter() {
+            private var attributes: PrintAttributes? = null
+
+            override fun onLayout(
+                oldAttributes: PrintAttributes?,
+                newAttributes: PrintAttributes,
+                cancellationSignal: CancellationSignal?,
+                callback: LayoutResultCallback,
+                extras: Bundle?
+            ) {
+                attributes = newAttributes
+                if (cancellationSignal?.isCanceled == true) { callback.onLayoutCancelled(); return }
+                val info = PrintDocumentInfo.Builder("$jobName.pdf")
+                    .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                    .setPageCount(1)
+                    .build()
+                callback.onLayoutFinished(info, oldAttributes != newAttributes)
+            }
+
+            override fun onWrite(
+                pages: Array<out PageRange>?,
+                destination: ParcelFileDescriptor,
+                cancellationSignal: CancellationSignal?,
+                callback: WriteResultCallback
+            ) {
+                val attrs = attributes ?: PrintAttributes.Builder().build()
+                val document = PrintedPdfDocument(activity, attrs)
+                try {
+                    val pdfPage = document.startPage(0)
+                    // Fit the sheet into the printable area (points); equals 72/dpi when the paper matches.
+                    val area = pdfPage.info.contentRect
+                    val scale = minOf(area.width() / page.widthPx.toFloat(), area.height() / page.heightPx.toFloat())
+                    val x = area.left + (area.width() - page.widthPx * scale) / 2f
+                    val y = area.top + (area.height() - page.heightPx * scale) / 2f
+                    drawPageOnto(pdfPage.canvas, page, scale, x, y, draw)
+                    document.finishPage(pdfPage)
+                    if (cancellationSignal?.isCanceled == true) { callback.onWriteCancelled(); return }
+                    FileOutputStream(destination.fileDescriptor).use { document.writeTo(it) }
+                    callback.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
+                } catch (e: Exception) {
+                    callback.onWriteFailed(e.message)
+                } finally {
+                    document.close()
+                }
+            }
+        }
+        val mediaSize = mediaSizeFor(page)
+        val attributes = PrintAttributes.Builder()
+            .setMediaSize(mediaSize)
+            .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+            .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
+            .build()
+        return try {
+            printManager.print(jobName, adapter, attributes)
+            null
+        } catch (e: Exception) {
+            "Could not open the print dialog: ${e.message}"
+        }
+    }
+
+    /** Draws the page's pixels onto [canvas] scaled by [scale] (points per page px) at ([x], [y]). */
+    private fun drawPageOnto(canvas: android.graphics.Canvas, page: PageSpec, scale: Float, x: Float, y: Float, draw: DrawScope.() -> Unit) {
+        canvas.save()
+        canvas.translate(x, y)
+        canvas.scale(scale, scale)
+        CanvasDrawScope().draw(Density(page.density), LayoutDirection.Ltr, Canvas(canvas), Size(page.widthPx.toFloat(), page.heightPx.toFloat())) { draw() }
+        canvas.restore()
+    }
+
+    /** The framework's own size where it has one (so the printer's tray matches), else a custom one in mils. */
+    private fun mediaSizeFor(page: PageSpec): PrintAttributes.MediaSize {
+        val shortIn = minOf(page.widthIn, page.heightIn)
+        val longIn = maxOf(page.widthIn, page.heightIn)
+        fun near(a: Float, b: Float) = abs(a - b) < 0.05f
+        val portrait = when {
+            near(shortIn, 8.5f) && near(longIn, 11f) -> PrintAttributes.MediaSize.NA_LETTER
+            near(shortIn, 8.5f) && near(longIn, 14f) -> PrintAttributes.MediaSize.NA_LEGAL
+            near(shortIn, 11f) && near(longIn, 17f) -> PrintAttributes.MediaSize.NA_TABLOID
+            else -> PrintAttributes.MediaSize(
+                "sitedraft_${shortIn}x$longIn",
+                "${shortIn.toInt()} x ${longIn.toInt()} in",
+                (shortIn * 1000f).roundToInt(),
+                (longIn * 1000f).roundToInt()
+            )
+        }
+        return if (page.landscape) portrait.asLandscape() else portrait.asPortrait()
     }
 
     override fun exportText(fileName: String, text: String): String? {
@@ -127,4 +247,11 @@ class AndroidPlatform(private val context: Context) : Platform {
         toast("Could not open a browser: ${e.message}")
         false
     }
+}
+
+actual fun todayDateText(): String {
+    val c = Calendar.getInstance()
+    val m = (c.get(Calendar.MONTH) + 1).toString().padStart(2, '0')
+    val d = c.get(Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
+    return "$m/$d/${c.get(Calendar.YEAR)}"
 }
