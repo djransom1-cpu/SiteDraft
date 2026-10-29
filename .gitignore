@@ -22,3 +22,6 @@ local.properties
 # Module build outputs (all modules) and wasm tool caches
 build/
 .kotlin/
+
+# Release signing (recreated from GitHub secrets in CI; never committed)
+/keystore/

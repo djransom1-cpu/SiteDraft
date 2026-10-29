@@ -1,0 +1,53 @@
+name: iOS build (.ipa)
+
+# Compiles the shared Kotlin framework for iPhone (iosArm64) on a GitHub Mac runner and wraps
+# it as an unsigned .ipa, the same way CrewSync does. This proves the iOS build on every push
+# without owning a Mac; a signed, App Store-ready build still needs Xcode with an Apple
+# developer certificate. Run manually from the Actions tab, or it runs on pushes to main.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6144m"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile the shared framework for iPhone
+        run: ./gradlew :shared:linkReleaseFrameworkIosArm64 --no-daemon --console=plain
+
+      - name: Package an unsigned .ipa
+        run: |
+          set -e
+          FW=shared/build/bin/iosArm64/releaseFramework/Shared.framework
+          APP=build/ipa/Payload/SiteDraft.app
+          mkdir -p "$APP/Frameworks"
+          cp -R "$FW" "$APP/Frameworks/"
+          cp iosApp/iosApp/Info.plist "$APP/Info.plist"
+          cp "$FW/Shared" "$APP/SiteDraft"
+          chmod +x "$APP/SiteDraft"
+          echo -n "APPL????" > "$APP/PkgInfo"
+          (cd build/ipa && zip -qr ../../SiteDraft-iPhone-unsigned.ipa Payload)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SiteDraft-iPhone-unsigned-ipa
+          path: SiteDraft-iPhone-unsigned.ipa
+          if-no-files-found: error

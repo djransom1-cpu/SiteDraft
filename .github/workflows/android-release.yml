@@ -1,0 +1,62 @@
+name: Android release (signed AAB)
+
+# Builds a signed Android App Bundle for the Google Play Console.
+# Run it from the Actions tab, or push a version tag like v1.0.6.
+#
+# Needs these repository secrets (Settings > Secrets and variables > Actions); nothing here is
+# ever committed, keystore/ is gitignored:
+#   ANDROID_KEYSTORE_BASE64          base64 of keystore/sitedraft-release.jks
+#                                    (make it with: base64 -w0 keystore/sitedraft-release.jks)
+#   ANDROID_KEYSTORE_STORE_PASSWORD  the .jks store password
+#   ANDROID_KEYSTORE_KEY_ALIAS       the key alias inside the .jks
+#   ANDROID_KEYSTORE_KEY_PASSWORD    the key password
+#
+# app/build.gradle.kts reads keystore/keystore.properties for the release signing config; this
+# workflow recreates that file and the .jks from the secrets just before the build.
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-aab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Recreate release keystore from secrets
+        run: |
+          mkdir -p keystore
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > keystore/sitedraft-release.jks
+          cat > keystore/keystore.properties <<EOF
+          storeFile=sitedraft-release.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEYSTORE_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
+          EOF
+
+      - name: Build release AAB
+        run: ./gradlew :app:bundleRelease --no-daemon --console=plain
+
+      - name: Clean up secret files
+        if: always()
+        run: rm -rf keystore/sitedraft-release.jks keystore/keystore.properties
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sitedraft-release-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
