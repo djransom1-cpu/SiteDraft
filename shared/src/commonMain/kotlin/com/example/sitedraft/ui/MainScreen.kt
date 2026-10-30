@@ -25,6 +25,9 @@ import com.example.sitedraft.ui.canvas.DrawingManager
 import com.example.sitedraft.ui.canvas.DrawingEvent
 import com.example.sitedraft.ui.canvas.DrawingElement
 import com.example.sitedraft.ui.canvas.DrawingTool
+import com.example.sitedraft.ui.canvas.isLockedPlan
+import com.example.sitedraft.ui.canvas.selectionHasGroup
+import com.example.sitedraft.ui.canvas.selectionIsOneGroup
 import androidx.compose.ui.geometry.Offset
 import com.example.sitedraft.ui.components.*
 import com.example.sitedraft.ui.components.SettingsPanel
@@ -195,7 +198,8 @@ fun MainScreen(
                         },
                         modifier = Modifier
                             .align(Alignment.TopCenter)
-                            .padding(16.dp)
+                            .padding(16.dp),
+                        hasLockedPlans = state.elements.any { it.isLockedPlan }
                     )
 
                     // "Tap to place" banner while a library symbol is waiting for its spot.
@@ -224,6 +228,17 @@ fun MainScreen(
                                 }
                             }
                         }
+                    }
+
+                    // Both calibration points picked on a PDF plan: ask for the real length.
+                    state.pendingCalibration?.let { pending ->
+                        CalibrationLengthDialog(
+                            pending = pending,
+                            state = state,
+                            onApply = { viewModel.onEvent(DrawingEvent.ApplyCalibration(it)) },
+                            onPickAgain = { viewModel.onEvent(DrawingEvent.StartCalibration(pending.pdfId)) },
+                            onCancel = { viewModel.onEvent(DrawingEvent.CancelCalibration) }
+                        )
                     }
 
                     // Mobile/Compact Overlay Scrim (Easier closing)
@@ -331,6 +346,8 @@ fun MainScreen(
                                 explodeCandidate is DrawingElement.Triangle ||
                                 explodeCandidate is DrawingElement.Symbol ||
                                 explodeCandidate is DrawingElement.ElevationView,
+                            canGroup = state.selectedElementIds.size > 1 && !state.selectionIsOneGroup(),
+                            canUngroup = state.selectionHasGroup(),
                             onEvent = viewModel::onEvent,
                             onClose = { viewModel.onEvent(DrawingEvent.DeselectElement) },
                             modifier = Modifier

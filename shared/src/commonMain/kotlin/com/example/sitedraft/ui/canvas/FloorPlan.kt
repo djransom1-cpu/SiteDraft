@@ -5,6 +5,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -39,6 +40,22 @@ sealed class Placement {
 
     /** An elevation of a plan wall; the tap is the bottom-left corner of its floor line. */
     data class Elevation(val spec: ElevationSpec, override val label: String) : Placement()
+
+    /**
+     * A scale-calibration point on PDF plan [pdfId]: [first] is null while the first point is
+     * being picked, then holds it while the second is. The points are NOT snapped - they go
+     * exactly where the pen lifts, on the printed dimension.
+     */
+    data class Calibrate(val pdfId: String, val first: Offset? = null) : Placement() {
+        override val label get() =
+            if (first == null) "the first calibration point (one end of a known dimension)" else "the second calibration point (the other end)"
+    }
+
+    /** A PDF just picked for import; the tap is the middle of the plan. Not snapped. */
+    data class Plan(val pages: List<ImageBitmap>) : Placement() {
+        override val label get() = "the plan"
+        val size: Size get() = Size(pages[0].width.toFloat(), pages[0].height.toFloat())
+    }
 }
 
 /** Builds the wall sections of the floor-plan tool out of the library's wall symbols. */
@@ -272,6 +289,9 @@ object FloorPlan {
                 val size = Elevation.sizePx(wall, placement.spec, state)
                 listOf(Rect(Offset(point.x, point.y - size.height), size))
             }
+            // Drawn as a crosshair by DrawingCanvas, not a rectangle.
+            is Placement.Calibrate -> emptyList()
+            is Placement.Plan -> listOf(Rect(point - Offset(placement.size.width / 2f, placement.size.height / 2f), placement.size))
         }
     }
 

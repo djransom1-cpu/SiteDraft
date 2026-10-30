@@ -131,6 +131,9 @@ fun PropertiesPanel(
                                 )
                             }
                         }
+                        if (selectedElement is DrawingElement.Pdf) {
+                            PdfPlanControls(selectedElement, onEvent)
+                        }
                         selectedElement.fillOrNull()?.let { fill ->
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(text = "Fill", style = MaterialTheme.typography.labelSmall)
@@ -886,5 +889,75 @@ private fun formatWorldLength(px: Float, state: CanvasState): String {
         "%.1f in".format(px / state.scale.ratio * 12f)
     } else {
         "%.0f cm".format(px / state.scale.ratio * 100f)
+    }
+}
+
+/** Page, scale calibration, opacity and lock for a selected PDF plan. */
+@Composable
+private fun PdfPlanControls(pdf: DrawingElement.Pdf, onEvent: (DrawingEvent) -> Unit) {
+    if (pdf.pages.size > 1) {
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(text = "Page", style = MaterialTheme.typography.labelSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(
+                enabled = pdf.currentPage > 0,
+                onClick = { onEvent(DrawingEvent.UpdateElementProperty(pdf.id, "currentPage", (pdf.currentPage - 1).toString())) }
+            ) { Text("Prev") }
+            Text(text = "${pdf.currentPage + 1} of ${pdf.pages.size}", style = MaterialTheme.typography.bodyMedium)
+            TextButton(
+                enabled = pdf.currentPage < pdf.pages.size - 1,
+                onClick = { onEvent(DrawingEvent.UpdateElementProperty(pdf.id, "currentPage", (pdf.currentPage + 1).toString())) }
+            ) { Text("Next") }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+    Text(text = "Plan scale", style = MaterialTheme.typography.labelSmall)
+    Text(text = pdf.calibration ?: "Not calibrated", style = MaterialTheme.typography.bodySmall)
+    Spacer(modifier = Modifier.height(6.dp))
+    OutlinedButton(
+        onClick = { onEvent(DrawingEvent.StartCalibration(pdf.id)) },
+        modifier = Modifier.fillMaxWidth()
+    ) { Text(if (pdf.calibration == null) "Calibrate scale" else "Recalibrate scale") }
+    Text(
+        text = "Pick both ends of a dimension printed on the plan, then type its real length.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    // Opacity is applied on release only: every property edit takes an undo snapshot.
+    Spacer(modifier = Modifier.height(12.dp))
+    var opacity by remember(pdf.id, pdf.opacity) { mutableStateOf(pdf.opacity) }
+    Text(text = "Opacity", style = MaterialTheme.typography.labelSmall)
+    Slider(
+        value = opacity,
+        onValueChange = { opacity = it },
+        onValueChangeFinished = { onEvent(DrawingEvent.UpdateElementProperty(pdf.id, "opacity", opacity.toString())) },
+        valueRange = 0.1f..1f
+    )
+    Text(text = "${(opacity * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+
+    Spacer(modifier = Modifier.height(12.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = "Lock in place", style = MaterialTheme.typography.labelSmall)
+            Text(
+                text = "Can't be picked or moved while you draw over it. Unlock from the Import menu.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(
+            checked = pdf.locked,
+            onCheckedChange = { onEvent(DrawingEvent.UpdateElementProperty(pdf.id, "locked", it.toString())) }
+        )
     }
 }

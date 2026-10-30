@@ -73,6 +73,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     // dimension line sits from the measured points) without touching start/end.
     private var resizingDimensionOffset = false
     private var moveBasePoint: Offset? = null
+    // Objects sitting on the PDF plan being dragged this gesture: they ride along with it.
+    private var carriedIds: Set<String> = emptySet()
+    // A press on a plan that was not selected: a drag from there is a box-select (so groups can
+    // be picked over the plan), a plain tap selects the plan - decided in endDrawing().
+    private var planTapCandidate: String? = null
     // Bosch GLM laser client (Android only; null elsewhere). Lazy so unit tests never touch Bluetooth.
     private val laserDelegate = lazy { platform.createLaserClient() }
     val laser: Any? by laserDelegate
@@ -133,8 +138,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             // Picking a symbol, outline or room arms placement; the next canvas tap says where it goes.
             is DrawingEvent.SelectSymbol -> _state.value = _state.value.copy(pendingPlacement = Placement.Symbol(event.name, event.category), placementPreview = null)
             is DrawingEvent.StartPlacement -> _state.value = _state.value.copy(pendingPlacement = event.placement, placementPreview = null)
-            is DrawingEvent.PreviewPlacementAt -> if (_state.value.pendingPlacement != null) {
-                _state.value = _state.value.copy(placementPreview = findSnapPoint(event.point))
+            is DrawingEvent.PreviewPlacementAt -> _state.value.pendingPlacement?.let { pending ->
+                // Calibration points are not snapped, so neither is their crosshair.
+                val at = if (pending is Placement.Calibrate || pending is Placement.Plan) event.point else findSnapPoint(event.point)
+                _state.value = _state.value.copy(placementPreview = at)
             }
             is DrawingEvent.PlaceAt -> _state.value.pendingPlacement?.let { pending ->
                 _state.value = _state.value.copy(pendingPlacement = null, placementPreview = null)
@@ -150,9 +157,27 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     is Placement.Shell -> placeShell(point, pending)
                     is Placement.Room -> placeRoom(point, pending)
                     is Placement.Elevation -> placeElevation(point, pending)
+                    // Unsnapped: the point goes exactly where the pen lifted on the printed plan.
+                    is Placement.Calibrate -> calibrationPointPlaced(pending, event.point)
+                    // Unsnapped too: the tap is the middle of the plan.
+                    is Placement.Plan -> addPdfPlan(pending.pages, event.point)
                 }
             }
             is DrawingEvent.CancelPlacement -> _state.value = _state.value.copy(pendingPlacement = null, placementPreview = null)
+            // Deselecting closes the Properties panel, which on a phone covers the canvas the
+            // points are picked on; applying the calibration selects the plan again.
+            is DrawingEvent.StartCalibration -> _state.value = _state.value.copy(
+                pendingPlacement = Placement.Calibrate(event.pdfId),
+                placementPreview = null,
+                pendingCalibration = null,
+                selectedElementId = null,
+                selectedElementIds = emptySet()
+            )
+            is DrawingEvent.ApplyCalibration -> applyCalibration(event.realLength)
+            DrawingEvent.CancelCalibration -> _state.value = _state.value.copy(pendingCalibration = null)
+            DrawingEvent.UnlockAllPdfs -> unlockAllPdfs()
+            DrawingEvent.GroupSelection -> groupSelection()
+            DrawingEvent.UngroupSelection -> ungroupSelection()
             is DrawingEvent.RotateSelection -> rotateSelection(event.degrees)
             is DrawingEvent.SelectElements -> _state.value = _state.value.copy(
                 selectedElementId = event.ids.singleOrNull(),
@@ -699,7 +724,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     // already the right tie-breaker for the exploded-rectangle case this replaced (4 short edges
     // close together: the one the pen is actually nearest to wins).
     private fun findHitElement(offset: Offset, threshold: Float): DrawingElement? {
-        val scored = _state.value.elements.filter { it.contains(offset, threshold) }.map { it to pickDistance(it, offset) }
+        val scored = _state.value.elements.filter { !it.isLockedPlan && it.contains(offset, threshold) }.map { it to pickDistance(it, offset) }
         val best = scored.minOfOrNull { it.second } ?: return null
         // Outlines within a fingertip's wobble (8 screen px) of the nearest one count as a tie -
         // an upper cabinet's back edge sits on the base cabinet's back edge, give or take a px -
@@ -1113,6 +1138,8 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     private fun startDrawing(offset: Offset, pressure: Float, resizeThreshold: Float) {
         hasSnapshotThisGesture = false
         moveSnapCorrection = Offset.Zero
+        carriedIds = emptySet()
+        planTapCandidate = null
         var snappedOffset = offset
         var snapFound = false
         // Freehand strokes never snap their first point: a pen stroke that starts by jumping
@@ -1203,8 +1230,20 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     moveBasePoint = null
                     if (hitElement != null && hitElement.id in groupIds) {
                         // Keep the group selected; moveDrawing applies the drag to all of it.
+                        // From the raw press, so the group doesn't jump by the snap distance.
+                        lastOffset = offset
+                    } else if (hitElement is DrawingElement.Pdf) {
+                        // A drag over a plan box-selects what is on it; a tap selects the plan.
+                        planTapCandidate = hitElement.id
+                        _state.value = _state.value.copy(
+                            selectedElementId = null,
+                            selectedElementIds = emptySet(),
+                            boxSelectStart = snappedOffset,
+                            boxSelectEnd = snappedOffset
+                        )
                     } else if (hitElement != null) {
-                        _state.value = _state.value.copy(selectedElementId = hitElement.id, selectedElementIds = emptySet())
+                        selectWithGroup(hitElement.id)
+                        lastOffset = offset
                     } else {
                         _state.value = _state.value.copy(
                             selectedElementId = null,
@@ -1269,12 +1308,26 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                         isResizing = false
                         isRotating = false
                         moveBasePoint = null // clear any stale point from a prior Move-tool drag
-                    } else if (hitElement != null) {
-                        // New selection
+                        // A selected plan carries the objects drawn on it.
+                        if (hitElement is DrawingElement.Pdf) startCarrying(hitElement, offset)
+                    } else if (hitElement is DrawingElement.Pdf) {
+                        // An unselected plan: a drag box-selects over it, a tap selects it.
                         isResizing = false
                         isRotating = false
                         moveBasePoint = null
-                        _state.value = _state.value.copy(selectedElementId = hitElement.id)
+                        planTapCandidate = hitElement.id
+                        _state.value = _state.value.copy(
+                            selectedElementId = null,
+                            boxSelectStart = snappedOffset,
+                            boxSelectEnd = snappedOffset
+                        )
+                    } else if (hitElement != null) {
+                        // New selection (the whole group when it is in one)
+                        isResizing = false
+                        isRotating = false
+                        moveBasePoint = null
+                        selectWithGroup(hitElement.id)
+                        if (_state.value.selectedElementIds.size > 1) lastOffset = offset
                     } else {
                         // Empty space - start a box-select drag instead of deselecting
                         // immediately; endDrawing() decides between "was just a tap, deselect"
@@ -1294,8 +1347,20 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             DrawingTool.MOVE -> {
                 val selectedId = _state.value.selectedElementId
                 val element = _state.value.elements.find { it.id == selectedId }
-                
-                if (element != null) {
+
+                if (_state.value.selectedElementIds.size > 1) {
+                    // A selected group: the drag moves all of it (moveDrawing's group branch).
+                    moveBasePoint = null
+                    isResizing = false
+                    isRotating = false
+                    lastOffset = offset
+                } else if (element is DrawingElement.Pdf) {
+                    // A plan carries what is drawn on it.
+                    moveBasePoint = null
+                    isResizing = false
+                    isRotating = false
+                    startCarrying(element, offset)
+                } else if (element != null) {
                     val keyPoints = getElementKeyPoints(element)
                     // Base-point pick and selection use the RAW tap, not snappedOffset - see the
                     // note in the SELECT branch.
@@ -1459,8 +1524,23 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             _state.value = _state.value.copy(boxSelectEnd = offset)
             return
         }
+        if (carriedIds.isNotEmpty() && !isResizing && !isRotating &&
+            (_state.value.currentTool == DrawingTool.SELECT || _state.value.currentTool == DrawingTool.MOVE)) {
+            // Dragging a plan: it and everything on it move by the same raw delta, unsnapped
+            // (snapping the plan onto a nearby corner would drag the work drawn on it off true).
+            val delta = offset - lastOffset
+            lastOffset = offset
+            if (!hasSnapshotThisGesture) {
+                pushUndoSnapshot()
+                hasSnapshotThisGesture = true
+            }
+            _state.value = _state.value.copy(
+                elements = _state.value.elements.map { if (it.id in carriedIds) it.move(delta) else it }
+            )
+            return
+        }
         val groupIds = _state.value.selectedElementIds
-        if (_state.value.currentTool == DrawingTool.SELECT && groupIds.size > 1) {
+        if ((_state.value.currentTool == DrawingTool.SELECT || _state.value.currentTool == DrawingTool.MOVE) && groupIds.size > 1) {
             // Group move: every box-selected element slides together by the same raw delta.
             // No object-snapping here, same reasoning as dimension-drag - snapping one member of
             // a multi-object drag onto some unrelated nearby corner would fight the others.
@@ -1471,7 +1551,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 hasSnapshotThisGesture = true
             }
             _state.value = _state.value.copy(
-                elements = _state.value.elements.map { if (it.id in groupIds) it.move(delta) else it }
+                elements = _state.value.elements.map { if (it.id in groupIds && !it.isLockedPlan) it.move(delta) else it }
             )
             return
         }
@@ -1808,6 +1888,14 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         if (_state.value.currentTool == DrawingTool.SELECT && boxStart != null) {
             val boxEnd = _state.value.boxSelectEnd ?: boxStart
             val dragDist = (boxEnd - boxStart).getDistance()
+            val tappedPlan = planTapCandidate
+            planTapCandidate = null
+            if (dragDist < 5f && tappedPlan != null) {
+                // A tap (not a drag) on an unselected plan: select it.
+                _state.value = _state.value.copy(boxSelectStart = null, boxSelectEnd = null)
+                selectWithGroup(tappedPlan)
+                return
+            }
             _state.value = if (dragDist < 5f) {
                 // Negligible movement - this was a tap on empty space, not a drag. Plain deselect.
                 _state.value.copy(
@@ -1821,10 +1909,17 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     minOf(boxStart.x, boxEnd.x), minOf(boxStart.y, boxEnd.y),
                     maxOf(boxStart.x, boxEnd.x), maxOf(boxStart.y, boxEnd.y)
                 )
-                val hitIds = _state.value.elements
-                    .filter { it.boundingRect().overlaps(selectionRect) }
-                    .map { it.id }
-                    .toSet()
+                // A plan is only taken when the box covers all of it: a box drawn ON a plan
+                // means "the things on it", not the sheet underneath. Whole groups come along.
+                val hitIds = expandGroups(
+                    _state.value.elements
+                        .filter { el ->
+                            if (el.isLockedPlan) false
+                            else if (el is DrawingElement.Pdf) el.boundingRect().let { r -> selectionRect.contains(r.topLeft) && selectionRect.contains(r.bottomRight) }
+                            else el.boundingRect().overlaps(selectionRect)
+                        }
+                        .mapTo(LinkedHashSet()) { it.id }
+                ).filterTo(LinkedHashSet()) { id -> _state.value.elements.find { it.id == id }?.isLockedPlan != true }
                 if (hitIds.size <= 1) {
                     _state.value.copy(
                         selectedElementId = hitIds.firstOrNull(),
@@ -1884,6 +1979,9 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             val elements = if (isRotating) _state.value.elements.map { if (it.id == _state.value.selectedElementId) it.squaredUp() else it } else _state.value.elements
             _state.value = _state.value.copy(elements = elements, lastSnapPoint = null)
             isRotating = false
+            // A plan dragged with its objects is saved like any other edit.
+            if (carriedIds.isNotEmpty() && hasSnapshotThisGesture) triggerAutoSave()
+            carriedIds = emptySet()
         }
     }
 
@@ -2389,6 +2487,15 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             val newValue = value.toFloatOrNull() ?: return@map element
                             element.rotate(newValue - element.rotation).squaredUp()
                         }
+                        // PDF plan: lock, opacity, page shown.
+                        "locked" -> (element as? DrawingElement.Pdf)?.copy(locked = value.toBoolean()) ?: element
+                        "opacity" -> (element as? DrawingElement.Pdf)?.let { pdf ->
+                            pdf.copy(opacity = (value.toFloatOrNull() ?: pdf.opacity).coerceIn(0.1f, 1f))
+                        } ?: element
+                        "currentPage" -> (element as? DrawingElement.Pdf)?.let { pdf ->
+                            val page = value.toIntOrNull() ?: return@map element
+                            pdf.copy(currentPage = page.coerceIn(0, (pdf.pages.size - 1).coerceAtLeast(0)))
+                        } ?: element
                         // Elevation view heights (inches) and viewing side.
                         "wallHeightIn", "counterHeightIn", "upperBottomIn", "upperHeightIn", "sillIn", "windowHeightIn", "doorHeightIn" -> {
                             val v = value.toFloatOrNull() ?: return@map element
@@ -2489,6 +2596,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 } else element
             }
         )
+        // A plan just locked lets go of the selection: while selected its grips would still
+        // drag it, which is exactly what locking is for stopping.
+        if (property == "locked" && value.toBoolean() && _state.value.selectedElementId == id) {
+            _state.value = _state.value.copy(selectedElementId = null)
+        }
         triggerAutoSave()
     }
 
@@ -2505,16 +2617,134 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         triggerAutoSave()
     }
 
+    /** A picked PDF waits for a tap that says where it goes (Placement.Plan), like a symbol. */
     private fun importPdf(bitmaps: List<ImageBitmap>) {
         if (bitmaps.isEmpty()) return
+        _state.value = _state.value.copy(
+            pendingPlacement = Placement.Plan(bitmaps),
+            placementPreview = null,
+            selectedElementId = null,
+            selectedElementIds = emptySet()
+        )
+    }
+
+    /** The plan, centred on [center]. */
+    private fun addPdfPlan(bitmaps: List<ImageBitmap>, center: Offset) {
+        if (bitmaps.isEmpty()) return
+        val size = Size(bitmaps[0].width.toFloat(), bitmaps[0].height.toFloat())
         val element = DrawingElement.Pdf(
             pages = bitmaps,
-            topLeft = Offset(50f, 50f),
-            size = Size(bitmaps[0].width.toFloat(), bitmaps[0].height.toFloat())
+            topLeft = center - Offset(size.width / 2f, size.height / 2f),
+            size = size
+        )
+        pushUndoSnapshot()
+        // First in the list = drawn first = under everything already drawn: a plan is
+        // something to trace over, never something that covers the work.
+        _state.value = _state.value.copy(
+            elements = listOf(element) + _state.value.elements
+        )
+        triggerAutoSave()
+    }
+
+    /** The saved group [id] belongs to (members that still exist), or null when it is in none. */
+    private fun groupOf(id: String): Set<String>? {
+        val group = _state.value.groups.firstOrNull { id in it } ?: return null
+        val existing = _state.value.elements.mapTo(HashSet()) { it.id }
+        return group.filterTo(LinkedHashSet()) { it in existing }.takeIf { it.size > 1 }
+    }
+
+    /** [ids] plus every member of any group one of them is in. */
+    private fun expandGroups(ids: Set<String>): Set<String> = ids.flatMapTo(LinkedHashSet()) { groupOf(it) ?: setOf(it) }
+
+    /** Selects [id], or its whole group (as a box-style multi-selection) when it is in one. */
+    private fun selectWithGroup(id: String) {
+        val group = groupOf(id)
+        _state.value = if (group != null) _state.value.copy(selectedElementId = null, selectedElementIds = group)
+        else _state.value.copy(selectedElementId = id, selectedElementIds = emptySet())
+    }
+
+    /**
+     * Starts a plan drag: [pdf] and the objects lying wholly on it (with the rest of their
+     * groups) move together. Locked plans never move.
+     */
+    private fun startCarrying(pdf: DrawingElement.Pdf, from: Offset) {
+        if (pdf.locked) return
+        val sheet = pdf.boundingRect()
+        val onPlan = _state.value.elements
+            .filter { el -> el.id != pdf.id && el !is DrawingElement.Pdf && el.boundingRect().let { b -> sheet.contains(b.topLeft) && sheet.contains(b.bottomRight) } }
+            .mapTo(LinkedHashSet()) { it.id }
+        carriedIds = expandGroups(onPlan + pdf.id).filterTo(LinkedHashSet()) { id -> _state.value.elements.find { it.id == id }?.isLockedPlan != true }
+        lastOffset = from
+    }
+
+    private fun groupSelection() {
+        val ids = _state.value.selectedElementIds
+        if (ids.size < 2) return
+        // Groups the selection touches are merged into the new one, so an object is never in two.
+        val touched = _state.value.groups.filter { g -> g.any { it in ids } }
+        val merged = touched.fold(ids) { acc, g -> acc + g }
+        _state.value = _state.value.copy(groups = _state.value.groups - touched.toSet() + listOf(merged))
+        triggerAutoSave()
+    }
+
+    private fun ungroupSelection() {
+        val ids = _state.value.selectedElementIds.ifEmpty { setOfNotNull(_state.value.selectedElementId) }
+        val touched = _state.value.groups.filter { g -> g.any { it in ids } }
+        if (touched.isEmpty()) return
+        _state.value = _state.value.copy(groups = _state.value.groups - touched.toSet())
+        triggerAutoSave()
+    }
+
+    /** A calibration point lifted on the plan: keep the first, ask for the length after the second. */
+    private fun calibrationPointPlaced(pending: Placement.Calibrate, point: Offset) {
+        val first = pending.first
+        _state.value = when {
+            first == null -> _state.value.copy(pendingPlacement = pending.copy(first = point))
+            // The same spot twice measures nothing: pick the second point again.
+            (point - first).getDistance() < 2f -> _state.value.copy(pendingPlacement = pending)
+            else -> _state.value.copy(pendingCalibration = PendingCalibration(pending.pdfId, first, point))
+        }
+    }
+
+    /**
+     * Scales the plan so the distance between the two picked points is [realLength] document
+     * units at the drawing's scale (scale.ratio px per ft or m). The drawing's own scale is not
+     * touched: everything already drawn keeps its size, and the plan is brought to match it.
+     * The first point stays exactly where it was picked, so the plan grows or shrinks about it.
+     */
+    private fun applyCalibration(realLength: Float) {
+        val pending = _state.value.pendingCalibration ?: return
+        val pdf = _state.value.elements.find { it.id == pending.pdfId } as? DrawingElement.Pdf
+        val measured = pending.pixelLength
+        if (pdf == null || realLength <= 0f || measured <= 0f) {
+            _state.value = _state.value.copy(pendingCalibration = null)
+            return
+        }
+        val k = realLength * _state.value.scale.ratio / measured
+        // The renderer turns a PDF about the canvas origin (DrawingCanvas.drawElement, pivot
+        // Offset.Zero), so the first point is turned back into the plan's own frame, the plan
+        // is scaled about it there, and turning it again puts that point back where it was.
+        val anchor = rotateAbout(pending.first, Offset.Zero, -pdf.rotation)
+        val scaled = pdf.copy(
+            topLeft = anchor + (pdf.topLeft - anchor) * k,
+            size = Size(pdf.size.width * k, pdf.size.height * k),
+            calibration = "${formatLength(realLength, _state.value.unitSystem)} between 2 points"
         )
         pushUndoSnapshot()
         _state.value = _state.value.copy(
-            elements = _state.value.elements + element
+            elements = _state.value.elements.map { if (it.id == pdf.id) scaled else it },
+            pendingCalibration = null,
+            selectedElementId = pdf.id,
+            selectedElementIds = emptySet()
+        )
+        triggerAutoSave()
+    }
+
+    private fun unlockAllPdfs() {
+        if (_state.value.elements.none { it.isLockedPlan }) return
+        pushUndoSnapshot()
+        _state.value = _state.value.copy(
+            elements = _state.value.elements.map { if (it is DrawingElement.Pdf && it.locked) it.copy(locked = false) else it }
         )
         triggerAutoSave()
     }
@@ -2800,6 +3030,16 @@ sealed class DrawingEvent {
     object NewRoom : DrawingEvent()
     object ContinueWallsFromSelectedLine : DrawingEvent()
     data class ImportPdf(val bitmaps: List<ImageBitmap>) : DrawingEvent()
+    /** Arms scale calibration on PDF plan [pdfId]: the next two canvas taps are the ends of a known dimension. */
+    data class StartCalibration(val pdfId: String) : DrawingEvent()
+    /** The real length between the two calibration points, in document units (ft or m). */
+    data class ApplyCalibration(val realLength: Float) : DrawingEvent()
+    object CancelCalibration : DrawingEvent()
+    object UnlockAllPdfs : DrawingEvent()
+    /** Saves the box-selected objects as a group: tapping any one of them selects them all. */
+    object GroupSelection : DrawingEvent()
+    /** Breaks up any group in the selection; the objects stay selected. */
+    object UngroupSelection : DrawingEvent()
     data class ImportDxf(val elements: List<DrawingElement>) : DrawingEvent()
     object Undo : DrawingEvent()
     object Redo : DrawingEvent()

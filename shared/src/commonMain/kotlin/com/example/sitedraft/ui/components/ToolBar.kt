@@ -40,7 +40,9 @@ fun ToolBar(
     onPrint: () -> Unit,
     onExportDxf: () -> Unit,
     onEvent: (DrawingEvent) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // A locked plan can't be selected, so this menu is how it gets unlocked.
+    hasLockedPlans: Boolean = false
 ) {
     Surface(
         modifier = modifier,
@@ -192,6 +194,12 @@ fun ToolBar(
                         text = { Text("Import DXF") },
                         onClick = { showImportMenu = false; onImportDxf() }
                     )
+                    if (hasLockedPlans) {
+                        DropdownMenuItem(
+                            text = { Text("Unlock plans") },
+                            onClick = { showImportMenu = false; onEvent(DrawingEvent.UnlockAllPdfs) }
+                        )
+                    }
                 }
             }
             IconButton(onClick = onSaveProject, modifier = Modifier.size(40.dp)) {

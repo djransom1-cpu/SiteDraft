@@ -18,6 +18,9 @@ import com.example.sitedraft.ui.canvas.DrawingTool
 fun FloatingActionBar(
     currentTool: DrawingTool,
     canExplode: Boolean = false,
+    // Several objects selected that aren't one saved group yet / a group is in the selection.
+    canGroup: Boolean = false,
+    canUngroup: Boolean = false,
     onEvent: (DrawingEvent) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
@@ -78,6 +81,18 @@ fun FloatingActionBar(
             if (canExplode) {
                 IconButton(onClick = { onEvent(DrawingEvent.ExplodeSelectedElement) }) {
                     Icon(Icons.Default.CallSplit, contentDescription = "Explode")
+                }
+            }
+
+            // GROUP / UNGROUP
+            if (canGroup) {
+                IconButton(onClick = { onEvent(DrawingEvent.GroupSelection) }) {
+                    Icon(Icons.Default.Link, contentDescription = "Group")
+                }
+            }
+            if (canUngroup) {
+                IconButton(onClick = { onEvent(DrawingEvent.UngroupSelection) }) {
+                    Icon(Icons.Default.LinkOff, contentDescription = "Ungroup")
                 }
             }
 

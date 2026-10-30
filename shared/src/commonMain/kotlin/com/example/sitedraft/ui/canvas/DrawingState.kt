@@ -288,7 +288,14 @@ sealed class DrawingElement {
         @Serializable(with = SizeSerializer::class)
         val size: Size,
         val currentPage: Int = 0,
-        override val rotation: Float = 0f
+        override val rotation: Float = 0f,
+        // A locked plan can't be picked, dragged or box-selected, so drawing over it never
+        // nudges it. Unlocked from the toolbar's Import menu ("Unlock plans").
+        val locked: Boolean = false,
+        // 0.1..1: lower fades the plan so the work drawn over it stands out.
+        val opacity: Float = 1f,
+        // How the plan was scaled, e.g. "10'-0\" between 2 points"; null until calibrated.
+        val calibration: String? = null
     ) : DrawingElement() {
         @Serializable(with = ColorSerializer::class)
         override val color: Color = Color.Transparent
@@ -384,6 +391,9 @@ data class CanvasState(
     // rotate/individual grips); selectedElementIds is only ever non-empty while a group of 2+
     // is selected, and group actions (move/delete/duplicate) key off it instead.
     val selectedElementIds: Set<String> = emptySet(),
+    // Saved groups of element ids (Group button): tapping any member selects the whole group.
+    // An id is in at most one group; ids of deleted elements are ignored where groups are read.
+    val groups: List<Set<String>> = emptyList(),
     // Live rubber-band rectangle while a box-select drag is in progress; null the rest of the
     // time. Both corners kept (not a Rect) since which corner is "start" matters for future
     // window-vs-crossing selection semantics.
@@ -401,6 +411,10 @@ data class CanvasState(
     @kotlinx.serialization.Transient
     @Serializable(with = OffsetSerializer::class)
     val placementPreview: Offset? = null,
+    // Both calibration points picked on a PDF plan, waiting for the user to type the real length
+    // between them (MainScreen's dialog). Session state, never saved.
+    @kotlinx.serialization.Transient
+    val pendingCalibration: PendingCalibration? = null,
     // The canvas's on-screen size (px), reported by DrawingCanvas, so the zoom buttons can zoom
     // about the middle of the view and Fit can frame the drawing. Session state, never saved.
     @kotlinx.serialization.Transient
@@ -785,4 +799,25 @@ fun DrawingElement.withColor(color: Color): DrawingElement = when (this) {
     is DrawingElement.Text -> copy(color = color)
     is DrawingElement.ElevationView -> copy(color = color)
     else -> this
+}
+
+/** Two points picked on PDF plan [pdfId] for scale calibration, in canvas coordinates. */
+data class PendingCalibration(val pdfId: String, val first: Offset, val second: Offset) {
+    val pixelLength: Float get() = (second - first).getDistance()
+}
+
+/** A PDF plan the user has locked in place: not pickable, draggable or box-selectable. */
+val DrawingElement.isLockedPlan: Boolean get() = this is DrawingElement.Pdf && locked
+
+/** The selection is exactly one saved group (offer Ungroup rather than Group). */
+fun CanvasState.selectionIsOneGroup(): Boolean =
+    selectedElementIds.size > 1 && groups.any { g ->
+        val live = g.filterTo(HashSet()) { id -> elements.any { it.id == id } }
+        live == selectedElementIds
+    }
+
+/** Some selected object belongs to a saved group. */
+fun CanvasState.selectionHasGroup(): Boolean {
+    val ids = selectedElementIds.ifEmpty { setOfNotNull(selectedElementId) }
+    return groups.any { g -> g.any { it in ids } }
 }

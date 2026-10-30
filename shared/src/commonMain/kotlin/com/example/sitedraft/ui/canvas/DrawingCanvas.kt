@@ -333,7 +333,15 @@ fun DrawingCanvas(
             // Ghost of the symbol / room / outline being positioned, under the hovering or
             // dragging pen, so the user sees where it lands before lifting.
             state.pendingPlacement?.let { placement ->
+                // Calibration's first point stays marked while the second is being picked.
+                (placement as? Placement.Calibrate)?.first?.let { drawCalibrationPoint(it, state.zoom) }
                 state.placementPreview?.let { at -> drawPlacementGhost(placement, at, state) }
+            }
+            // Both calibration points picked, length dialog open: show what is being measured.
+            state.pendingCalibration?.let { c ->
+                drawCalibrationLine(c.first, c.second, state.zoom)
+                drawCalibrationPoint(c.first, state.zoom)
+                drawCalibrationPoint(c.second, state.zoom)
             }
 
             // Box-selected group: a lighter-weight outline per member (no individual resize/
@@ -900,9 +908,10 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
             is DrawingElement.Pdf -> {
                 if (element.pages.isNotEmpty()) {
                     drawImage(
-                        image = element.pages[element.currentPage],
+                        image = element.pages[element.currentPage.coerceIn(0, element.pages.size - 1)],
                         dstOffset = IntOffset(element.topLeft.x.toInt(), element.topLeft.y.toInt()),
-                        dstSize = IntSize(element.size.width.toInt(), element.size.height.toInt())
+                        dstSize = IntSize(element.size.width.toInt(), element.size.height.toInt()),
+                        alpha = element.opacity.coerceIn(0.1f, 1f)
                     )
                 }
             }
@@ -1340,6 +1349,27 @@ object StylusButton {
 private fun DrawScope.drawPlacementGhost(placement: Placement, at: Offset, state: CanvasState) {
     val accent = Color(0xFFF47B20)
     val zoom = state.zoom
+    if (placement is Placement.Calibrate) {
+        // A crosshair (a rectangle ghost would hide the printed dimension being picked), with a
+        // dashed line back to the first point once there is one.
+        placement.first?.let { drawCalibrationLine(it, at, zoom) }
+        val arm = 18f / zoom
+        drawLine(accent, at - Offset(arm, 0f), at + Offset(arm, 0f), 1.5f / zoom)
+        drawLine(accent, at - Offset(0f, arm), at + Offset(0f, arm), 1.5f / zoom)
+        drawCircle(accent, radius = 6f / zoom, center = at, style = Stroke(width = 1.5f / zoom))
+        return
+    }
+    if (placement is Placement.Plan) {
+        // The plan itself, faded, under the outline below - easier to line up than a box.
+        val size = placement.size
+        val topLeft = at - Offset(size.width / 2f, size.height / 2f)
+        drawImage(
+            image = placement.pages[0],
+            dstOffset = IntOffset(topLeft.x.toInt(), topLeft.y.toInt()),
+            dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+            alpha = 0.45f
+        )
+    }
     val dash = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f / zoom, 6f / zoom))
     val rects = FloorPlan.previewRects(placement, at, state)
     rects.forEachIndexed { i, r ->
@@ -1372,4 +1402,15 @@ private fun DrawScope.drawWallCursor(wall: WallMode, zoom: Float) {
     }
     drawCircle(Color.White, 9f / zoom, c, style = Stroke(2f / zoom))
     drawCircle(accent, 6f / zoom, c)
+}
+
+private fun DrawScope.drawCalibrationPoint(p: Offset, zoom: Float) {
+    val accent = Color(0xFFF47B20)
+    drawCircle(accent, radius = 6f / zoom, center = p)
+    drawCircle(Color.White, radius = 2.5f / zoom, center = p)
+}
+
+private fun DrawScope.drawCalibrationLine(a: Offset, b: Offset, zoom: Float) {
+    val dash = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f / zoom, 6f / zoom))
+    drawLine(Color(0xFFF47B20), a, b, strokeWidth = 2f / zoom, pathEffect = dash)
 }
