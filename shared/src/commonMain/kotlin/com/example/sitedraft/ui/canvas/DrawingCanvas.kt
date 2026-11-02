@@ -924,7 +924,8 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
             }
             is DrawingElement.ElevationView -> {
                 // Live: rebuilt from the plan on every draw, so plan edits show up at once.
-                Elevation.partsOf(element, state).forEach { drawElement(it, isSelected = false, state = state) }
+                // Drawn in an ink that shows on this canvas (white ink on the White canvas was invisible).
+                Elevation.partsOf(Elevation.withVisibleInk(element, state.backgroundColor), state).forEach { drawElement(it, isSelected = false, state = state) }
             }
             else -> {}
         }

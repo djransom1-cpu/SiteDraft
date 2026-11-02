@@ -2222,7 +2222,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
 
         if (element is DrawingElement.ElevationView) {
             // Freeze the live view into plain lines, rectangles and text for hand editing.
-            val parts = Elevation.partsOf(element, _state.value)
+            val parts = Elevation.partsOf(Elevation.withVisibleInk(element, _state.value.backgroundColor), _state.value)
             pushUndoSnapshot()
             _state.value = _state.value.copy(
                 elements = _state.value.elements.filter { it.id != selectedId } + parts,
@@ -2295,7 +2295,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             spec = placement.spec,
             origin = origin,
             size = Elevation.sizePx(wall, placement.spec, s),
-            color = s.currentColor
+            color = Elevation.visibleInk(s.currentColor, s.backgroundColor)
         )
         pushUndoSnapshot()
         _state.value = _state.value.copy(

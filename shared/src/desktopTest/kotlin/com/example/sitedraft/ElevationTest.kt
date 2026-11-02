@@ -292,4 +292,28 @@ class ElevationTest {
     }
 
     private fun near(a: Float, b: Float) = kotlin.math.abs(a - b) < 0.05f
+
+    @Test
+    fun whiteInkOnWhiteCanvasDrawsBlack() {
+        // The default ink is white (Blueprint mode); on the White canvas the elevation was invisible.
+        assertEquals(Color.Black, Elevation.visibleInk(Color.White, Color.White))
+        assertEquals(Color.White, Elevation.visibleInk(Color.Black, Color(0xFF003366)))
+        // A colour that already shows is left alone.
+        assertEquals(Color.Black, Elevation.visibleInk(Color.Black, Color.White))
+        assertEquals(Color.Red, Elevation.visibleInk(Color.Red, Color.White))
+    }
+
+    @Test
+    fun elevationPartsShowOnWhiteCanvas() {
+        val (wall, state) = kitchen()
+        val view = DrawingElement.ElevationView(
+            spec = ElevationSpec(wallId = wall.id, side = ViewerSide.BELOW),
+            origin = Offset(0f, 2000f),
+            size = Elevation.sizePx(wall, ElevationSpec(wallId = wall.id, side = ViewerSide.BELOW), state),
+            color = Color.White
+        )
+        val parts = Elevation.partsOf(Elevation.withVisibleInk(view, Color.White), state)
+        assertTrue(parts.isNotEmpty())
+        assertTrue(parts.all { it.color == Color.Black })
+    }
 }

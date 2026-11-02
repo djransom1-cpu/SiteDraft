@@ -4,6 +4,7 @@ import com.example.sitedraft.util.format
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.luminance
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -177,6 +178,23 @@ object Elevation {
      * The elevation as canvas elements. [origin] is the bottom-left corner of the floor line; the
      * view runs to the right and up from there, at the drawing's scale.
      */
+    /**
+     * The view with an ink that shows on [background]. The drawing's default ink is white (made
+     * for the Blueprint canvas), and an elevation is plain lines and boxes that keep their colour,
+     * unlike plan symbols, which draw black on a light canvas. So on the White canvas an elevation
+     * placed with white ink came out white on white: invisible. Ink too close to the canvas is
+     * swapped for black (light canvas) or white (dark canvas); any other colour is kept.
+     */
+    fun withVisibleInk(view: DrawingElement.ElevationView, background: androidx.compose.ui.graphics.Color): DrawingElement.ElevationView =
+        view.copy(color = visibleInk(view.color, background))
+
+    fun visibleInk(ink: androidx.compose.ui.graphics.Color, background: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color {
+        val lightCanvas = background.luminance() > 0.5f
+        val lightInk = ink.luminance() > 0.5f
+        return if (lightCanvas != lightInk) ink
+        else if (lightCanvas) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White
+    }
+
     /** What an [DrawingElement.ElevationView] shows right now: rebuilt from the plan every time it is drawn. */
     fun partsOf(view: DrawingElement.ElevationView, state: CanvasState): List<DrawingElement> {
         val wall = state.elements.find { it.id == view.spec.wallId } as? DrawingElement.Symbol
