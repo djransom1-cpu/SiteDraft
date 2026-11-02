@@ -1,0 +1,188 @@
+package com.example.sitedraft.ui.help
+
+/** One page of in-app help: a title, extra words people might search for, and its lines. */
+data class HelpTopic(val title: String, val keywords: String, val lines: List<String>)
+
+/** The SiteDraft user guide, shown by the Help panel. Lines starting "1." etc. are steps. */
+object HelpContent {
+    val topics: List<HelpTopic> = listOf(
+        HelpTopic(
+            title = "Getting started",
+            keywords = "start install sign in account login verify email access code password",
+            lines = listOf(
+                "Open SiteDraft, create an account with any email address, verify that email, and enter your access code.",
+                "Web: open djransom1-cpu.github.io/SiteDraft in a browser. Nothing to install.",
+                "Windows desktop: double-click the SiteDraft .msi file. If Windows says \"Windows protected your PC\", click More info, then Run anyway. To update, uninstall the old SiteDraft first (Settings > Apps), then install the new one.",
+                "Android tablet: install the app you were sent. It also offers Continue with Google.",
+                "1. On the sign-in screen, tap Create an account.",
+                "2. Enter any email address (Gmail, Outlook, Yahoo, work) and a password, then tap Create account.",
+                "3. Open the verification email and click the link. Check your spam folder if it doesn't arrive.",
+                "4. Back in SiteDraft, tap I have subscribed, check again.",
+                "Access code: on the Subscribe to use SiteDraft screen, tap Have a code?, type your code and tap Use code.",
+                "Forgot your password? Tap Forgot password? on the sign-in screen.",
+            ),
+        ),
+        HelpTopic(
+            title = "A tour of the screen",
+            keywords = "rail toolbar buttons zoom properties floating bar select pan move undo redo",
+            lines = listOf(
+                "Left rail: Home (projects), Symbols (symbol library), Tools (all drawing tools), Settings, Plan (floor plan, elevations, doors and windows), Laser (tablet) and Help.",
+                "Top bar: Select, Pan, Move, Pen, Rectangle, Dimension, Trim, the color dot, Undo and Redo. On the right: Import, Save Project, Export and Print.",
+                "Tools panel: Line, Circle, Oval, Triangle, Text, Eraser, Extend and Pt-to-Pt.",
+                "Select something and a floating bar appears: Move, Point-to-Point, Copy, Rotate left 90, Rotate right 90, Explode, Group / Ungroup, Delete and Deselect.",
+                "The Properties panel opens on the right for exact length, thickness, angle and color.",
+                "Zoom bar (bottom right): Zoom Out, Zoom In, Fit Drawing (shows everything) and Reset Zoom.",
+            ),
+        ),
+        HelpTopic(
+            title = "Draw a floor plan",
+            keywords = "outline building rooms walls width depth 2x4 2x6 block concrete inside outside dims length thickness angle offset",
+            lines = listOf(
+                "Place the building outline first, then drop rooms inside it. A wall that is already there is not doubled.",
+                "Building outline:",
+                "1. Tap Plan on the left rail.",
+                "2. Under Building outline, type the outside Width (ft) and Depth (ft).",
+                "3. Pick the wall: 2x6 Wall, 2x4 Wall, 8\" Block Wall or 8\" Concrete Wall.",
+                "4. Tap Place outline, then tap the canvas where the top-left corner goes.",
+                "Rooms:",
+                "1. Tap a preset (Bedroom, Bathroom, Kitchen, Living Room, Dining, Office, Laundry, Closet, Hall, Garage) or type a Room name.",
+                "2. Enter Width and Depth in feet.",
+                "3. Choose Inside dims or Outside dims, and 2x4 Wall or 2x6 Wall.",
+                "4. Tap Place room, then tap the room's top-left corner (inside corner for inside dims, outside corner for outside dims).",
+                "Adjust a wall: Select it, then in Properties type a new Length or Thickness and tap Set. Total Angle turns it; a wall turned to 90 degrees straightens back into a normal wall.",
+                "Offset Tool: enter a distance, pick Side A or Side B, tap Apply Offset. Enable Precise Move nudges by an exact amount.",
+            ),
+        ),
+        HelpTopic(
+            title = "Doors and windows",
+            keywords = "door window opening sliding hinge swing sill height rotate",
+            lines = listOf(
+                "1. Open Plan and scroll to Doors & windows.",
+                "2. Pick one: Door 2'-6\", 2'-8\" or 3'-0\"; Sliding Door 6'-0\"; Opening 2'-6\" to 6'-0\"; Window 3'-0\", 4'-0\" or 6'-0\".",
+                "3. Tap the wall. For a swinging door, the spot you tap is the hinge, at the bottom-left corner of the swing.",
+                "4. Swings the wrong way? Select it and use Rotate left 90 or Rotate right 90.",
+                "5. In Properties, set this opening's Door height, Window height or Sill height. Elevations use these numbers.",
+            ),
+        ),
+        HelpTopic(
+            title = "Cabinets, fixtures and furniture",
+            keywords = "symbols symbol library cabinet base upper pantry sink toilet tub shower closet furniture bed sofa outdoor kitchen fronts drawers",
+            lines = listOf(
+                "1. Tap Symbols on the left rail.",
+                "2. Pick a category: Cabinets, Fixtures, Closet, Furniture or Outdoor Kitchen. Structural, Electrical, Plumbing, HVAC, Welding, Site Layout, Lumber and Plywood are there too.",
+                "3. Tap the symbol, then tap the plan to place it.",
+                "4. Push cabinets and fixtures right against the wall face so elevations show them.",
+                "5. Select a cabinet to choose its Fronts (doors, drawer over doors, 3 or 4 drawers) and how many Doors it has.",
+            ),
+        ),
+        HelpTopic(
+            title = "Dimensions",
+            keywords = "dimension measure label size snap",
+            lines = listOf(
+                "1. Tap Dimension on the top bar.",
+                "2. Drag from one point to the other. Turn on Snap to Objects in Settings so the ends lock onto wall corners.",
+                "3. Select a dimension to change its style or color in Properties.",
+            ),
+        ),
+        HelpTopic(
+            title = "Laser measuring (tablet)",
+            keywords = "laser bosch glm bluetooth measure wall mode walk room reading",
+            lines = listOf(
+                "Works on the Android tablet with a Bosch GLM.",
+                "1. Tap Laser on the left rail and allow Bluetooth.",
+                "2. Press the Bluetooth button on the GLM.",
+                "3. If it is paired with the tablet, tap it under Paired. Otherwise tap Scan for GLM.",
+                "Walk the room: turn on Wall mode, tap where the first wall starts, tap an arrow for the direction, then take readings. Each reading adds a wall. Tap Close room to finish or New room for another.",
+                "Size a shape: select a line or shape, take a reading, then tap Set length, Set width or Set height.",
+            ),
+        ),
+        HelpTopic(
+            title = "Elevations",
+            keywords = "elevation wall view side counter uppers heights place live explode print",
+            lines = listOf(
+                "An elevation is built from the plan: everything against the wall, its doors and windows, and walls that butt into it, at the plan's scale.",
+                "1. Choose Select and tap the wall on the plan.",
+                "2. Tap Plan and scroll to Elevation.",
+                "3. Pick the side you stand on (From below / From above for a left-right wall, From the right / From the left for an up-down wall). SiteDraft picks the inside of the room for you.",
+                "4. Check the heights: Wall height (ft), Counter, Uppers from, Uppers high, Window sill, Window high, Door height (inches).",
+                "5. Tap Place elevation, then tap an empty spot. That spot is the bottom-left end of the floor line.",
+                "6. It is placed selected; use Move to put it where you want.",
+                "It stays live: change the plan and the elevation redraws. Select it to change its heights or side in Properties.",
+                "To edit by hand, select it and tap Explode. It becomes plain lines and no longer follows the plan.",
+                "To print just the elevation, select it, tap Print and choose Selected elevation.",
+            ),
+        ),
+        HelpTopic(
+            title = "Trace over a PDF plan",
+            keywords = "pdf import calibrate scale lock opacity page trace architect image dxf unlock",
+            lines = listOf(
+                "1. Tap Import (top bar, right side) and choose Import PDF.",
+                "2. Select the PDF. In Properties, tap Calibrate scale.",
+                "3. Tap both ends of a dimension printed on the plan.",
+                "4. Type its real length (for example 12'6\") and tap Apply. Tap Pick again if you missed.",
+                "5. For a multi-page PDF, use Prev and Next under Page.",
+                "6. Lower the Opacity so your lines stand out.",
+                "7. Tap Lock in place, then draw on top.",
+                "To move or recalibrate later: Import > Unlock plans, then Recalibrate scale. Import Image and Import DXF are on the same menu.",
+            ),
+        ),
+        HelpTopic(
+            title = "Projects and saving",
+            keywords = "project job save new open recent sync rename",
+            lines = listOf(
+                "SiteDraft saves as you draw and syncs your projects to your account, so the same job opens on tablet, desktop and web.",
+                "Tap Home to open Projects / Jobs. Rename the Current Active Project there and tap Save.",
+                "Create New Job starts a fresh drawing. Tap a job under Recent Jobs to open it.",
+                "The Save Project button on the top bar saves right away.",
+            ),
+        ),
+        HelpTopic(
+            title = "Sharing a project",
+            keywords = "share email editor viewer shared with me verify",
+            lines = listOf(
+                "1. In Projects / Jobs, tap Share under the current project.",
+                "2. Enter the person's email. Tick Can edit to let them change it; otherwise they can only view it.",
+                "3. They see it under Shared with me after signing in with that email and verifying it. They need their own subscription or access code.",
+                "4. Change access later with Make editor or Make viewer.",
+            ),
+        ),
+        HelpTopic(
+            title = "Printing and PDF",
+            keywords = "print paper letter tabloid arch scale sheet title export pdf",
+            lines = listOf(
+                "1. Tap Print (top bar, far right).",
+                "2. Under What to print, pick Whole drawing, Current view or Selected elevation.",
+                "3. Pick the Paper (Letter, Legal, Tabloid 11x17, Arch C 18x24, Arch D 24x36) and Portrait or Landscape.",
+                "4. Set the Scale and a Sheet title.",
+                "5. Tap Print, or Export PDF to save a file you can email.",
+                "Printing always uses black ink, even on the Blueprint canvas.",
+            ),
+        ),
+        HelpTopic(
+            title = "Settings",
+            keywords = "settings units imperial metric scale canvas color blueprint white line weight snap grid objects palm rejection",
+            lines = listOf(
+                "Unit System: Imperial (ft, in) or Metric (m, cm, mm).",
+                "Drawing Scale and Default Line Weight.",
+                "Canvas Color: Blueprint (blue) or White.",
+                "Snap to Grid and Snap to Objects.",
+                "Palm Rejection (tablet): stops your hand from drawing.",
+            ),
+        ),
+        HelpTopic(
+            title = "Troubleshooting",
+            keywords = "problem help missing invisible lost wont open fix error",
+            lines = listOf(
+                "Lost the drawing off-screen: tap Fit Drawing on the zoom bar.",
+                "A cabinet or fixture is missing from an elevation: its back must be within 6\" of the wall face, on the side you're viewing. Islands never show.",
+                "A door or window is missing from an elevation: it must sit in that wall. Drag it onto the wall's center line.",
+                "Elevation says its wall was deleted: delete the elevation and make a new one from the current wall.",
+                "Elevation frame shows but nothing inside: update to version 1.0.9 or newer.",
+                "Desktop app won't open after an update: uninstall SiteDraft (Settings > Apps), then install the new version.",
+                "Lines hard to see: Settings > Canvas Color.",
+                "A shared project isn't showing: verify your email, then sign in with the address it was shared to.",
+                "Made a mistake: Undo (curved arrow, top bar).",
+            ),
+        ),
+    )
+}

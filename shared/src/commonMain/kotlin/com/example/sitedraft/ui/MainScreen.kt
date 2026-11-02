@@ -124,8 +124,8 @@ fun MainScreen(
             )
             NavigationRailItem(
                 colors = railColors,
-                selected = false,
-                onClick = { },
+                selected = currentNav == "Help",
+                onClick = { currentNav = if (currentNav == "Help") "Drawing" else "Help" },
                 icon = { Icon(Icons.AutoMirrored.Filled.Help, contentDescription = "Help") },
                 label = { Text("Help") },
             )
@@ -150,6 +150,16 @@ fun MainScreen(
                 )
             }
             
+            if (isExpanded && currentNav == "Help") {
+                com.example.sitedraft.ui.help.HelpPanel(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .safeDrawingPadding()
+                        .padding(8.dp),
+                    onClose = { currentNav = "Drawing" }
+                )
+            }
+
             if (isExpanded && currentNav == "Home") {
                 ProjectManagerPanel(
                     state = state,
@@ -296,6 +306,16 @@ fun MainScreen(
                         }
                     }
                     
+                    if (!isExpanded && currentNav == "Help") {
+                        com.example.sitedraft.ui.help.HelpPanel(
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .safeDrawingPadding()
+                                .padding(16.dp),
+                            onClose = { currentNav = "Drawing" }
+                        )
+                    }
+
                     // Mobile/Compact Properties/Settings Overlay
                     if (!isExpanded) {
                         androidx.compose.animation.AnimatedVisibility(
