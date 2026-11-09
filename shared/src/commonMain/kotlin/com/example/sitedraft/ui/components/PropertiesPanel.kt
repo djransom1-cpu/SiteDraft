@@ -516,6 +516,23 @@ fun PropertiesPanel(
                                     }
                                 }
                             }
+                            // Vanities: how many sinks, and how high the top is.
+                            if (PlanSymbols.hasSinkChoice(selectedElement)) {
+                                Text(text = "Sinks", style = MaterialTheme.typography.labelLarge)
+                                val chosen = selectedElement.properties[PlanSymbols.PROP_SINKS]?.toInt() ?: 0
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    PlanSymbols.sinkLabels.forEachIndexed { i, label ->
+                                        FilterChip(selected = chosen == i, onClick = {
+                                            onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_SINKS, i.toString()))
+                                        }, label = { Text(label) })
+                                    }
+                                }
+                            }
+                            if (selectedElement.category == PlanSymbols.CABINETS && PlanSymbols.isVanity(selectedElement.symbolName)) {
+                                EditableProperty("Vanity height (in)", formatInches(PlanSymbols.vanityTop(selectedElement))) {
+                                    onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_TOP_IN, it))
+                                }
+                            }
                             if (PlanSymbols.isIsland(selectedElement)) {
                                 Text(text = "Seating overhang", style = MaterialTheme.typography.labelLarge)
                                 val over = selectedElement.properties[PlanSymbols.PROP_OVERHANG]?.toInt() ?: 0

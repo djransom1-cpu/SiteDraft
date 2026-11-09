@@ -47,6 +47,9 @@ object Elevation {
     const val DOUBLE_ROD_LOWER_IN = 40f
     const val DOUBLE_ROD_UPPER_IN = 80f
 
+    /** How far a farmhouse sink's apron reaches down from the counter top, inches. */
+    const val FARMHOUSE_APRON_IN = 10f
+
     enum class Kind { OPENING, FIXTURE, CUT_WALL }
 
     /** A plan symbol seen in the elevation, with its extent along the wall measured from the viewer's left end (px). */
@@ -317,6 +320,20 @@ object Elevation {
         val counterTop = spec.counterHeightIn
         val counterRuns = mutableListOf<Pair<Float, Float>>()
         val items = itemsOnWall(wall, spec.side, state)
+        // Vanities carry their own top height; sinks set into a vanity sit at that height
+        // instead of the kitchen counter's. Vanity tops are kept apart from the counter runs.
+        val vanities = items.filter { it.kind == Kind.FIXTURE && it.symbol.category == PlanSymbols.CABINETS && PlanSymbols.isVanity(it.symbol.symbolName) }
+        val vanityRuns = mutableListOf<Triple<Float, Float, Float>>()
+        fun overlaps(a: WallItem, from: Float, to: Float) = a.from < to - 0.5f * inch && a.to > from + 0.5f * inch
+        fun vanityUnder(from: Float, to: Float) = vanities.firstOrNull { overlaps(it, from, to) }
+        fun hostTop(from: Float, to: Float): Float = vanityUnder(from, to)?.let { PlanSymbols.vanityTop(it.symbol) } ?: counterTop
+        val sinkItems = items.filter { it.kind == Kind.FIXTURE && it.symbol.category == PlanSymbols.FIXTURES && it.symbol.symbolName in PlanSymbols.counterSinks }
+        val aprons = sinkItems.filter { it.symbol.symbolName == PlanSymbols.FARMHOUSE_SINK }
+        /** A faucet standing on a top at [topIn]: spout up and over the bowl. */
+        fun faucet(xc: Float, topIn: Float, tall: Float = 8f) {
+            line(xc, topIn, xc, topIn + tall, medium)
+            line(xc, topIn + tall, xc + 4f * inch, topIn + tall - 1.5f, medium)
+        }
         for (item in items) {
             val from = item.from
             val to = item.to
@@ -374,8 +391,10 @@ object Elevation {
                     name.startsWith("Base") || name.startsWith("Corner Base") -> {
                         rect(from, to, 0f, counterTop - 1.5f)
                         line(from, 4f, to, 4f) // toe kick
+                        // Under a farmhouse sink the apron takes the top of the cabinet face.
+                        val frontsTop = if (aprons.any { overlaps(it, from, to) }) counterTop - FARMHOUSE_APRON_IN else counterTop - 1.5f
                         if (name.startsWith("Corner")) cornerUnit(from, to, 4f, counterTop - 1.5f, cornerDoorAtToEnd(item.symbol, wall, spec.side, state), 12f, upper = false)
-                        else fronts(item.symbol, from, to, 4f, counterTop - 1.5f)
+                        else fronts(item.symbol, from, to, 4f, frontsTop)
                         counterRuns += Pair(from, to)
                     }
                     name == PlanSymbols.LYNX_36_GRILL -> {
@@ -402,6 +421,71 @@ object Elevation {
                         line(xc, counterTop, xc, counterTop + 10f, medium)
                         line(xc, counterTop + 10f, xc + 5f * inch, counterTop + 8f, medium)
                         counterRuns += Pair(from, to)
+                    }
+                    PlanSymbols.isVanity(name) -> {
+                        // Cabinet to 1 1/2" under its own top, toe kick, chosen fronts, and a
+                        // faucet over each sink unless a separate sink symbol stands on it.
+                        val top = PlanSymbols.vanityTop(item.symbol)
+                        rect(from, to, 0f, top - 1.5f)
+                        line(from, 4f, to, 4f)
+                        fronts(item.symbol, from, to, 4f, top - 1.5f)
+                        vanityRuns += Triple(from, to, top)
+                        val sinks = PlanSymbols.sinkCount(item.symbol)
+                        if (sinks > 0 && sinkItems.none { overlaps(it, from, to) }) {
+                            for (i in 0 until sinks) faucet(from + w * (i + 0.5f) / sinks, top)
+                        }
+                    }
+                    PlanSymbols.isLinenTower(name) -> {
+                        // Full height: toe kick, doors below a fixed shelf at 34", doors above.
+                        val top = PlanSymbols.LINEN_TOWER_HEIGHT_IN
+                        rect(from, to, 0f, top)
+                        line(from, 4f, to, 4f)
+                        val count = PlanSymbols.doorCount(item.symbol, w / inch)
+                        doors(from, to, 4f, 34f, count)
+                        doors(from, to, 35f, top - 1f, count, knobsLow = true)
+                    }
+                    name == PlanSymbols.VESSEL_SINK -> {
+                        // The bowl sits on the top; a tall faucet reaches over it.
+                        val top = hostTop(from, to)
+                        rect(from, to, top, top + 5.5f)
+                        line(xc - w * 0.35f, top, xc + w * 0.35f, top, medium)
+                        faucet(to - 1f * inch, top, 13f)
+                        if (vanityUnder(from, to) == null) counterRuns += Pair(from, to)
+                    }
+                    name in PlanSymbols.counterSinks -> {
+                        // Undermount, drop-in, single bowl, bar and farmhouse sinks: set into a
+                        // vanity top or the counter, so only the faucet shows; a farmhouse sink
+                        // also shows its apron below the counter.
+                        val top = hostTop(from, to)
+                        if (name == PlanSymbols.FARMHOUSE_SINK) {
+                            rect(from, to, top - FARMHOUSE_APRON_IN, top - 1.5f)
+                        }
+                        faucet(xc, top, if (name == PlanSymbols.BAR_SINK || name == PlanSymbols.UNDERMOUNT_SINK || name == PlanSymbols.DROP_IN_SINK) 8f else 10f)
+                        if (vanityUnder(from, to) == null) counterRuns += Pair(from, to)
+                    }
+                    name == PlanSymbols.PEDESTAL_SINK -> {
+                        // Basin rim at 34", pedestal down to a flared foot.
+                        val rim = 34f
+                        rect(from, to, rim - 6f, rim)
+                        val colW = min(w * 0.3f, 7f * inch)
+                        rect(xc - colW / 2f, xc + colW / 2f, 2f, rim - 6f, light)
+                        rect(xc - colW * 0.8f, xc + colW * 0.8f, 0f, 2f, light)
+                        faucet(xc, rim)
+                    }
+                    name == PlanSymbols.WALL_HUNG_SINK || name == PlanSymbols.CORNER_SINK -> {
+                        // Basin hung on the wall, rim at 34", the trap below it.
+                        val rim = 34f
+                        rect(from, to, rim - 7f, rim)
+                        line(xc, rim - 7f, xc, rim - 13f, light)
+                        line(xc, rim - 13f, xc + 3f * inch, rim - 13f, light)
+                        faucet(xc, rim)
+                    }
+                    name == PlanSymbols.UTILITY_SINK -> {
+                        // Laundry tub on legs, rim at 34".
+                        rect(from, to, 20f, 34f)
+                        line(from + inch, 0f, from + inch, 20f, medium)
+                        line(to - inch, 0f, to - inch, 20f, medium)
+                        faucet(xc, 34f, 10f)
                     }
                     name == "Bathroom Sink" -> {
                         rect(from, to, 0f, 32f)
@@ -580,6 +664,16 @@ object Elevation {
             else merged += run
         }
         for ((a, b) in merged) rect(a - 0.5f * inch, b + 0.5f * inch, counterTop - 1.5f, counterTop, medium)
+
+        // One vanity top over each run of vanities that stand side by side at the same height.
+        vanityRuns.sortBy { it.first }
+        val vMerged = mutableListOf<Triple<Float, Float, Float>>()
+        for (run in vanityRuns) {
+            val last = vMerged.lastOrNull()
+            if (last != null && run.third == last.third && run.first <= last.second + inch) vMerged[vMerged.size - 1] = Triple(last.first, maxOf(last.second, run.second), last.third)
+            else vMerged += run
+        }
+        for ((a, b, top) in vMerged) rect(a - 0.5f * inch, b + 0.5f * inch, top - 1.5f, top, medium)
 
         // Title under the floor line.
         val fontSize = (inch * 6f).coerceIn(10f, 36f)

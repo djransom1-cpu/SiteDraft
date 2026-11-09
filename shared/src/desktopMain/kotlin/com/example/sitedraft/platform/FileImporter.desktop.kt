@@ -3,6 +3,10 @@ package com.example.sitedraft.platform
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import org.apache.pdfbox.Loader
+import org.apache.pdfbox.rendering.ImageType
+import org.apache.pdfbox.rendering.PDFRenderer
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
@@ -25,8 +29,31 @@ actual fun rememberFileImporter(): FileImporter {
                 decodeImage(file.readBytes())?.let(onPicked) ?: platform.toast("Could not read ${file.name}")
             }
 
+            // Every page rendered at 72 DPI, one pixel per PDF point, the same size Android's
+            // PdfRenderer gives, so a plan comes in the same size on both. Rendering runs off the
+            // UI thread (a big plan set takes a while); the pages are handed back on it.
             override fun pickPdf(onPicked: (List<ImageBitmap>) -> Unit) {
-                platform.toast("PDF import is not available on desktop yet; export the PDF page as an image and import that.")
+                val file = choose("Import PDF", ".pdf") ?: return
+                platform.toast("Loading ${file.name}...")
+                Thread {
+                    val pages = try {
+                        Loader.loadPDF(file).use { doc ->
+                            val renderer = PDFRenderer(doc)
+                            (0 until doc.numberOfPages).map { i ->
+                                renderer.renderImage(i, 1f, ImageType.RGB).toComposeImageBitmap()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        null
+                    }
+                    javax.swing.SwingUtilities.invokeLater {
+                        when {
+                            pages == null -> platform.toast("Could not read ${file.name}")
+                            pages.isEmpty() -> platform.toast("${file.name} has no pages")
+                            else -> onPicked(pages)
+                        }
+                    }
+                }.apply { isDaemon = true }.start()
             }
 
             override fun pickText(onPicked: (String) -> Unit) {

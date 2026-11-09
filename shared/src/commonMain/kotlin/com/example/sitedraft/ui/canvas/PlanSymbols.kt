@@ -61,6 +61,10 @@ object PlanSymbols {
         "Base 12\"", "Base 18\"", "Base 24\"", "Base 30\"", "Base 36\"", "Corner Base 36\"",
         "Upper 12\"", "Upper 18\"", "Upper 24\"", "Upper 30\"", "Upper 36\"", UPPER_CORNER,
         "Pantry 24\"", "Island 3'x6'",
+        // Bathroom vanities: 21" deep, top at the comfort height (36") unless changed.
+        "Vanity 18\"", "Vanity 24\"", "Vanity 30\"", "Vanity 36\"", "Vanity 48\"",
+        "Vanity 60\" Double", "Vanity 72\" Double", "Vanity Drawers 12\"", "Vanity Drawers 18\"",
+        LINEN_TOWER,
         // Fillers close the gap between a run and a wall or appliance.
         "Filler 1 1/2\"", "Filler 3\"", "Filler 6\"", "Upper Filler 3\"", "Upper Filler 6\""
     )
@@ -71,8 +75,31 @@ object PlanSymbols {
     /** Diagonal upper corner cabinet: 24" along each wall, 12"-deep arms, door across the corner. */
     const val UPPER_CORNER = "Upper Corner 24\""
 
+    /** Tall bathroom storage cabinet beside a vanity: 18" wide, 21" deep, 84" tall. */
+    const val LINEN_TOWER = "Linen Tower 18\""
+    const val LINEN_TOWER_HEIGHT_IN = 84f
+    const val VANITY_DEPTH_IN = 21f
+    const val VANITY_TOP_IN = 36f
+
+    /** Bathroom sinks, kitchen sinks and laundry tubs, beyond the original two. */
+    const val PEDESTAL_SINK = "Pedestal Sink"
+    const val WALL_HUNG_SINK = "Wall-Hung Sink"
+    const val CORNER_SINK = "Corner Sink"
+    const val VESSEL_SINK = "Vessel Sink"
+    const val UNDERMOUNT_SINK = "Undermount Sink"
+    const val DROP_IN_SINK = "Drop-In Sink"
+    const val SINGLE_KITCHEN_SINK = "Single Bowl Sink 30\""
+    const val FARMHOUSE_SINK = "Farmhouse Sink 33\""
+    const val BAR_SINK = "Bar Sink 15\""
+    const val UTILITY_SINK = "Utility Sink"
+
+    /** Sinks that drop into a vanity top or counter: the elevation shows only the faucet (a vessel its bowl). */
+    val counterSinks = setOf(VESSEL_SINK, UNDERMOUNT_SINK, DROP_IN_SINK, "Kitchen Sink", SINGLE_KITCHEN_SINK, FARMHOUSE_SINK, BAR_SINK)
+
     val fixtures = listOf(
-        "Bathtub", "Shower Stall", "Toilet", "Bathroom Sink", "Kitchen Sink", "Water Heater",
+        "Bathtub", "Shower Stall", "Toilet", "Bathroom Sink",
+        PEDESTAL_SINK, WALL_HUNG_SINK, CORNER_SINK, VESSEL_SINK, UNDERMOUNT_SINK, DROP_IN_SINK,
+        "Kitchen Sink", SINGLE_KITCHEN_SINK, FARMHOUSE_SINK, BAR_SINK, UTILITY_SINK, "Water Heater",
         "Washer", "Dryer", "Refrigerator", "Range", "Dishwasher"
     )
     val doorsWindows = listOf(
@@ -94,6 +121,17 @@ object PlanSymbols {
         "Toilet" to Pair(20f, 28f),
         "Bathroom Sink" to Pair(24f, 21f),
         "Kitchen Sink" to Pair(33f, 22f),
+        PEDESTAL_SINK to Pair(22f, 18f),
+        WALL_HUNG_SINK to Pair(20f, 17f),
+        // Corner sink: the size along each wall; the back corner is the top-left.
+        CORNER_SINK to Pair(17f, 17f),
+        VESSEL_SINK to Pair(16f, 16f),
+        UNDERMOUNT_SINK to Pair(19f, 15f),
+        DROP_IN_SINK to Pair(20f, 17f),
+        SINGLE_KITCHEN_SINK to Pair(30f, 22f),
+        FARMHOUSE_SINK to Pair(33f, 22f),
+        BAR_SINK to Pair(15f, 15f),
+        UTILITY_SINK to Pair(24f, 22f),
         "Water Heater" to Pair(24f, 24f),
         "Washer" to Pair(27f, 27f),
         "Dryer" to Pair(27f, 27f),
@@ -134,6 +172,16 @@ object PlanSymbols {
         UPPER_CORNER to Pair(24f, 24f),
         "Pantry 24\"" to Pair(24f, 24f),
         "Island 3'x6'" to Pair(72f, 36f),
+        "Vanity 18\"" to Pair(18f, VANITY_DEPTH_IN),
+        "Vanity 24\"" to Pair(24f, VANITY_DEPTH_IN),
+        "Vanity 30\"" to Pair(30f, VANITY_DEPTH_IN),
+        "Vanity 36\"" to Pair(36f, VANITY_DEPTH_IN),
+        "Vanity 48\"" to Pair(48f, VANITY_DEPTH_IN),
+        "Vanity 60\" Double" to Pair(60f, VANITY_DEPTH_IN),
+        "Vanity 72\" Double" to Pair(72f, VANITY_DEPTH_IN),
+        "Vanity Drawers 12\"" to Pair(12f, VANITY_DEPTH_IN),
+        "Vanity Drawers 18\"" to Pair(18f, VANITY_DEPTH_IN),
+        LINEN_TOWER to Pair(18f, VANITY_DEPTH_IN),
         "Filler 1 1/2\"" to Pair(1.5f, 24f),
         "Filler 3\"" to Pair(3f, 24f),
         "Filler 6\"" to Pair(6f, 24f),
@@ -217,15 +265,44 @@ object PlanSymbols {
     val frontLabels = listOf("Doors", "Drawer + doors", "3 drawers", "4 drawers")
     val overhangLabels = listOf("None", "Front", "Front + back", "Front + end")
 
-    /** Cabinets whose fronts can be chosen: base units (not corners) and islands. */
+    /** Cabinets whose fronts can be chosen: base units (not corners), islands and vanities. */
     fun hasFrontChoice(symbol: DrawingElement.Symbol) =
-        symbol.category == CABINETS && (symbol.symbolName.startsWith("Base") || symbol.symbolName.startsWith("Island"))
+        symbol.category == CABINETS && (symbol.symbolName.startsWith("Base") || symbol.symbolName.startsWith("Island") || isVanity(symbol.symbolName))
     fun hasDoorChoice(symbol: DrawingElement.Symbol) =
-        symbol.category == CABINETS && !isFiller(symbol.symbolName) && !symbol.symbolName.startsWith("Corner") && symbol.symbolName != UPPER_CORNER
+        symbol.category == CABINETS && !isFiller(symbol.symbolName) && !symbol.symbolName.startsWith("Corner") &&
+            symbol.symbolName != UPPER_CORNER && !isVanityDrawers(symbol.symbolName)
     fun isIsland(symbol: DrawingElement.Symbol) = symbol.category == CABINETS && symbol.symbolName.startsWith("Island")
 
+    /** Bathroom vanities, including the drawer bases that sit in a vanity run (not the linen tower). */
+    fun isVanity(name: String) = name.startsWith("Vanity")
+    fun isVanityDrawers(name: String) = name.startsWith("Vanity Drawers")
+    fun isLinenTower(name: String) = name == LINEN_TOWER
+
+    /**
+     * Vanity settings in the symbol's properties. [PROP_TOP_IN]: height to the top of the
+     * vanity top, inches (36" comfort height by default; 32" is the older standard).
+     * [PROP_SINKS]: 0 by size (two on a "Double", none on a drawer base, else one), 1 one
+     * sink, 2 two sinks, 3 no sink (a separate sink symbol sits on it instead).
+     */
+    const val PROP_TOP_IN = "topIn"
+    const val PROP_SINKS = "sinks"
+    val sinkLabels = listOf("By size", "1 sink", "2 sinks", "No sink")
+    fun hasSinkChoice(symbol: DrawingElement.Symbol) =
+        symbol.category == CABINETS && isVanity(symbol.symbolName) && !isVanityDrawers(symbol.symbolName)
+    fun vanityTop(symbol: DrawingElement.Symbol): Float = symbol.properties[PROP_TOP_IN] ?: VANITY_TOP_IN
+    fun sinkCount(symbol: DrawingElement.Symbol): Int = when (symbol.properties[PROP_SINKS]?.toInt() ?: 0) {
+        1 -> 1
+        2 -> 2
+        3 -> 0
+        else -> if (isVanityDrawers(symbol.symbolName)) 0 else if (symbol.symbolName.contains("Double")) 2 else 1
+    }
+
     fun front(symbol: DrawingElement.Symbol): Int =
-        symbol.properties[PROP_FRONT]?.toInt() ?: if (symbol.symbolName.startsWith("Base")) FRONT_DRAWER_DOORS else FRONT_DOORS
+        symbol.properties[PROP_FRONT]?.toInt() ?: when {
+            isVanityDrawers(symbol.symbolName) -> FRONT_THREE_DRAWERS
+            symbol.symbolName.startsWith("Base") || isVanity(symbol.symbolName) -> FRONT_DRAWER_DOORS
+            else -> FRONT_DOORS
+        }
 
     /** How many doors a run of [widthIn] gets: the override, else two from 30" wide. */
     fun doorCount(symbol: DrawingElement.Symbol, widthIn: Float): Int {
@@ -356,6 +433,81 @@ fun DrawScope.drawPlanSymbol(
                 drawRoundRect(color = accentColor, topLeft = Offset(-hw + gap, -bh / 2f + inch), size = Size(bw, bh), cornerRadius = r, style = thin)
                 drawRoundRect(color = accentColor, topLeft = Offset(gap / 2f, -bh / 2f + inch), size = Size(bw, bh), cornerRadius = r, style = thin)
                 drawCircle(color = lineColor, radius = inch, center = Offset(0f, -hh + inch * 2f), style = thin)
+            }
+            name == PlanSymbols.PEDESTAL_SINK || name == PlanSymbols.WALL_HUNG_SINK -> {
+                // No cabinet: a basin with a straight back against the wall and a rounded front.
+                val outline = Path().apply {
+                    moveTo(-hw, -hh); lineTo(hw, -hh); lineTo(hw, -hh + h * 0.3f)
+                    cubicTo(hw, hh, -hw, hh, -hw, -hh + h * 0.3f); close()
+                }
+                drawPath(outline, color = lineColor, style = line)
+                val bw = w * 0.62f
+                val bh = h * 0.55f
+                drawOval(color = accentColor, topLeft = Offset(-bw / 2f, -hh + h * 0.3f), size = Size(bw, bh), style = thin)
+                drawCircle(color = lineColor, radius = inch, center = Offset(0f, -hh + inch * 2f), style = thin)
+                if (name == PlanSymbols.WALL_HUNG_SINK) {
+                    // Wall brackets, dashed under the basin.
+                    val dashed = Stroke(width = thin.width, pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 1.5f, inch)))
+                    for (x in listOf(-hw + inch * 3f, hw - inch * 3f)) {
+                        drawPath(Path().apply { moveTo(x, -hh); lineTo(x, -hh + h * 0.45f) }, color = faint, style = dashed)
+                    }
+                }
+            }
+            name == PlanSymbols.CORNER_SINK -> {
+                // Back corner at the top-left, the two backs along the top and left edges, a
+                // curved front across the room side.
+                val outline = Path().apply {
+                    moveTo(-hw, -hh); lineTo(hw, -hh)
+                    cubicTo(hw, hh * 0.2f, hw * 0.2f, hh, -hw, hh); close()
+                }
+                drawPath(outline, color = lineColor, style = line)
+                val bowl = Path().apply {
+                    moveTo(-hw + inch * 2.5f, -hh + inch * 2.5f); lineTo(hw - inch * 5f, -hh + inch * 2.5f)
+                    cubicTo(hw - inch * 5f, hh * 0.05f, hw * 0.05f, hh - inch * 5f, -hw + inch * 2.5f, hh - inch * 5f); close()
+                }
+                drawPath(bowl, color = accentColor, style = thin)
+                drawCircle(color = lineColor, radius = inch, center = Offset(-hw + inch * 2f, -hh + inch * 2f), style = thin)
+            }
+            name == PlanSymbols.VESSEL_SINK -> {
+                // A bowl sitting on the top; the faucet stands behind it.
+                val r = min(hw, hh)
+                drawCircle(color = lineColor, radius = r, center = Offset.Zero, style = line)
+                drawCircle(color = accentColor, radius = r * 0.8f, center = Offset.Zero, style = thin)
+                drawCircle(color = accentColor, radius = inch, center = Offset.Zero, style = thin)
+            }
+            name == PlanSymbols.UNDERMOUNT_SINK -> {
+                // The bowl under the top: no rim, just the bowl edge and the drain.
+                drawOval(color = accentColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+                drawCircle(color = accentColor, radius = inch, center = Offset.Zero, style = thin)
+            }
+            name == PlanSymbols.DROP_IN_SINK -> {
+                // Rim on the top, bowl inside it, faucet holes in the back of the rim.
+                val r = CornerRadius(inch * 2f, inch * 2f)
+                drawRoundRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), cornerRadius = r, style = line)
+                val bw = w - inch * 4f
+                val bh = h - inch * 6f
+                drawOval(color = accentColor, topLeft = Offset(-bw / 2f, -hh + inch * 4f), size = Size(bw, bh), style = thin)
+                drawCircle(color = lineColor, radius = inch * 0.75f, center = Offset(0f, -hh + inch * 2f), style = thin)
+            }
+            name == PlanSymbols.SINGLE_KITCHEN_SINK || name == PlanSymbols.BAR_SINK || name == PlanSymbols.FARMHOUSE_SINK -> {
+                drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+                val gap = inch * 1.5f
+                val r = CornerRadius(inch, inch)
+                val top = -hh + inch * 4f
+                val bottom = if (name == PlanSymbols.FARMHOUSE_SINK) hh - inch * 1.5f else hh - gap
+                drawRoundRect(color = accentColor, topLeft = Offset(-hw + gap, top), size = Size(w - 2f * gap, bottom - top), cornerRadius = r, style = thin)
+                drawCircle(color = lineColor, radius = inch, center = Offset(0f, -hh + inch * 2f), style = thin)
+                if (name == PlanSymbols.FARMHOUSE_SINK) {
+                    // The apron: the sink's own front, standing proud of the cabinets.
+                    drawLine(color = lineColor, start = Offset(-hw, hh - inch * 0.75f), end = Offset(hw, hh - inch * 0.75f), strokeWidth = line.width)
+                }
+            }
+            name == PlanSymbols.UTILITY_SINK -> {
+                drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+                val ins = inch * 2f
+                drawRoundRect(color = accentColor, topLeft = Offset(-hw + ins, -hh + inch * 4f), size = Size(w - 2f * ins, h - inch * 4f - ins), cornerRadius = CornerRadius(inch * 1.5f, inch * 1.5f), style = thin)
+                drawCircle(color = lineColor, radius = inch, center = Offset(0f, -hh + inch * 2f), style = thin)
+                label("UT", lineColor, min(hw, hh) * 0.4f, Offset(0f, inch * 2f))
             }
             name == "Water Heater" -> {
                 val r = min(hw, hh)
@@ -559,6 +711,31 @@ private fun DrawScope.drawCabinet(
             drawLine(color = accentColor, start = Offset(hw - face, hh - d + face * 0.4f), end = Offset(hw - d + face * 0.4f, hh - face), strokeWidth = line.width)
             drawCircle(color = accentColor, radius = min(hw, hh) * 0.75f, center = Offset(-inch * 2f, -inch * 2f), style = thin)
         }
+        PlanSymbols.isVanity(name) -> {
+            // The vanity top with its bowl(s), the door/drawer face along the front.
+            drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+            drawLine(color = accentColor, start = Offset(-hw, hh - face), end = Offset(hw, hh - face), strokeWidth = line.width)
+            val front = PlanSymbols.front(element)
+            if (front == PlanSymbols.FRONT_THREE_DRAWERS || front == PlanSymbols.FRONT_FOUR_DRAWERS) {
+                drawLine(color = accentColor, start = Offset(-hw, hh - face * 0.5f), end = Offset(hw, hh - face * 0.5f), strokeWidth = thin.width)
+            } else if (twoDoors) {
+                drawLine(color = accentColor, start = Offset(0f, hh - face), end = Offset(0f, hh), strokeWidth = line.width)
+            }
+            val sinks = PlanSymbols.sinkCount(element)
+            if (sinks > 0) {
+                val slot = w / sinks
+                val bw = min(slot * 0.65f, inch * 17f)
+                val bh = min((h - face) * 0.6f, inch * 13f)
+                for (i in 0 until sinks) {
+                    val cx = -hw + slot * (i + 0.5f)
+                    val cy = -hh + (h - face) * 0.55f
+                    drawOval(color = accentColor, topLeft = Offset(cx - bw / 2f, cy - bh / 2f), size = Size(bw, bh), style = thin)
+                    drawCircle(color = lineColor, radius = inch, center = Offset(cx, cy - bh / 2f - inch * 1.5f), style = thin)
+                }
+            } else if (PlanSymbols.isVanityDrawers(name)) {
+                label("DRW", accentColor, (inch * 3.5f).coerceAtLeast(6f))
+            }
+        }
         name.startsWith("Island") -> {
             drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
             // Doors on both long sides.
@@ -599,7 +776,7 @@ private fun DrawScope.drawCabinet(
             } else if (twoDoors) {
                 drawLine(color = accentColor, start = Offset(0f, hh - face), end = Offset(0f, hh), strokeWidth = line.width)
             }
-            if (name.startsWith("Pantry")) {
+            if (name.startsWith("Pantry") || PlanSymbols.isLinenTower(name)) {
                 drawLine(color = faint, start = Offset(-hw, -hh), end = Offset(hw, hh - face), strokeWidth = thin.width)
                 drawLine(color = faint, start = Offset(-hw, hh - face), end = Offset(hw, -hh), strokeWidth = thin.width)
             }

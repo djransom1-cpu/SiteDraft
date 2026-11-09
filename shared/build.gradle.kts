@@ -100,6 +100,8 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
+                // Renders PDF pages for Import PDF (Android uses its built-in PdfRenderer).
+                implementation("org.apache.pdfbox:pdfbox:3.0.3")
             }
         }
     }

@@ -66,13 +66,15 @@ object HelpContent {
         ),
         HelpTopic(
             title = "Cabinets, fixtures and furniture",
-            keywords = "symbols symbol library cabinet base upper pantry sink toilet tub shower closet furniture bed sofa outdoor kitchen fronts drawers",
+            keywords = "symbols symbol library cabinet base upper pantry vanity vanities bathroom linen tower sink pedestal wall-hung vessel undermount drop-in farmhouse bar utility corner toilet tub shower closet furniture bed sofa outdoor kitchen fronts drawers",
             lines = listOf(
                 "1. Tap Symbols on the left rail.",
                 "2. Pick a category: Cabinets, Fixtures, Closet, Furniture or Outdoor Kitchen. Structural, Electrical, Plumbing, HVAC, Welding, Site Layout, Lumber and Plywood are there too.",
                 "3. Tap the symbol, then tap the plan to place it.",
                 "4. Push cabinets and fixtures right against the wall face so elevations show them.",
                 "5. Select a cabinet to choose its Fronts (doors, drawer over doors, 3 or 4 drawers) and how many Doors it has.",
+                "6. Bathroom vanities are under Cabinets: 18\" to 48\" single, 60\" and 72\" double, drawer bases and a linen tower. Select one to set its Sinks (by size, 1, 2 or none) and Vanity height (36\" comfort height to start; 32\" is the older standard).",
+                "7. More sink styles are under Fixtures: pedestal, wall-hung, corner, vessel, undermount, drop-in, single bowl, farmhouse, bar and utility. Set a vessel, undermount or drop-in sink on a vanity with its Sinks set to No sink; the elevation puts it at the vanity's height.",
             ),
         ),
         HelpTopic(

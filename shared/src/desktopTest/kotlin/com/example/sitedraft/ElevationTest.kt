@@ -316,4 +316,75 @@ class ElevationTest {
         assertTrue(parts.isNotEmpty())
         assertTrue(parts.all { it.color == Color.Black })
     }
+
+    // ---- Bathroom vanities and sinks ----
+
+    private fun vanityWall(vararg items: DrawingElement.Symbol): Pair<DrawingElement.Symbol, List<DrawingElement>> {
+        val wall = sym("2x4 Wall", PlanSymbols.WALLS, 500f, 0f, 1000f, t)
+        val state = CanvasState(elements = listOf(wall) + items)
+        return wall to Elevation.build(wall, ElevationSpec(wall.id, ViewerSide.BELOW), Offset(0f, 2000f), state)
+    }
+
+    /** Vertical faucet stems (medium lines) starting at [topIn] off the floor. */
+    private fun faucetStems(parts: List<DrawingElement>, topIn: Float) = parts.filterIsInstance<DrawingElement.Line>()
+        .filter { it.strokeWidth == 2f && it.start.x == it.end.x && kotlin.math.abs(it.start.y - (2000f - topIn * inch)) < 0.01f }
+
+    @Test
+    fun `a vanity gets its own top at its own height, apart from the kitchen counter`() {
+        val face = t / 2f
+        val vanity = sym("Vanity 36\"", PlanSymbols.CABINETS, 175f, face + 10.5f * inch, 36f * inch, 21f * inch)
+        val (_, parts) = vanityWall(vanity)
+        // Top: a 1 1/2" slab whose upper edge is at 36" (the default), not the 36" counter run.
+        val tops = parts.filterIsInstance<DrawingElement.Rectangle>()
+            .filter { it.strokeWidth == 2f && kotlin.math.abs(it.size.height - 1.5f * inch) < 0.01f }
+        assertEquals(1, tops.size)
+        assertEquals(2000f - 36f * inch, tops[0].topLeft.y, 0.01f)
+        assertEquals(1, faucetStems(parts, 36f).size)
+
+        // Set to the older 32" height: the top comes down with it.
+        val low = vanity.copy(properties = mapOf(PlanSymbols.PROP_TOP_IN to 32f))
+        val (_, lowParts) = vanityWall(low)
+        assertTrue(lowParts.filterIsInstance<DrawingElement.Rectangle>().any { kotlin.math.abs(it.topLeft.y - (2000f - 32f * inch)) < 0.01f && kotlin.math.abs(it.size.height - 1.5f * inch) < 0.01f })
+        assertEquals(1, faucetStems(lowParts, 32f).size)
+    }
+
+    @Test
+    fun `a double vanity has two faucets, and none when a separate sink sits on it`() {
+        val face = t / 2f
+        val double = sym("Vanity 60\" Double", PlanSymbols.CABINETS, 300f, face + 10.5f * inch, 60f * inch, 21f * inch)
+        assertEquals(2, PlanSymbols.sinkCount(double))
+        assertEquals(2, faucetStems(vanityWall(double).second, 36f).size)
+
+        // Sinks set to "No sink" with an undermount on it: just the undermount's one faucet, at the vanity height.
+        val plain = double.copy(properties = mapOf(PlanSymbols.PROP_SINKS to 3f, PlanSymbols.PROP_TOP_IN to 34f))
+        val sink = sym(PlanSymbols.UNDERMOUNT_SINK, PlanSymbols.FIXTURES, 300f, face + 9.5f * inch, 19f * inch, 15f * inch)
+        val parts = vanityWall(plain, sink).second
+        assertEquals(1, faucetStems(parts, 34f).size)
+        assertEquals(0, faucetStems(parts, 36f).size)
+    }
+
+    @Test
+    fun `a vessel sink stands on the vanity top`() {
+        val face = t / 2f
+        val vanity = sym("Vanity 30\"", PlanSymbols.CABINETS, 200f, face + 10.5f * inch, 30f * inch, 21f * inch)
+            .copy(properties = mapOf(PlanSymbols.PROP_SINKS to 3f))
+        val vessel = sym(PlanSymbols.VESSEL_SINK, PlanSymbols.FIXTURES, 200f, face + 9f * inch, 16f * inch, 16f * inch)
+        val parts = vanityWall(vanity, vessel).second
+        // The bowl: 16" wide, 5 1/2" tall, its bottom on the 36" top.
+        val bowl = parts.filterIsInstance<DrawingElement.Rectangle>()
+            .single { kotlin.math.abs(it.size.width - 16f * inch) < 0.01f && kotlin.math.abs(it.size.height - 5.5f * inch) < 0.01f }
+        assertEquals(2000f - 41.5f * inch, bowl.topLeft.y, 0.01f)
+    }
+
+    @Test
+    fun `every new sink and vanity draws in an elevation without throwing`() {
+        val face = t / 2f
+        for (name in PlanSymbols.fixtures + PlanSymbols.cabinets) {
+            if (name.startsWith("Island")) continue // free-standing: never in a wall elevation
+            val (wIn, dIn) = PlanSymbols.footprintInches.getValue(name)
+            val cat = if (name in PlanSymbols.fixtures) PlanSymbols.FIXTURES else PlanSymbols.CABINETS
+            val s = sym(name, cat, 500f, face + dIn / 2f * inch, wIn * inch, dIn * inch)
+            assertTrue(name, vanityWall(s).second.size > 5)
+        }
+    }
 }
