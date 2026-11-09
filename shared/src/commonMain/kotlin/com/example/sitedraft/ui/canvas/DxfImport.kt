@@ -3,9 +3,18 @@ package com.example.sitedraft.ui.canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 
-/** LINE entities of a DXF file as canvas lines (the same minimal reader the Android import used). */
-fun parseDxf(text: String): List<DrawingElement> {
+/**
+ * LINE entities of a DXF file as canvas lines (the same minimal reader the Android import used).
+ *
+ * With a [state], the file is read at real size: its $INSUNITS (inches when it has none and the
+ * project is imperial, millimetres when metric) is converted to the project's scale and Y is
+ * flipped, so a drawing from AutoCAD, or one exported by [DxfExport], comes in upright and the
+ * right size. Without one, DXF units are taken as canvas units, as before.
+ */
+fun parseDxf(text: String, state: CanvasState? = null): List<DrawingElement> {
     val lines = text.lines()
+    val pxPerUnit = state?.let { pxPerDxfUnit(insUnits(lines), it) } ?: 1f
+    val ySign = if (state != null) -1f else 1f
     val elements = mutableListOf<DrawingElement>()
     var i = 0
     while (i < lines.size) {
@@ -23,10 +32,35 @@ fun parseDxf(text: String): List<DrawingElement> {
                 }
                 i += 2
             }
-            elements.add(DrawingElement.Line(start = Offset(x1, y1), end = Offset(x2, y2), color = Color.Gray, strokeWidth = 1f))
+            elements.add(
+                DrawingElement.Line(
+                    start = Offset(x1 * pxPerUnit, y1 * pxPerUnit * ySign),
+                    end = Offset(x2 * pxPerUnit, y2 * pxPerUnit * ySign),
+                    color = Color.Gray, strokeWidth = 1f
+                )
+            )
             continue
         }
         i++
     }
     return elements
+}
+
+/** The file's $INSUNITS, or null when its header does not say. */
+private fun insUnits(lines: List<String>): Int? {
+    val at = lines.indexOfFirst { it.trim() == "\$INSUNITS" }
+    if (at < 0) return null
+    return lines.getOrNull(at + 2)?.trim()?.toIntOrNull()
+}
+
+private fun pxPerDxfUnit(insUnits: Int?, state: CanvasState): Float {
+    val inches = when (insUnits) {
+        1 -> 1f                 // inches
+        2 -> 12f                // feet
+        4 -> 1f / 25.4f         // millimetres
+        5 -> 1f / 2.54f         // centimetres
+        6 -> 39.3701f           // metres
+        else -> if (state.unitSystem == UnitSystem.METRIC) 1f / 25.4f else 1f
+    }
+    return state.inchesToPx(inches)
 }
