@@ -51,6 +51,7 @@ object HelpContent {
                 "4. Tap Place room, then tap the room's top-left corner (inside corner for inside dims, outside corner for outside dims).",
                 "Adjust a wall: Select it, then in Properties type a new Length or Thickness and tap Set. Total Angle turns it; a wall turned to 90 degrees straightens back into a normal wall.",
                 "Offset Tool: enter a distance, pick Side A or Side B, tap Apply Offset. Enable Precise Move nudges by an exact amount.",
+                "Hatch a room or area: open Plan, pick a pattern and size under Hatch an area, tap Tap an area, then tap inside the room. It fills to the nearest walls or straight lines on each side. Hatches also export to DXF as real lines on the HATCH layer.",
             ),
         ),
         HelpTopic(
@@ -75,6 +76,19 @@ object HelpContent {
                 "5. Select a cabinet to choose its Fronts (doors, drawer over doors, 3 or 4 drawers) and how many Doors it has.",
                 "6. Bathroom vanities are under Cabinets: 18\" to 48\" single, 60\" and 72\" double, drawer bases and a linen tower. Select one to set its Sinks (by size, 1, 2 or none) and Vanity height (36\" comfort height to start; 32\" is the older standard).",
                 "7. More sink styles are under Fixtures: pedestal, wall-hung, corner, vessel, undermount, drop-in, single bowl, farmhouse, bar and utility. Set a vessel, undermount or drop-in sink on a vanity with its Sinks set to No sink; the elevation puts it at the vanity's height.",
+            ),
+        ),
+        HelpTopic(
+            title = "Showers",
+            keywords = "hatch hatching tile pattern shower alcove corner neo-angle neo angle walk-in walk in glass door panel sliding curtain curb curbless tile niche bench valve head drain linear elevation",
+            lines = listOf(
+                "1. Tap Symbols, open Showers and pick a type and size: Alcove, Corner, Neo-Angle or Walk-In. The size is the inside of the shower, finished wall to finished wall.",
+                "2. Tap the plan to place it. The tiled walls are at the top and sides, the glass at the bottom; use Rotate to turn it.",
+                "3. Select it. In Properties set the Glass (door + panel, door only, sliding, fixed panel or curtain), which end the door or opening is at, and its width.",
+                "4. Set the curb (0 height = curbless), glass height, tile height, ceiling, wall tile pattern and size, floor tile size and the drain.",
+                "5. Choose the wall for the valve and head, the niche and the bench, and their heights.",
+                "6. Add 2x4 walls around it puts walls outside the tiled sides if you have not drawn them.",
+                "7. Under Elevations tap a wall (Back, Left, Right or Front glass), then tap an empty spot: the elevation is live and follows the shower. Walls are seen from inside the shower, the glass from outside.",
             ),
         ),
         HelpTopic(
@@ -112,6 +126,7 @@ object HelpContent {
                 "It stays live: change the plan and the elevation redraws. Select it to change its heights or side in Properties.",
                 "To edit by hand, select it and tap Explode. It becomes plain lines and no longer follows the plan.",
                 "To print just the elevation, select it, tap Print and choose Selected elevation.",
+                "Wall tile: select the elevation and under Wall tile choose Backsplash (counter to uppers), Full wall, or set your own From and To heights, the pattern and the tile size. Cabinets, windows and doors cover the tile behind them.",
             ),
         ),
         HelpTopic(

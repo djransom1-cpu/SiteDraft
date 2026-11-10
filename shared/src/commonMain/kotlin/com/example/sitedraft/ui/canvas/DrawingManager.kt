@@ -140,7 +140,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             is DrawingEvent.StartPlacement -> _state.value = _state.value.copy(pendingPlacement = event.placement, placementPreview = null)
             is DrawingEvent.PreviewPlacementAt -> _state.value.pendingPlacement?.let { pending ->
                 // Calibration points are not snapped, so neither is their crosshair.
-                val at = if (pending is Placement.Calibrate || pending is Placement.Plan) event.point else findSnapPoint(event.point)
+                val at = if (pending is Placement.Calibrate || pending is Placement.Plan || pending is Placement.Hatch) event.point else findSnapPoint(event.point)
                 _state.value = _state.value.copy(placementPreview = at)
             }
             is DrawingEvent.PlaceAt -> _state.value.pendingPlacement?.let { pending ->
@@ -157,6 +157,8 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     is Placement.Shell -> placeShell(point, pending)
                     is Placement.Room -> placeRoom(point, pending)
                     is Placement.Elevation -> placeElevation(point, pending)
+                    // Unsnapped: the tap only has to land inside the area.
+                    is Placement.Hatch -> placeHatch(event.point, pending)
                     // Unsnapped: the point goes exactly where the pen lifted on the printed plan.
                     is Placement.Calibrate -> calibrationPointPlaced(pending, event.point)
                     // Unsnapped too: the tap is the middle of the plan.
@@ -268,6 +270,15 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             DrawingEvent.ExplodeSelectedElement -> {
                 explodeSelectedElement()
                 triggerAutoSave()
+            }
+            is DrawingEvent.AddShowerWalls -> {
+                val shower = _state.value.elements.find { it.id == event.id } as? DrawingElement.Symbol
+                if (shower != null && shower.category == PlanSymbols.SHOWERS) {
+                    val walls = Shower.wallsFor(shower, _state.value)
+                    pushUndoSnapshot()
+                    _state.value = _state.value.copy(elements = _state.value.elements + walls)
+                    triggerAutoSave()
+                }
             }
         }
     }
@@ -2287,6 +2298,37 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         triggerAutoSave()
     }
 
+    /**
+     * Hatches the area around [point]: the rectangle between the nearest walls (or straight
+     * lines) on each side. It goes under everything but imported plans, so it never covers the
+     * walls or fixtures; its outline is a hairline that sits on the wall faces.
+     */
+    private fun placeHatch(point: Offset, placement: Placement.Hatch) {
+        val s = _state.value
+        val area = FloorPlan.areaAt(point, s)
+        if (area == null) {
+            platform.toast("No closed area there: hatch needs walls or lines on all four sides.")
+            return
+        }
+        val hatch = DrawingElement.Rectangle(
+            topLeft = area.topLeft, size = area.size, color = s.currentColor, strokeWidth = 0f,
+            fill = Fill(
+                pattern = placement.pattern, spacing = s.inchesToPx(placement.sizeIn), lineWidth = 1f,
+                length = if (placement.lengthIn > 0f) s.inchesToPx(placement.lengthIn) else 0f
+            )
+        )
+        val underlayEnd = s.elements.indexOfLast { it is DrawingElement.Pdf || it is DrawingElement.Image } + 1
+        pushUndoSnapshot()
+        _state.value = s.copy(
+            elements = s.elements.take(underlayEnd) + hatch + s.elements.drop(underlayEnd),
+            pendingPlacement = null,
+            placementPreview = null,
+            selectedElementId = hatch.id,
+            selectedElementIds = emptySet()
+        )
+        triggerAutoSave()
+    }
+
     /** A live elevation of a plan wall with [origin] as the floor line's left end. */
     private fun placeElevation(origin: Offset, placement: Placement.Elevation) {
         val s = _state.value
@@ -2352,6 +2394,8 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 properties = mapOf("widthInches" to wIn, "depthInches" to dIn)
                 // Doors and windows carry their own heights (and a window its sill), editable
                 // in Properties; elevations read these instead of the wall-wide defaults.
+                // A shower carries its glass, curb, tile and fixture settings.
+                if (category == PlanSymbols.SHOWERS) properties = properties + Shower.defaults(name)
                 if (category == PlanSymbols.DOORS_WINDOWS) {
                     properties = properties + if (PlanSymbols.isWindow(name)) {
                         mapOf(PlanSymbols.PROP_SILL_IN to 36f, PlanSymbols.PROP_HEIGHT_IN to 48f)
@@ -2523,6 +2567,34 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             val v = parseInches(value) ?: return@map element
                             if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
                         }
+                        // Shower settings: inches, or small codes for the choices (see Shower).
+                        in Shower.keys -> {
+                            val v = parseInches(value) ?: return@map element
+                            if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
+                        }
+                        // An elevation's wall tile: heights and size in inches, the pattern as an index.
+                        "tileFromIn", "tileToIn", "tileSizeIn", "tileLengthIn", "tilePattern" -> {
+                            if (element !is DrawingElement.ElevationView) return@map element
+                            val v = (if (property == "tilePattern") value.toFloatOrNull() else parseInches(value)) ?: return@map element
+                            if (v < 0f) return@map element
+                            val spec = element.spec
+                            element.copy(spec = when (property) {
+                                "tileFromIn" -> spec.copy(tileFromIn = v)
+                                "tileToIn" -> spec.copy(tileToIn = v)
+                                "tileSizeIn" -> spec.copy(tileSizeIn = v.coerceAtLeast(0.5f))
+                                "tileLengthIn" -> spec.copy(tileLengthIn = v)
+                                else -> spec.copy(tilePattern = v.toInt())
+                            })
+                        }
+                        // Which face of the shower a shower elevation shows.
+                        "showerFace" -> {
+                            val v = value.toIntOrNull() ?: return@map element
+                            if (element !is DrawingElement.ElevationView || v !in 0..3) return@map element
+                            val shower = _state.value.elements.find { it.id == element.spec.wallId } as? DrawingElement.Symbol ?: return@map element
+                            if (v !in Shower.faces(Shower.type(shower.symbolName))) return@map element
+                            val spec = element.spec.copy(showerFace = v)
+                            element.copy(spec = spec, size = Elevation.sizePx(shower, spec, _state.value))
+                        }
                         "viewerSide" -> {
                             if (element is DrawingElement.ElevationView) {
                                 ViewerSide.entries.firstOrNull { it.name == value }?.let { element.copy(spec = element.spec.copy(side = it)) } ?: element
@@ -2553,6 +2625,15 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                         "fillPattern" -> element.fillOrNull()?.let { f -> element.withFill(f.copy(pattern = FillPattern.entries.firstOrNull { it.name == value } ?: f.pattern)) } ?: element
                         "fillColor" -> element.fillOrNull()?.let { f -> element.withFill(f.copy(color = if (value == "auto") null else (parseHexColor(value) ?: f.color))) } ?: element
                         "fillSpacing" -> element.fillOrNull()?.let { f -> element.withFill(f.copy(spacing = value.toFloatOrNull() ?: f.spacing)) } ?: element
+                        // Tile width and length typed in inches (feet-and-inches welcome); length 0 = the pattern's own proportion.
+                        "fillWidthIn" -> element.fillOrNull()?.let { f ->
+                            val v = parseInches(value)?.takeIf { it > 0f } ?: return@map element
+                            element.withFill(f.copy(spacing = _state.value.inchesToPx(v)))
+                        } ?: element
+                        "fillLengthIn" -> element.fillOrNull()?.let { f ->
+                            val v = parseInches(value)?.takeIf { it >= 0f } ?: return@map element
+                            element.withFill(f.copy(length = _state.value.inchesToPx(v)))
+                        } ?: element
                         "fillLineWidth" -> element.fillOrNull()?.let { f -> element.withFill(f.copy(lineWidth = value.toFloatOrNull() ?: f.lineWidth)) } ?: element
                         // Hex string from the colour picker (see ColorHex.kt).
                         "color" -> parseHexColor(value)?.let { element.withColor(it) } ?: element
@@ -3010,4 +3091,6 @@ sealed class DrawingEvent {
     object DeleteSelectedElement : DrawingEvent()
     object DeselectElement : DrawingEvent()
     object ExplodeSelectedElement : DrawingEvent()
+    /** Puts 2x4 walls along a shower's tiled sides, outside its footprint. */
+    data class AddShowerWalls(val id: String) : DrawingEvent()
 }

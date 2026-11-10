@@ -29,6 +29,16 @@ data class ElevationSpec(
     val sillIn: Float = 36f,
     val windowHeightIn: Float = 48f,
     val doorHeightIn: Float = 80f,
+    /** Set (0 back, 1 left, 2 right, 3 front) when [wallId] is a shower: that face of it. */
+    val showerFace: Int = -1,
+    /** Wall tile (a backsplash, a wainscot) from [tileFromIn] to [tileToIn] up the wall; none when to <= from. */
+    val tileFromIn: Float = 0f,
+    val tileToIn: Float = 0f,
+    /** Index into [Shower.tilePatterns]: grid, subway, herringbone, hex. */
+    val tilePattern: Int = 0,
+    val tileSizeIn: Float = 4f,
+    /** The tile's long side, laid along the wall; 0 = square (or the pattern's own proportion). */
+    val tileLengthIn: Float = 0f,
 )
 
 /**
@@ -105,7 +115,8 @@ object Elevation {
     fun lengthPx(wall: DrawingElement.Symbol): Float = if (isHorizontal(wall)) wall.size.width else wall.size.height
 
     fun sizePx(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): Size =
-        Size(lengthPx(wall), state.inchesToPx(spec.wallHeightIn))
+        if (spec.showerFace >= 0 && wall.category == PlanSymbols.SHOWERS) Shower.elevationSize(wall, spec.showerFace, state)
+        else Size(lengthPx(wall), state.inchesToPx(spec.wallHeightIn))
 
     /** Where a point sits along the wall, measured from the end on the viewer's LEFT. */
     fun alongOf(wall: Rect, side: ViewerSide, p: Offset): Float = when (side) {
@@ -201,7 +212,12 @@ object Elevation {
     /** What an [DrawingElement.ElevationView] shows right now: rebuilt from the plan every time it is drawn. */
     fun partsOf(view: DrawingElement.ElevationView, state: CanvasState): List<DrawingElement> {
         val wall = state.elements.find { it.id == view.spec.wallId } as? DrawingElement.Symbol
-        return if (wall != null) build(wall, view.spec, view.origin, state, view.color) else missingWall(view, state)
+        return when {
+            wall == null -> missingWall(view, state)
+            view.spec.showerFace >= 0 && wall.category == PlanSymbols.SHOWERS ->
+                Shower.buildElevation(wall, view.spec.showerFace, view.origin, state, view.color)
+            else -> build(wall, view.spec, view.origin, state, view.color)
+        }
     }
 
     /** The wall this view was made from is gone: keep the frame so the view can still be found and deleted. */
@@ -225,9 +241,12 @@ object Elevation {
         fun line(x1: Float, h1: Float, x2: Float, h2: Float, sw: Float = light) {
             out += DrawingElement.Line(start = px(x1, h1), end = px(x2, h2), color = color, strokeWidth = sw)
         }
-        fun rect(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, sw: Float = medium) {
+        // With wall tile on, everything standing in front of the wall hides the tile behind it.
+        val tiled = spec.tileToIn > spec.tileFromIn
+        val opaque = if (tiled) Fill(pattern = FillPattern.SOLID, color = state.backgroundColor) else Fill()
+        fun rect(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, sw: Float = medium, fill: Fill = opaque) {
             if (xTo <= xFrom || hTop <= hBottom) return
-            out += DrawingElement.Rectangle(topLeft = px(xFrom, hTop), size = Size(xTo - xFrom, (hTop - hBottom) * inch), color = color, strokeWidth = sw)
+            out += DrawingElement.Rectangle(topLeft = px(xFrom, hTop), size = Size(xTo - xFrom, (hTop - hBottom) * inch), color = color, strokeWidth = sw, fill = fill)
         }
         fun circle(xc: Float, hc: Float, rIn: Float, sw: Float = light) {
             out += DrawingElement.Circle(center = px(xc, hc), radius = rIn * inch, color = color, strokeWidth = sw)
@@ -311,6 +330,15 @@ object Elevation {
             line(xTo - 2f * inch, 0f, xTo - 2f * inch, topIn - 1.5f, medium)
         }
 
+        // Wall tile first, so everything in front of it is drawn over it.
+        if (tiled) {
+            val top = spec.tileToIn.coerceAtMost(spec.wallHeightIn)
+            val pattern = Shower.tilePatterns.getOrElse(spec.tilePattern) { FillPattern.TILE }
+            rect(0f, length, spec.tileFromIn, top, light, Fill(
+                pattern = pattern, spacing = spec.tileSizeIn.coerceAtLeast(1f) * inch, lineWidth = 0.75f,
+                length = if (spec.tileLengthIn > 0f) spec.tileLengthIn * inch else 0f
+            ))
+        }
         // Frame: floor, ceiling, ends.
         line(0f, 0f, length, 0f, heavy)
         line(0f, spec.wallHeightIn, length, spec.wallHeightIn, medium)

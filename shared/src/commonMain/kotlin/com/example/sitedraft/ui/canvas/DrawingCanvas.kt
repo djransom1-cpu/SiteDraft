@@ -849,6 +849,8 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                 val color = element.color
                 val strokeWidth = element.strokeWidth
                 val (dimStart, dimEnd) = element.dimLineEndpoints()
+                // World units per screen px for the dimension's text, ticks and gaps.
+                val dimK = dimensionScale(state, zoom)
 
                 // Extension lines: connect the true measured points out to the offset dimension
                 // line, architectural-style - a small gap off the real point, a small overshoot
@@ -859,8 +861,8 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                     val extLen = extVec.getDistance()
                     if (extLen > 0.5f) {
                         val extUnit = extVec / extLen
-                        val gap = 6f * state.labelScale / zoom
-                        val overshoot = 6f * state.labelScale / zoom
+                        val gap = 6f * dimK
+                        val overshoot = 6f * dimK
                         val from = truePoint + extUnit * minOf(gap, extLen * 0.4f)
                         val to = dimPoint + extUnit * overshoot
                         drawLine(color, from, to, strokeWidth = strokeWidth * 0.75f)
@@ -875,7 +877,7 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                 val dist = (dimEnd - dimStart).getDistance()
                 if (dist > 1f) {
                     val dir = (dimEnd - dimStart) / dist
-                    val perp = Offset(-dir.y, dir.x) * (15f * state.labelScale / zoom)
+                    val perp = Offset(-dir.y, dir.x) * (15f * dimK)
                     val slant = (dir + perp) * 0.7f
 
                     drawLine(color, dimStart - slant, dimStart + slant, strokeWidth = strokeWidth * 1.5f)
@@ -894,8 +896,8 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                 // 15 world units above the line in the label's own (rotated) frame; size divided by
                 // zoom so it stays readable at any zoom.
                 val rad = angle * PI / 180.0
-                val labelCenter = mid + Offset(sin(rad).toFloat(), -cos(rad).toFloat()) * (15f * state.labelScale / zoom)
-                drawLabel(text, labelCenter, 36f * state.labelScale / zoom, labelColor, rotationDegrees = angle)
+                val labelCenter = mid + Offset(sin(rad).toFloat(), -cos(rad).toFloat()) * (15f * dimK)
+                drawLabel(text, labelCenter, 36f * dimK, labelColor, rotationDegrees = angle)
             }
             is DrawingElement.Text -> drawTextElement(element)
             is DrawingElement.Image -> {
@@ -1414,4 +1416,21 @@ private fun DrawScope.drawCalibrationPoint(p: Offset, zoom: Float) {
 private fun DrawScope.drawCalibrationLine(a: Offset, b: Offset, zoom: Float) {
     val dash = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f / zoom, 6f / zoom))
     drawLine(Color(0xFFF47B20), a, b, strokeWidth = 2f / zoom, pathEffect = dash)
+}
+
+/** Tallest a dimension's text gets on screen, in real inches at the drawing's scale. */
+const val DIMENSION_TEXT_MAX_IN = 6f
+
+/**
+ * How big (world units per screen px) a dimension's text, ticks and gaps draw. Zoomed in they
+ * keep a steady screen size so they stay readable. Zoomed out they stop at
+ * [DIMENSION_TEXT_MAX_IN] real inches tall (1/8" lettering on a 1/4" plan) and shrink with the
+ * drawing, as in CAD: a fixed screen size made them swamp a plan seen from far out. A printed
+ * sheet (labelScale set by PrintPage) keeps its paper-sized lettering.
+ */
+fun dimensionScale(state: CanvasState, zoom: Float): Float {
+    val screen = state.labelScale / zoom
+    if (state.labelScale != 1f) return screen
+    val cap = state.inchesToPx(DIMENSION_TEXT_MAX_IN) / 36f
+    return minOf(screen, cap)
 }

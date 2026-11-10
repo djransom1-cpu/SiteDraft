@@ -32,7 +32,9 @@ object PlanSymbols {
     const val OUTDOOR = "Outdoor Kitchen"
     const val CLOSET = "Closet"
     const val FURNITURE = "Furniture"
-    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE)
+    /** Showers built from one symbol: see [Shower]. */
+    const val SHOWERS = "Showers"
+    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS)
 
     /**
      * Closet parts, set against a closet wall with their backs at the top (like cabinets).
@@ -222,7 +224,7 @@ object PlanSymbols {
         // deep overall with the front 1 3/4" overhanging the island face; island cutout 35" x 22",
         // 10 1/8" deep; front panel 11" below the counter; hood 14 7/8" above it closed, 23 1/2" open.
         LYNX_36_GRILL to Pair(36f, LYNX_36_DEPTH)
-    )
+    ) + Shower.footprints
 
     const val LYNX_36_DEPTH = 26.375f
     const val LYNX_36_FRONT_LIP = 1.75f
@@ -349,8 +351,12 @@ fun DrawScope.drawPlanSymbol(
         // line), so blank their footprint first. A door's footprint is its swing, which stays
         // open, and an upper cabinet is an overlay above the cut plane: the base cabinet or
         // counter under it must still show through its dashed outline.
+        // Round and shaped fixtures blank only their own shape, so a floor hatch shows right
+        // up to a toilet bowl or a tub's corners rather than stopping in a rectangle around it.
         if (!PlanSymbols.isDoor(name) && !PlanSymbols.isUpperCabinet(element)) {
-            drawRect(color = state.backgroundColor, topLeft = Offset(-hw, -hh), size = Size(w, h))
+            val shape = blankShape(element, w, h, inch)
+            if (shape != null) drawPath(shape, color = state.backgroundColor)
+            else drawRect(color = state.backgroundColor, topLeft = Offset(-hw, -hh), size = Size(w, h))
         }
         when {
             element.category == PlanSymbols.WALLS -> {
@@ -359,6 +365,7 @@ fun DrawScope.drawPlanSymbol(
                 if (h > w) rotate(90f, pivot = Offset.Zero) { drawWallSection(name, h, w, inch, lineColor, accentColor, line, thin) }
                 else drawWallSection(name, w, h, inch, lineColor, accentColor, line, thin)
             }
+            element.category == PlanSymbols.SHOWERS -> with(Shower) { drawShowerPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.CABINETS -> drawCabinet(element, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.CLOSET -> drawClosetPart(name, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.FURNITURE -> drawFurniture(name, w, h, inch, lineColor, accentColor, faint, line, thin)
@@ -367,7 +374,10 @@ fun DrawScope.drawPlanSymbol(
                 // arc sweeping to the latch at the bottom-right corner. The threshold (bottom
                 // edge) is where the wall is: blank a strip there so the door cuts an opening.
                 val leaf = inch * 1.75f
-                drawRect(color = state.backgroundColor, topLeft = Offset(-hw, hh - inch * 4f), size = Size(w, inch * 8f))
+                // Cut the wall the door sits in, and only the wall: a fixed 8" strip reached past
+                // a 4 1/2" wall into the room and wiped out a band of floor hatch at the door.
+                val (cutTop, cutDepth) = doorWallCut(element, state, inch)
+                drawRect(color = state.backgroundColor, topLeft = Offset(-hw, cutTop), size = Size(w, cutDepth))
                 drawLine(color = faint, start = Offset(-hw, hh), end = Offset(hw, hh), strokeWidth = thin.width)
                 drawRect(color = lineColor, topLeft = Offset(-hw, hh - w), size = Size(leaf, w), style = line)
                 drawArc(
@@ -932,4 +942,70 @@ private fun DrawScope.hatch(hw: Float, hh: Float, spacing: Float, color: Color, 
 
 private fun DrawScope.label(text: String, color: Color, sizePx: Float, center: Offset = Offset.Zero) {
     drawLabel(text, center, sizePx, color)
+}
+
+/**
+ * Where (local y of the top, depth) a door cuts its wall: the thickness of the wall under its
+ * threshold, centred on that wall, plus 1/4" each side; an 8" strip on the threshold when no
+ * wall is found there.
+ */
+private fun doorWallCut(door: DrawingElement.Symbol, state: CanvasState, inch: Float): Pair<Float, Float> {
+    val hh = door.size.height / 2f
+    val threshold = rotateAbout(door.center + Offset(0f, hh), door.center, door.rotation)
+    val wall = state.elements.asSequence()
+        .filterIsInstance<DrawingElement.Symbol>()
+        .filter { it.category == PlanSymbols.WALLS }
+        .map { FloorPlan.bounds(it) }
+        .firstOrNull { it.inflate(inch).contains(threshold) }
+        ?: return Pair(hh - inch * 4f, inch * 8f)
+    val thickness = min(wall.width, wall.height)
+    // The door's own "down" (towards the threshold) in world space; how far along it the wall's
+    // centre line lies from the threshold.
+    val down = rotateAbout(Offset(0f, 1f), Offset.Zero, door.rotation)
+    val toCentre = wall.center - threshold
+    val along = toCentre.x * down.x + toCentre.y * down.y
+    val margin = inch * 0.25f
+    return Pair(hh + along - thickness / 2f - margin, thickness + 2f * margin)
+}
+
+/** The outline a plan symbol blanks under itself, or null for its whole footprint rectangle. */
+private fun blankShape(element: DrawingElement.Symbol, w: Float, h: Float, inch: Float): Path? {
+    val hw = w / 2f
+    val hh = h / 2f
+    val name = element.symbolName
+    fun oval(r: androidx.compose.ui.geometry.Rect) = Path().apply { addOval(r) }
+    return when {
+        name == "Toilet" -> {
+            val tankD = min(h * 0.3f, inch * 8f)
+            val tankW = min(w, inch * 20f)
+            val bowlW = min(w, inch * 14f)
+            val bowlTop = -hh + tankD
+            Path().apply {
+                addRect(androidx.compose.ui.geometry.Rect(-tankW / 2f, -hh, tankW / 2f, -hh + tankD))
+                addOval(androidx.compose.ui.geometry.Rect(-bowlW / 2f, bowlTop - inch, bowlW / 2f, hh))
+            }
+        }
+        name == "Bathtub" -> {
+            val r = min(w, h) * 0.15f
+            Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(-hw, -hh, hw, hh, CornerRadius(r, r))) }
+        }
+        name == "Water Heater" || name == PlanSymbols.VESSEL_SINK || name.startsWith("Round Table") -> {
+            val r = min(hw, hh)
+            oval(androidx.compose.ui.geometry.Rect(-r, -r, r, r))
+        }
+        name == PlanSymbols.UNDERMOUNT_SINK || name == "Office Chair" -> oval(androidx.compose.ui.geometry.Rect(-hw, -hh, hw, hh))
+        name == PlanSymbols.PEDESTAL_SINK || name == PlanSymbols.WALL_HUNG_SINK -> Path().apply {
+            moveTo(-hw, -hh); lineTo(hw, -hh); lineTo(hw, -hh + h * 0.3f)
+            cubicTo(hw, hh, -hw, hh, -hw, -hh + h * 0.3f); close()
+        }
+        name == PlanSymbols.CORNER_SINK -> Path().apply {
+            moveTo(-hw, -hh); lineTo(hw, -hh)
+            cubicTo(hw, hh * 0.2f, hw * 0.2f, hh, -hw, hh); close()
+        }
+        element.category == PlanSymbols.SHOWERS && Shower.type(name) == Shower.Type.NEO_ANGLE -> {
+            val a = Shower.neoCut(w / inch, h / inch) * inch
+            Path().apply { moveTo(-hw, -hh); lineTo(hw, -hh); lineTo(hw, hh - a); lineTo(hw - a, hh); lineTo(-hw, hh); close() }
+        }
+        else -> null
+    }
 }

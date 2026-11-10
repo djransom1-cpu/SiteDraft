@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Bathtub
+import androidx.compose.material.icons.filled.Shower
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Weekend
 import androidx.compose.material.icons.filled.Close
@@ -68,6 +69,7 @@ fun SymbolLibraryPanel(
             SymbolCategory("Electrical", Icons.Default.ElectricBolt, listOf("Outlet", "Switch", "Light Fixture", "Junction Box"), onEvent)
             SymbolCategory("Plumbing", Icons.Default.WaterDrop, listOf("Valve", "Faucet"), onEvent)
             SymbolCategory(PlanSymbols.FIXTURES, Icons.Default.Bathtub, PlanSymbols.fixtures, onEvent)
+            SymbolCategory(PlanSymbols.SHOWERS, Icons.Default.Shower, com.example.sitedraft.ui.canvas.Shower.library, onEvent)
             SymbolCategory(PlanSymbols.CABINETS, Icons.Default.Kitchen, PlanSymbols.cabinets, onEvent)
             SymbolCategory(PlanSymbols.OUTDOOR, Icons.Default.OutdoorGrill, PlanSymbols.outdoor, onEvent)
             SymbolCategory(PlanSymbols.CLOSET, Icons.Default.Checkroom, PlanSymbols.closet, onEvent)

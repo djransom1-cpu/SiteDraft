@@ -38,6 +38,11 @@ sealed class Placement {
         val outside: Boolean = false
     ) : Placement()
 
+    /** A hatch for the closed area the tap lands in (see [FloorPlan.areaAt]). Not snapped. */
+    data class Hatch(val pattern: FillPattern, val sizeIn: Float, val lengthIn: Float = 0f) : Placement() {
+        override val label get() = "inside the area to hatch"
+    }
+
     /** An elevation of a plan wall; the tap is the bottom-left corner of its floor line. */
     data class Elevation(val spec: ElevationSpec, override val label: String) : Placement()
 
@@ -84,6 +89,26 @@ object FloorPlan {
      * turned 36" base cabinet as "not against the wall" and draw a turned upper half as wide.
      * Walls themselves are never rotated by this tool.
      */
+    /**
+     * The rectangle around [p] bounded by the nearest wall face (or straight horizontal or
+     * vertical line) on each of its four sides, or null if a side is open.
+     */
+    fun areaAt(p: Offset, state: CanvasState): Rect? {
+        val boxes = state.elements.mapNotNull { e ->
+            when {
+                e is DrawingElement.Symbol && e.category == PlanSymbols.WALLS -> bounds(e)
+                e is DrawingElement.Line && e.rotation == 0f && (e.start.x == e.end.x || e.start.y == e.end.y) ->
+                    Rect(minOf(e.start.x, e.end.x), minOf(e.start.y, e.end.y), maxOf(e.start.x, e.end.x), maxOf(e.start.y, e.end.y))
+                else -> null
+            }
+        }
+        val left = boxes.filter { it.right <= p.x && p.y >= it.top && p.y <= it.bottom }.maxOfOrNull { it.right } ?: return null
+        val right = boxes.filter { it.left >= p.x && p.y >= it.top && p.y <= it.bottom }.minOfOrNull { it.left } ?: return null
+        val top = boxes.filter { it.bottom <= p.y && p.x >= it.left && p.x <= it.right }.maxOfOrNull { it.bottom } ?: return null
+        val bottom = boxes.filter { it.top >= p.y && p.x >= it.left && p.x <= it.right }.minOfOrNull { it.top } ?: return null
+        return Rect(left, top, right, bottom).takeIf { it.width > 0f && it.height > 0f }
+    }
+
     fun bounds(symbol: DrawingElement.Symbol): Rect {
         val half = Offset(symbol.size.width / 2f, symbol.size.height / 2f)
         if (symbol.rotation == 0f) return Rect(symbol.center - half, symbol.size)
@@ -284,6 +309,7 @@ object FloorPlan {
                 val inside = roomInside(placement, point, t, state)
                 listOf(inside.inflate(t), inside)
             }
+            is Placement.Hatch -> listOfNotNull(areaAt(point, state))
             is Placement.Elevation -> {
                 val wall = state.elements.find { it.id == placement.spec.wallId } as? DrawingElement.Symbol ?: return emptyList()
                 val size = Elevation.sizePx(wall, placement.spec, state)

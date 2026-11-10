@@ -22,7 +22,9 @@ import kotlin.math.sin
  *
  * Plan symbols are written as the lines the canvas draws for them (outline, door swing, window
  * glass line, cabinet face...), and wall lines are broken where a door, window or opening sits
- * in them, as the canvas blanks them. Fills and hatches, images and PDFs are not exported.
+ * in them, as the canvas blanks them. Hatch fills go out as real lines clipped to their shape,
+ * on the HATCH layer (ELEVATIONS-HATCH inside elevations), with anything an elevation blanks
+ * (a niche, a valve trim) cut out of them. Solid fills, images and PDFs are not exported.
  */
 object DxfExport {
     const val DRAWING = "DRAWING"
@@ -37,6 +39,8 @@ object DxfExport {
     const val DIMENSIONS = "DIMENSIONS"
     const val TEXT = "TEXT"
     const val ELEVATIONS = "ELEVATIONS"
+    const val HATCH = "HATCH"
+    const val ELEVATION_HATCH = "ELEVATIONS-HATCH"
 
     const val CONTINUOUS = "CONTINUOUS"
     const val DASHED = "DASHED"
@@ -58,7 +62,9 @@ object DxfExport {
         Layer(SYMBOLS, 5),
         Layer(DIMENSIONS, 1),
         Layer(TEXT, 2),
-        Layer(ELEVATIONS, 7)
+        Layer(ELEVATIONS, 7),
+        Layer(HATCH, 8),
+        Layer(ELEVATION_HATCH, 8)
     )
 
     /** $INSUNITS: 1 inches, 4 millimetres. */
@@ -74,7 +80,7 @@ object DxfExport {
         symbol.category == PlanSymbols.DOORS_WINDOWS -> DOORS_WINDOWS
         symbol.category == PlanSymbols.CABINETS && symbol.symbolName.startsWith("Upper") -> UPPER_CABINETS
         symbol.category == PlanSymbols.CABINETS || symbol.category == PlanSymbols.CLOSET -> CABINETS
-        symbol.category == PlanSymbols.FIXTURES || symbol.category == PlanSymbols.OUTDOOR -> FIXTURES
+        symbol.category == PlanSymbols.FIXTURES || symbol.category == PlanSymbols.OUTDOOR || symbol.category == PlanSymbols.SHOWERS -> FIXTURES
         symbol.category == PlanSymbols.FURNITURE -> FURNITURE
         else -> SYMBOLS
     }
@@ -154,7 +160,8 @@ object DxfExport {
     // ---- elements ----
 
     private fun writeElement(
-        w: DxfWriter, element: DrawingElement, forcedLayer: String?, state: CanvasState, blanks: List<Blank>
+        w: DxfWriter, element: DrawingElement, forcedLayer: String?, state: CanvasState, blanks: List<Blank>,
+        masks: List<List<Offset>> = emptyList()
     ) {
         // The same turn the renderer gives the element, about the same pivot.
         val pivot = element.rotationPivot() ?: Offset.Zero
@@ -174,9 +181,31 @@ object DxfExport {
             is DrawingElement.Dimension -> writeDimension(pen(DIMENSIONS), element, state)
             is DrawingElement.Text -> writeText(pen(TEXT), element)
             is DrawingElement.Dxf -> element.elements.forEach { writeElement(w, it.move(element.topLeft), forcedLayer, state, blanks) }
-            is DrawingElement.ElevationView ->
-                Elevation.partsOf(element, state).forEach { writeElement(w, it, forcedLayer ?: ELEVATIONS, state, emptyList()) }
+            is DrawingElement.ElevationView -> {
+                // Parts drawn later with a solid fill (a niche, a valve trim) hide the hatch of
+                // the parts under them, as on the canvas.
+                val parts = Elevation.partsOf(element, state)
+                val solids = parts.withIndex().mapNotNull { (i, e) ->
+                    if (e.fillOrNull()?.pattern == FillPattern.SOLID) HatchGeometry.outlineOf(e)?.let { i to it } else null
+                }
+                parts.forEachIndexed { i, part ->
+                    writeElement(w, part, forcedLayer ?: ELEVATIONS, state, emptyList(), solids.filter { it.first > i }.map { it.second })
+                }
+            }
             is DrawingElement.Image, is DrawingElement.Pdf -> {}
+        }
+        // Hatch fills as real lines, clipped to the shape, turned with it.
+        val fill = element.fillOrNull()
+        if (fill != null && fill.pattern != FillPattern.NONE && fill.pattern != FillPattern.SOLID) {
+            val outline = HatchGeometry.outlineOf(element)
+            if (outline != null) {
+                val hatch = HatchGeometry.clipped(fill, outline)
+                val hp = Pen(w, if (forcedLayer == ELEVATIONS) ELEVATION_HATCH else HATCH, rotation) { if (rotation == 0f) it else rotateAbout(it, pivot, rotation) }
+                var segments = hatch.segments
+                for (mask in masks) segments = segments.flatMap { (a, b) -> HatchGeometry.clipSegment(a, b, mask, keepInside = false) }
+                segments.forEach { (a, b) -> hp.line(a, b) }
+                hatch.dots.filter { (c, _) -> masks.none { HatchGeometry.inside(c, it) } }.forEach { (c, r) -> hp.circle(c, r) }
+            }
         }
     }
 
@@ -261,6 +290,34 @@ object DxfExport {
         }
     }
 
+    /** A shower: the same geometry the canvas draws (Shower.planGeometry), floor tile on HATCH. */
+    private fun showerPlan(p: Pen, s: DrawingElement.Symbol, w: Float, h: Float, inch: Float) {
+        val g = Shower.planGeometry(s, w, h, inch)
+        val hatch = p.onLayer(HATCH)
+        Shower.floorGrid(g.floor, g.floorTile, g.floorTileLength).forEach { (a, b) ->
+            HatchGeometry.clipSegment(a, b, g.floor).forEach { (s1, e1) -> hatch.line(s1, e1) }
+        }
+        for (part in g.parts) {
+            val pen = if (part.inkIsDashed()) p.dashed() else p
+            when (part) {
+                is Shower.Part.Seg -> pen.line(part.a, part.b)
+                is Shower.Part.Poly -> pen.poly(part.points, part.closed)
+                is Shower.Part.Ring -> pen.circle(part.c, part.r)
+                is Shower.Part.Label -> pen.label(part.text, part.c, part.size)
+            }
+        }
+    }
+
+    private fun Shower.Part.inkIsDashed(): Boolean {
+        val ink = when (this) {
+            is Shower.Part.Seg -> ink
+            is Shower.Part.Poly -> ink
+            is Shower.Part.Ring -> ink
+            is Shower.Part.Label -> ink
+        }
+        return ink == Shower.Ink.DASHED || ink == Shower.Ink.FAINT_DASHED
+    }
+
     /** What a door, window, sliding door or cased opening blanks out of the wall it sits in. */
     private fun openingBlank(s: DrawingElement.Symbol, state: CanvasState): Blank? {
         val name = s.symbolName
@@ -293,6 +350,7 @@ object DxfExport {
         when {
             s.category == PlanSymbols.WALLS ->
                 if (h > w) wallSection(p.turned(90f), name, h, w, inch) else wallSection(p, name, w, h, inch)
+            s.category == PlanSymbols.SHOWERS -> showerPlan(p, s, w, h, inch)
             s.category == PlanSymbols.CABINETS -> cabinet(p, s, w, h, inch)
             s.category == PlanSymbols.CLOSET -> closetPart(p, name, w, h, inch)
             s.category == PlanSymbols.FURNITURE -> furniture(p, name, w, h, inch)

@@ -48,7 +48,7 @@ class HelpSearchTest {
 
     @Test
     fun everyTopicHasText() {
-        assertEquals(14, HelpContent.topics.size)
+        assertEquals(15, HelpContent.topics.size)
         assertTrue(HelpContent.topics.all { it.lines.isNotEmpty() && it.title.isNotBlank() })
         assertEquals(HelpContent.topics.size, HelpContent.topics.map { it.title }.toSet().size)
     }

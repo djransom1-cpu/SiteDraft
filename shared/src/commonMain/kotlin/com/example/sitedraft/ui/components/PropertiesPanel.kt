@@ -202,6 +202,16 @@ fun PropertiesPanel(
                                     },
                                     valueRange = 2f..120f
                                 )
+                                // Tile patterns: the tile's real width and length, typed in inches.
+                                if (fill.pattern in listOf(FillPattern.TILE, FillPattern.BRICK, FillPattern.PLANKS, FillPattern.HERRINGBONE)) {
+                                    val pxPerIn = state.inchesToPx(1f)
+                                    EditableProperty("Tile width (in)", formatInches(fill.spacing / pxPerIn)) {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "fillWidthIn", it))
+                                    }
+                                    EditableProperty("Tile length (in, 0 = auto)", formatInches(fill.length / pxPerIn)) {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "fillLengthIn", it))
+                                    }
+                                }
                                 var fillLineWidth by remember(selectedElement.id, fill.lineWidth) { mutableStateOf(fill.lineWidth) }
                                 Text(text = "Line weight %.1f px".format(fillLineWidth), style = MaterialTheme.typography.labelSmall)
                                 Slider(
@@ -533,6 +543,9 @@ fun PropertiesPanel(
                                     onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_TOP_IN, it))
                                 }
                             }
+                            if (selectedElement.category == PlanSymbols.SHOWERS) {
+                                ShowerSection(selectedElement, onEvent)
+                            }
                             if (PlanSymbols.isIsland(selectedElement)) {
                                 Text(text = "Seating overhang", style = MaterialTheme.typography.labelLarge)
                                 val over = selectedElement.properties[PlanSymbols.PROP_OVERHANG]?.toInt() ?: 0
@@ -568,6 +581,25 @@ fun PropertiesPanel(
                     is DrawingElement.ElevationView -> {
                         val spec = selectedElement.spec
                         val wall = state.elements.find { it.id == spec.wallId } as? DrawingElement.Symbol
+                        if (spec.showerFace >= 0) {
+                            // A shower elevation: pick the face; heights live on the shower itself.
+                            Text(
+                                if (wall != null) "Live shower elevation: follows the shower. Change heights, tile and glass on the shower in the plan."
+                                else "Live shower elevation: its shower has been deleted.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            if (wall != null) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Shower.faces(Shower.type(wall.symbolName)).forEach { f ->
+                                        FilterChip(
+                                            selected = spec.showerFace == f,
+                                            onClick = { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "showerFace", f.toString())) },
+                                            label = { Text(Shower.faceLabels[f]) }
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
                         Text(
                             if (wall != null) "Live elevation: follows the plan. Explode it (floating bar) to edit by hand."
                             else "Live elevation: its wall has been deleted.",
@@ -596,6 +628,45 @@ fun PropertiesPanel(
                             EditableProperty(label, "%.1f".format(keyValue.second).trimEnd('0').trimEnd('.')) {
                                 onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, keyValue.first, it))
                             }
+                        }
+                        // Wall tile: a backsplash, a wainscot, or any band up the wall.
+                        Text(text = "Wall tile", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val id = selectedElement.id
+                            FilterChip(selected = spec.tileToIn <= spec.tileFromIn, onClick = {
+                                onEvent(DrawingEvent.UpdateElementProperty(id, "tileToIn", "0"))
+                                onEvent(DrawingEvent.UpdateElementProperty(id, "tileFromIn", "0"))
+                            }, label = { Text("None") })
+                            FilterChip(
+                                selected = spec.tileToIn > spec.tileFromIn && spec.tileFromIn == spec.counterHeightIn && spec.tileToIn == spec.upperBottomIn,
+                                onClick = {
+                                    onEvent(DrawingEvent.UpdateElementProperty(id, "tileFromIn", spec.counterHeightIn.toString()))
+                                    onEvent(DrawingEvent.UpdateElementProperty(id, "tileToIn", spec.upperBottomIn.toString()))
+                                },
+                                label = { Text("Backsplash") }
+                            )
+                            FilterChip(
+                                selected = spec.tileToIn > spec.tileFromIn && spec.tileFromIn == 0f && spec.tileToIn >= spec.wallHeightIn,
+                                onClick = {
+                                    onEvent(DrawingEvent.UpdateElementProperty(id, "tileFromIn", "0"))
+                                    onEvent(DrawingEvent.UpdateElementProperty(id, "tileToIn", spec.wallHeightIn.toString()))
+                                },
+                                label = { Text("Full wall") }
+                            )
+                        }
+                        if (spec.tileToIn > spec.tileFromIn) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Shower.tilePatternLabels.forEachIndexed { i, label ->
+                                    FilterChip(selected = spec.tilePattern == i, onClick = {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tilePattern", i.toString()))
+                                    }, label = { Text(label) })
+                                }
+                            }
+                            EditableProperty("Tile from (in)", formatInches(spec.tileFromIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileFromIn", it)) }
+                            EditableProperty("Tile to (in)", formatInches(spec.tileToIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileToIn", it)) }
+                            EditableProperty("Tile height (in)", formatInches(spec.tileSizeIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileSizeIn", it)) }
+                            EditableProperty("Tile length (in, 0 = square)", formatInches(spec.tileLengthIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileLengthIn", it)) }
+                        }
                         }
                     }
                     else -> {}
@@ -976,5 +1047,78 @@ private fun PdfPlanControls(pdf: DrawingElement.Pdf, onEvent: (DrawingEvent) -> 
             checked = pdf.locked,
             onCheckedChange = { onEvent(DrawingEvent.UpdateElementProperty(pdf.id, "locked", it.toString())) }
         )
+    }
+}
+
+/**
+ * A shower's settings: glass, curb, heights, tile, valve, niche and bench, a button to wall it
+ * in, and one button per face to place that face's live elevation.
+ */
+@Composable
+private fun ShowerSection(shower: DrawingElement.Symbol, onEvent: (DrawingEvent) -> Unit) {
+    val type = Shower.type(shower.symbolName)
+    fun set(key: String, v: String) = onEvent(DrawingEvent.UpdateElementProperty(shower.id, key, v))
+    @Composable
+    fun chips(title: String, key: String, labels: List<String>, allowed: List<Int> = labels.indices.toList()) {
+        Text(text = title, style = MaterialTheme.typography.labelLarge)
+        val chosen = Shower.code(shower, key)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            labels.forEachIndexed { i, label ->
+                if (i in allowed) FilterChip(selected = chosen == i, onClick = { set(key, i.toString()) }, label = { Text(label) })
+            }
+        }
+    }
+    @Composable
+    fun inches(label: String, key: String) {
+        EditableProperty("$label (in)", formatInches(Shower.prop(shower, key))) { set(key, it) }
+    }
+    val walls = Shower.solidFaces(type)
+
+    Text(text = "Shower", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    chips("Glass", Shower.GLASS, Shower.glassLabels)
+    val glass = Shower.code(shower, Shower.GLASS)
+    if (glass == 0 || glass == 1 || glass == 3) {
+        chips(if (glass == 3) "Opening at" else "Door at", Shower.DOOR_SIDE, listOf("Left", "Right"))
+        inches(if (glass == 3) "Opening width" else "Door width", Shower.DOOR_W)
+    }
+    inches("Glass height", Shower.GLASS_H)
+    inches("Curb height (0 = curbless)", Shower.CURB_H)
+    inches("Curb width", Shower.CURB_W)
+    inches("Tile height", Shower.TILE_H)
+    inches("Ceiling", Shower.CEILING)
+    chips("Wall tile", Shower.TILE_PAT, Shower.tilePatternLabels)
+    inches("Wall tile height", Shower.TILE_IN)
+    inches("Wall tile length (along wall)", Shower.TILE_LEN)
+    inches("Floor tile width (0 = none)", Shower.FLOOR_TILE)
+    inches("Floor tile length", Shower.FLOOR_TILE_LEN)
+    chips("Drain", Shower.DRAIN, listOf("Centre", "Linear"))
+    chips("Valve and head on", Shower.VALVE_WALL, Shower.wallChoiceLabels.take(3), walls)
+    inches("Valve height", Shower.VALVE_H)
+    inches("Head height", Shower.HEAD_H)
+    chips("Niche on", Shower.NICHE_WALL, Shower.wallChoiceLabels, walls + Shower.NONE)
+    if (Shower.code(shower, Shower.NICHE_WALL) != Shower.NONE) {
+        inches("Niche bottom", Shower.NICHE_H)
+        inches("Niche width", Shower.NICHE_W)
+        inches("Niche height", Shower.NICHE_T)
+    }
+    chips("Bench on", Shower.BENCH_WALL, Shower.wallChoiceLabels, walls + Shower.NONE)
+    if (Shower.code(shower, Shower.BENCH_WALL) != Shower.NONE) {
+        inches("Bench height", Shower.BENCH_H)
+        inches("Bench depth", Shower.BENCH_D)
+    }
+    OutlinedButton(onClick = { onEvent(DrawingEvent.AddShowerWalls(shower.id)) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Text("Add 2x4 walls around it")
+    }
+    Text(text = "Elevations (tap one, then tap an empty spot on the canvas)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Shower.faces(type).forEach { f ->
+            OutlinedButton(onClick = {
+                val spec = ElevationSpec(
+                    wallId = shower.id, side = ViewerSide.BELOW,
+                    wallHeightIn = Shower.prop(shower, Shower.CEILING), showerFace = f
+                )
+                onEvent(DrawingEvent.StartPlacement(Placement.Elevation(spec, "shower ${Shower.faceLabels[f].lowercase()} elevation")))
+            }) { Text(Shower.faceLabels[f]) }
+        }
     }
 }

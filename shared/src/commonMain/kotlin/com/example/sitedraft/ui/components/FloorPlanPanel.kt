@@ -42,6 +42,7 @@ import com.example.sitedraft.ui.canvas.DrawingEvent
 import com.example.sitedraft.ui.canvas.Elevation
 import com.example.sitedraft.ui.canvas.ElevationSpec
 import com.example.sitedraft.ui.canvas.FloorPlan
+import com.example.sitedraft.ui.canvas.FillPattern
 import com.example.sitedraft.ui.canvas.inchesToPx
 import com.example.sitedraft.ui.canvas.formatFeetInches
 import com.example.sitedraft.ui.canvas.parseFeet
@@ -74,6 +75,10 @@ fun FloorPlanPanel(
     var roomDepth by rememberSaveable { mutableStateOf(if (metric) "3.6" else "12") }
     var roomWall by rememberSaveable { mutableStateOf(FloorPlan.INTERIOR_WALL) }
     var roomOutside by rememberSaveable { mutableStateOf(false) }
+
+    var hatchPattern by rememberSaveable { mutableStateOf(FillPattern.TILE.name) }
+    var hatchSize by rememberSaveable { mutableStateOf("12") }
+    var hatchLength by rememberSaveable { mutableStateOf("12") }
 
     Surface(
         modifier = modifier.fillMaxHeight(),
@@ -210,6 +215,38 @@ fun FloorPlanPanel(
             } else {
                 ElevationControls(selectedWall, state, onEvent)
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // --- Hatch an area ---
+            Text("Hatch an area", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Pick a pattern and its size, then tap inside a room or area. The hatch fills to the nearest walls (or straight lines) on all four sides and sits under everything else. Select it later to change or delete it.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.height(4.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FillPattern.entries.filter { it != FillPattern.NONE }.forEach { p ->
+                    FilterChip(selected = hatchPattern == p.name, onClick = { hatchPattern = p.name }, label = { Text(p.label) })
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                NumberField("Tile width (in)", hatchSize, Modifier.weight(1f)) { hatchSize = it }
+                NumberField("Length (in)", hatchLength, Modifier.weight(1f)) { hatchLength = it }
+            }
+            val size = hatchSize.toFloatOrNull()
+            val len = hatchLength.toFloatOrNull() ?: 0f
+            Button(
+                onClick = {
+                    if (size != null && size > 0f) onEvent(DrawingEvent.StartPlacement(Placement.Hatch(FillPattern.valueOf(hatchPattern), size, len.coerceAtLeast(0f))))
+                },
+                enabled = size != null && size > 0f,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Tap an area") }
+            Text(
+                "Width runs up the page, length across it (a 12 x 24 tile laid long-side across: width 12, length 24). Grid, Brick (subway), Planks and Herringbone use both.",
+                style = MaterialTheme.typography.bodySmall
+            )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 

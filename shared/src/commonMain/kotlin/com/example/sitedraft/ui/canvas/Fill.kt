@@ -48,6 +48,12 @@ data class Fill(
     val color: Color? = null,
     val spacing: Float = 10f,
     val lineWidth: Float = 1f,
+    /**
+     * Tile patterns' long side (world px), laid across the page: a 12x24 tile is spacing 12",
+     * length 24". 0 keeps each pattern's own proportion (square tile, 2:1 brick, 6:1 plank,
+     * the old chevron for herringbone).
+     */
+    val length: Float = 0f,
 )
 
 /** The fill of a closed shape, or null for element types that cannot be filled. */
@@ -111,14 +117,18 @@ fun DrawScope.drawShapeFill(outline: Path, bounds: Rect, fill: Fill, strokeColor
                 hatch45(bounds, color, spacing, lw, forward = false)
             }
             FillPattern.CONCRETE -> concrete(bounds, color, spacing, lw)
-            FillPattern.BRICK -> brick(bounds, color, spacing, lw)
+            FillPattern.BRICK -> brick(bounds, color, spacing, lw, fill.length)
             FillPattern.INSULATION -> insulation(bounds, color, spacing, lw)
             FillPattern.EARTH -> earth(bounds, color, spacing, lw)
             FillPattern.GRAVEL -> gravel(bounds, color, spacing, lw)
-            FillPattern.TILE -> tile(bounds, color, spacing, lw)
-            FillPattern.HERRINGBONE -> herringbone(bounds, color, spacing, lw)
+            FillPattern.TILE -> tile(bounds, color, spacing, lw, fill.length)
+            FillPattern.HERRINGBONE -> if (fill.length > spacing) {
+                herringbonePlanks(bounds, spacing, fill.length).forEach { q ->
+                    drawPath(Path().apply { moveTo(q[0].x, q[0].y); q.drop(1).forEach { lineTo(it.x, it.y) }; close() }, color, style = Stroke(lw))
+                }
+            } else herringbone(bounds, color, spacing, lw)
             FillPattern.HEXAGON -> hexagon(bounds, color, spacing, lw)
-            FillPattern.PLANKS -> planks(bounds, color, spacing, lw)
+            FillPattern.PLANKS -> planks(bounds, color, spacing, lw, fill.length)
             FillPattern.SHINGLE -> shingle(bounds, color, spacing, lw)
             FillPattern.DOTS -> dots(bounds, color, spacing, lw)
             FillPattern.WAVES -> waves(bounds, color, spacing, lw)
@@ -129,11 +139,12 @@ fun DrawScope.drawShapeFill(outline: Path, bounds: Rect, fill: Fill, strokeColor
 }
 
 // Square tile grid with `spacing` tiles.
-private fun DrawScope.tile(b: Rect, color: Color, spacing: Float, lw: Float) {
+private fun DrawScope.tile(b: Rect, color: Color, spacing: Float, lw: Float, length: Float = 0f) {
+    val across = if (length > 0f) length else spacing
     var x = b.left
     while (x <= b.right) {
         drawLine(color, Offset(x, b.top), Offset(x, b.bottom), lw)
-        x += spacing
+        x += across
     }
     var y = b.top
     while (y <= b.bottom) {
@@ -189,8 +200,8 @@ private fun DrawScope.hexagon(b: Rect, color: Color, spacing: Float, lw: Float) 
 }
 
 // Wood flooring: boards `spacing` wide, six times as long, end joints staggered per row.
-private fun DrawScope.planks(b: Rect, color: Color, spacing: Float, lw: Float) {
-    val len = spacing * 6f
+private fun DrawScope.planks(b: Rect, color: Color, spacing: Float, lw: Float, length: Float = 0f) {
+    val len = if (length > 0f) length else spacing * 6f
     var y = b.top
     var row = 0
     while (y <= b.bottom) {
@@ -288,7 +299,7 @@ private fun DrawScope.grass(b: Rect, color: Color, spacing: Float, lw: Float) {
 
 // Deterministic 0..1 "random" per grid cell, so patterns don't shimmer between frames or
 // differ between the screen and the PDF.
-private fun jitter(i: Int, j: Int, salt: Int): Float {
+internal fun jitter(i: Int, j: Int, salt: Int): Float {
     var h = i * 374761393 + j * 668265263 + salt * 1274126177
     h = (h xor (h ushr 13)) * 1274126177
     h = h xor (h ushr 16)
@@ -311,8 +322,8 @@ private fun DrawScope.hatch45(b: Rect, color: Color, spacing: Float, lw: Float, 
 }
 
 // Running bond: courses `spacing` high, bricks twice as long, joints staggered per course.
-private fun DrawScope.brick(b: Rect, color: Color, spacing: Float, lw: Float) {
-    val brickLen = spacing * 2f
+private fun DrawScope.brick(b: Rect, color: Color, spacing: Float, lw: Float, length: Float = 0f) {
+    val brickLen = if (length > 0f) length else spacing * 2f
     var y = b.top
     var row = 0
     while (y <= b.bottom) {
@@ -410,4 +421,36 @@ private fun DrawScope.gravel(b: Rect, color: Color, spacing: Float, lw: Float) {
         y += cell
         j++
     }
+}
+
+/**
+ * Real herringbone of [w] x [l] planks covering [b], as each plank's four corners. Built as the
+ * classic 90-degree staircase - a plank lying flat at (n*w, n*w), one standing at its right end -
+ * repeated every (l, -l), then turned 45 degrees so the zigzag runs across the page.
+ */
+internal fun herringbonePlanks(b: Rect, w: Float, l: Float): List<List<Offset>> {
+    if (w <= 0f || l <= w) return emptyList()
+    val c = b.center
+    val k = 0.70710678f
+    // Lattice frame -> page: turn -45 degrees about the centre.
+    fun page(p: Offset) = Offset(c.x + (p.x + p.y) * k, c.y + (p.y - p.x) * k)
+    // The page bounds in the lattice frame (turned +45), to know which planks can show.
+    val r = maxOf(b.width, b.height) * 0.75f + l * 2f
+    val out = mutableListOf<List<Offset>>()
+    // p = n*(w, w) + m*(l, -l): n = (x + y) / 2w, m = (x - y) / 2l over the square of half-size r.
+    val nMax = (r / w).toInt() + 2
+    val mMax = (r / l).toInt() + 2
+    for (n in -nMax..nMax) for (m in -mMax..mMax) {
+        val px = n * w + m * l
+        val py = n * w - m * l
+        if (px < -r - l || px > r + l || py < -r - l || py > r + l) continue
+        val flat = listOf(Offset(px, py), Offset(px + l, py), Offset(px + l, py + w), Offset(px, py + w))
+        val standing = listOf(Offset(px + l, py + w - l), Offset(px + l + w, py + w - l), Offset(px + l + w, py + w), Offset(px + l, py + w))
+        for (q in listOf(flat, standing)) {
+            val pts = q.map(::page)
+            if (pts.maxOf { it.x } < b.left || pts.minOf { it.x } > b.right || pts.maxOf { it.y } < b.top || pts.minOf { it.y } > b.bottom) continue
+            out += pts
+        }
+    }
+    return out
 }
