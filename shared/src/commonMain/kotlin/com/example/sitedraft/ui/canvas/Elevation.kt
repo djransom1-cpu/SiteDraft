@@ -39,6 +39,8 @@ data class ElevationSpec(
     val tileSizeIn: Float = 4f,
     /** The tile's long side, laid along the wall; 0 = square (or the pattern's own proportion). */
     val tileLengthIn: Float = 0f,
+    /** Set (0 right side, 1 left side) when [wallId] is a stair: its side elevation. */
+    val stairSide: Int = -1,
 )
 
 /**
@@ -116,6 +118,7 @@ object Elevation {
 
     fun sizePx(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): Size =
         if (spec.showerFace >= 0 && wall.category == PlanSymbols.SHOWERS) Shower.elevationSize(wall, spec.showerFace, state)
+        else if (spec.stairSide >= 0 && wall.category == PlanSymbols.STAIRS) Stairs.elevationSize(wall, spec.stairSide, state)
         else Size(lengthPx(wall), state.inchesToPx(spec.wallHeightIn))
 
     /** Where a point sits along the wall, measured from the end on the viewer's LEFT. */
@@ -216,6 +219,8 @@ object Elevation {
             wall == null -> missingWall(view, state)
             view.spec.showerFace >= 0 && wall.category == PlanSymbols.SHOWERS ->
                 Shower.buildElevation(wall, view.spec.showerFace, view.origin, state, view.color)
+            view.spec.stairSide >= 0 && wall.category == PlanSymbols.STAIRS ->
+                Stairs.buildElevation(wall, view.spec.stairSide, view.origin, state, view.color)
             else -> build(wall, view.spec, view.origin, state, view.color)
         }
     }
@@ -256,14 +261,49 @@ object Elevation {
          * when 0). Knobs sit near the top of a base door and near the BOTTOM of an upper's
          * ([knobsLow]), where a hand reaches them.
          */
+        // The door style and hardware of the cabinet being drawn (set per item below).
+        var doorStyle = PlanSymbols.STYLE_SLAB
+        var hardware = PlanSymbols.HW_KNOBS_PULLS
+        /** The style's panel inside one door or drawer face, [x1]..[x2] px by [h1]..[h2] inches. */
+        fun facePanel(x1: Float, x2: Float, h1: Float, h2: Float, drawer: Boolean) {
+            val rail = if (drawer) 1.25f else 2.5f
+            if ((x2 - x1) <= 2f * rail * inch + inch || (h2 - h1) <= 2f * rail + 1f) return
+            when (doorStyle) {
+                PlanSymbols.STYLE_SHAKER -> rect(x1 + rail * inch, x2 - rail * inch, h1 + rail, h2 - rail, light)
+                PlanSymbols.STYLE_RAISED -> {
+                    rect(x1 + rail * inch, x2 - rail * inch, h1 + rail, h2 - rail, light)
+                    if (!drawer && (x2 - x1) > 9f * inch && (h2 - h1) > 9f) rect(x1 + 4f * inch, x2 - 4f * inch, h1 + 4f, h2 - 4f, light)
+                }
+                PlanSymbols.STYLE_GLASS -> {
+                    rect(x1 + rail * inch, x2 - rail * inch, h1 + rail, h2 - rail, light)
+                    if (!drawer) {
+                        // Two short glints across the glass.
+                        val gx = x1 + (x2 - x1) * 0.35f
+                        val gh = h2 - (h2 - h1) * 0.3f
+                        line(gx, gh, gx + 3f * inch, gh - 3f)
+                        line(gx + 1.5f * inch, gh - 3f, gx + 4f * inch, gh - 5.5f)
+                    }
+                }
+                else -> Unit
+            }
+        }
         fun doors(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, count: Int = 0, knobsLow: Boolean = false) {
             val inset = inch
             rect(xFrom + inset, xTo - inset, hBottom + 1f, hTop - 1f, light)
             val two = if (count in 1..2) count == 2 else xTo - xFrom >= 30f * inch
-            if (two) line((xFrom + xTo) / 2f, hBottom + 1f, (xFrom + xTo) / 2f, hTop - 1f)
+            val mid = (xFrom + xTo) / 2f
+            if (two) line(mid, hBottom + 1f, mid, hTop - 1f)
+            if (two) { facePanel(xFrom + inset, mid, hBottom + 1f, hTop - 1f, false); facePanel(mid, xTo - inset, hBottom + 1f, hTop - 1f, false) }
+            else facePanel(xFrom + inset, xTo - inset, hBottom + 1f, hTop - 1f, false)
             val knobH = if (knobsLow) hBottom + 3f else minOf(hTop - 3f, hBottom + (hTop - hBottom) * 0.8f)
-            if (two) { circle((xFrom + xTo) / 2f - 1.5f * inch, knobH, 0.5f); circle((xFrom + xTo) / 2f + 1.5f * inch, knobH, 0.5f) }
-            else circle(xTo - 2.5f * inch, knobH, 0.5f)
+            val knobXs = if (two) listOf(mid - 1.5f * inch, mid + 1.5f * inch) else listOf(xTo - 2.5f * inch)
+            for (kx in knobXs) {
+                if (hardware == PlanSymbols.HW_BAR_PULLS) {
+                    // A 5" bar standing upright by the latch edge; on an upper it starts low.
+                    val (lo, hi) = if (knobsLow) Pair(hBottom + 2f, hBottom + 7f) else Pair(knobH - 2.5f, knobH + 2.5f)
+                    line(kx, lo, kx, hi, medium)
+                } else circle(kx, knobH, 0.5f)
+            }
         }
         /**
          * A diagonal corner unit seen from one of its walls: most of its width is the blank
@@ -285,7 +325,9 @@ object Elevation {
             for (i in 0 until n) {
                 val b = hBottom + each * i
                 rect(xFrom + inch, xTo - inch, b + 0.5f, b + each - 0.5f, light)
-                line(xc2 - 2f * inch, b + each / 2f, xc2 + 2f * inch, b + each / 2f, medium)
+                facePanel(xFrom + inch, xTo - inch, b + 0.5f, b + each - 0.5f, true)
+                if (hardware == PlanSymbols.HW_KNOBS) circle(xc2, b + each / 2f, 0.5f)
+                else line(xc2 - 2f * inch, b + each / 2f, xc2 + 2f * inch, b + each / 2f, medium)
             }
         }
         /** A base cabinet's chosen fronts between the toe kick and the counter. */
@@ -363,6 +405,8 @@ object Elevation {
             line(xc, topIn + tall, xc + 4f * inch, topIn + tall - 1.5f, medium)
         }
         for (item in items) {
+            doorStyle = PlanSymbols.doorStyle(item.symbol)
+            hardware = PlanSymbols.hardware(item.symbol)
             val from = item.from
             val to = item.to
             val w = to - from

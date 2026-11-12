@@ -34,7 +34,9 @@ object PlanSymbols {
     const val FURNITURE = "Furniture"
     /** Showers built from one symbol: see [Shower]. */
     const val SHOWERS = "Showers"
-    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS)
+    /** Stairs built from one symbol: see [Stairs]. */
+    const val STAIRS = "Stairs"
+    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS, STAIRS)
 
     /**
      * Closet parts, set against a closet wall with their backs at the top (like cabinets).
@@ -224,7 +226,7 @@ object PlanSymbols {
         // deep overall with the front 1 3/4" overhanging the island face; island cutout 35" x 22",
         // 10 1/8" deep; front panel 11" below the counter; hood 14 7/8" above it closed, 23 1/2" open.
         LYNX_36_GRILL to Pair(36f, LYNX_36_DEPTH)
-    ) + Shower.footprints
+    ) + Shower.footprints + Stairs.footprints
 
     const val LYNX_36_DEPTH = 26.375f
     const val LYNX_36_FRONT_LIP = 1.75f
@@ -299,6 +301,23 @@ object PlanSymbols {
         else -> if (isVanityDrawers(symbol.symbolName)) 0 else if (symbol.symbolName.contains("Double")) 2 else 1
     }
 
+    /** Door and drawer face style, and hardware, kept in the cabinet's properties. */
+    const val PROP_STYLE = "doorStyle"
+    const val PROP_HARDWARE = "hardware"
+    const val STYLE_SLAB = 0
+    const val STYLE_SHAKER = 1
+    const val STYLE_RAISED = 2
+    const val STYLE_GLASS = 3
+    val styleLabels = listOf("Slab", "Shaker", "Raised panel", "Glass")
+    const val HW_KNOBS_PULLS = 0 // knobs on doors, bar pulls on drawers
+    const val HW_BAR_PULLS = 1
+    const val HW_KNOBS = 2
+    val hardwareLabels = listOf("Knobs + drawer pulls", "Bar pulls", "Knobs")
+    /** Cabinets with a door or drawer face to style (not fillers). */
+    fun hasStyleChoice(symbol: DrawingElement.Symbol) = symbol.category == CABINETS && !isFiller(symbol.symbolName)
+    fun doorStyle(symbol: DrawingElement.Symbol): Int = symbol.properties[PROP_STYLE]?.toInt() ?: STYLE_SLAB
+    fun hardware(symbol: DrawingElement.Symbol): Int = symbol.properties[PROP_HARDWARE]?.toInt() ?: HW_KNOBS_PULLS
+
     fun front(symbol: DrawingElement.Symbol): Int =
         symbol.properties[PROP_FRONT]?.toInt() ?: when {
             isVanityDrawers(symbol.symbolName) -> FRONT_THREE_DRAWERS
@@ -366,6 +385,7 @@ fun DrawScope.drawPlanSymbol(
                 else drawWallSection(name, w, h, inch, lineColor, accentColor, line, thin)
             }
             element.category == PlanSymbols.SHOWERS -> with(Shower) { drawShowerPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
+            element.category == PlanSymbols.STAIRS -> with(Stairs) { drawStairPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.CABINETS -> drawCabinet(element, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.CLOSET -> drawClosetPart(name, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.FURNITURE -> drawFurniture(name, w, h, inch, lineColor, accentColor, faint, line, thin)
@@ -1001,6 +1021,9 @@ private fun blankShape(element: DrawingElement.Symbol, w: Float, h: Float, inch:
         name == PlanSymbols.CORNER_SINK -> Path().apply {
             moveTo(-hw, -hh); lineTo(hw, -hh)
             cubicTo(hw, hh * 0.2f, hw * 0.2f, hh, -hw, hh); close()
+        }
+        element.category == PlanSymbols.STAIRS -> Stairs.outline(element, w, h, inch)?.let { pts ->
+            Path().apply { moveTo(pts[0].x, pts[0].y); pts.drop(1).forEach { lineTo(it.x, it.y) }; close() }
         }
         element.category == PlanSymbols.SHOWERS && Shower.type(name) == Shower.Type.NEO_ANGLE -> {
             val a = Shower.neoCut(w / inch, h / inch) * inch

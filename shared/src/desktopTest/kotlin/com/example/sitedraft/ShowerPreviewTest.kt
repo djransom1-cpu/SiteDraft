@@ -137,4 +137,54 @@ class ShowerPreviewTest {
         val tub = sym("Bathtub", PlanSymbols.FIXTURES, 100f + 30f * inch, 100f + 15f * inch, 60f * inch, 30f * inch)
         render("bathroom-hatch.png", listOf(hatch, top, bottom, left, right, toilet, door, tub), 650, 480)
     }
+
+    @Test
+    fun `render stairs and cabinet door styles`() {
+        fun stair(name: String, cx: Float, cy: Float, props: Map<String, Float> = emptyMap()): DrawingElement.Symbol {
+            val s0 = DrawingElement.Symbol(symbolName = name, category = PlanSymbols.STAIRS, center = Offset(cx, cy), size = Size.Zero, color = ink, properties = com.example.sitedraft.ui.canvas.Stairs.defaults(name) + props)
+            val (w, d) = com.example.sitedraft.ui.canvas.Stairs.footprintIn(s0)
+            return s0.copy(size = Size(w * inch, d * inch))
+        }
+        val straight = stair(com.example.sitedraft.ui.canvas.Stairs.STRAIGHT, 150f, 330f)
+        val l = stair(com.example.sitedraft.ui.canvas.Stairs.L_STAIR, 500f, 330f, mapOf(com.example.sitedraft.ui.canvas.Stairs.RAIL_LEFT to 2f))
+        val u = stair(com.example.sitedraft.ui.canvas.Stairs.U_STAIR, 900f, 330f)
+        val deck = stair(com.example.sitedraft.ui.canvas.Stairs.DECK, 1250f, 330f)
+        val spiral = stair(com.example.sitedraft.ui.canvas.Stairs.SPIRAL, 1600f, 330f, mapOf(com.example.sitedraft.ui.canvas.Stairs.RAIL_RIGHT to 2f))
+        val curved = stair(com.example.sitedraft.ui.canvas.Stairs.CURVED, 1200f, 1000f, mapOf(
+            com.example.sitedraft.ui.canvas.Stairs.INNER_R to 48f, com.example.sitedraft.ui.canvas.Stairs.OUTER_R to 96f))
+        val plan = listOf(straight, l, u, deck, spiral, curved)
+        val views = mutableListOf<DrawingElement>()
+        var y = 1500f
+        for ((st, side) in plan.map { it to 0 } + listOf(curved to 1)) {
+            val spec = ElevationSpec(wallId = st.id, side = ViewerSide.BELOW, stairSide = side)
+            val size = Elevation.sizePx(st, spec, CanvasState(elements = plan))
+            y += size.height
+            views += DrawingElement.ElevationView(spec = spec, origin = Offset(60f, y), size = size, color = ink)
+            y += 220f
+        }
+        render("stairs.png", plan + views, 1850, y.toInt())
+
+        // Cabinet styles: slab, shaker with bar pulls, raised panel, glass uppers.
+        val t = 4.5f * inch
+        val wall = DrawingElement.Symbol(symbolName = "2x4 Wall", category = PlanSymbols.WALLS, center = Offset(500f, 100f), size = Size(1000f, t), color = ink)
+        val face = 100f + t / 2f
+        fun cab(name: String, x: Float, style: Int, hw: Int, front: Int? = null): DrawingElement.Symbol {
+            val wIn = name.filter { it.isDigit() }.toFloat()
+            val upper = name.startsWith("Upper")
+            val props = mutableMapOf(PlanSymbols.PROP_STYLE to style.toFloat(), PlanSymbols.PROP_HARDWARE to hw.toFloat())
+            if (front != null) props[PlanSymbols.PROP_FRONT] = front.toFloat()
+            return DrawingElement.Symbol(symbolName = name, category = PlanSymbols.CABINETS, color = ink, properties = props,
+                center = Offset(x + wIn * inch / 2f, face + (if (upper) 6f else 12f) * inch), size = Size(wIn * inch, (if (upper) 12f else 24f) * inch))
+        }
+        val cabs = listOf(
+            cab("Base 30\"", 120f, 0, 0), cab("Upper 30\"", 120f, 0, 0),
+            cab("Base 30\"", 120f + 30f * inch, 1, 1), cab("Upper 30\"", 120f + 30f * inch, 1, 1),
+            cab("Base 24\"", 120f + 60f * inch, 2, 2, front = 2), cab("Upper 24\"", 120f + 60f * inch, 2, 2),
+            cab("Base 30\"", 120f + 84f * inch, 1, 1, front = 3), cab("Upper 30\"", 120f + 84f * inch, 3, 1)
+        )
+        val cabState = listOf(wall) + cabs
+        val spec = ElevationSpec(wallId = wall.id, side = ViewerSide.BELOW)
+        val view = DrawingElement.ElevationView(spec = spec, origin = Offset(0f, 900f), size = Elevation.sizePx(wall, spec, CanvasState(elements = cabState)), color = ink)
+        render("door-styles.png", cabState + view, 1050, 980)
+    }
 }

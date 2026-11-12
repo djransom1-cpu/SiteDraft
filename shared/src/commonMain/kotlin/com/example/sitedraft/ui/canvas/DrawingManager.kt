@@ -271,6 +271,16 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 explodeSelectedElement()
                 triggerAutoSave()
             }
+            is DrawingEvent.ApplyCabinetStyle -> {
+                // One door style and hardware for every cabinet in the drawing.
+                pushUndoSnapshot()
+                _state.value = _state.value.copy(elements = _state.value.elements.map { e ->
+                    if (e is DrawingElement.Symbol && PlanSymbols.hasStyleChoice(e)) e.copy(
+                        properties = e.properties + (PlanSymbols.PROP_STYLE to event.style.toFloat()) + (PlanSymbols.PROP_HARDWARE to event.hardware.toFloat())
+                    ) else e
+                })
+                triggerAutoSave()
+            }
             is DrawingEvent.AddShowerWalls -> {
                 val shower = _state.value.elements.find { it.id == event.id } as? DrawingElement.Symbol
                 if (shower != null && shower.category == PlanSymbols.SHOWERS) {
@@ -2396,6 +2406,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 // in Properties; elevations read these instead of the wall-wide defaults.
                 // A shower carries its glass, curb, tile and fixture settings.
                 if (category == PlanSymbols.SHOWERS) properties = properties + Shower.defaults(name)
+                if (category == PlanSymbols.STAIRS) properties = properties + Stairs.defaults(name)
                 if (category == PlanSymbols.DOORS_WINDOWS) {
                     properties = properties + if (PlanSymbols.isWindow(name)) {
                         mapOf(PlanSymbols.PROP_SILL_IN to 36f, PlanSymbols.PROP_HEIGHT_IN to 48f)
@@ -2558,7 +2569,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                         }
                         // Cabinet fronts, door count and island overhang: small codes (see PlanSymbols).
                         PlanSymbols.PROP_FRONT, PlanSymbols.PROP_DOORS, PlanSymbols.PROP_OVERHANG, PlanSymbols.PROP_OVERHANG_IN,
-                        PlanSymbols.PROP_SINKS, PlanSymbols.PROP_TOP_IN -> {
+                        PlanSymbols.PROP_SINKS, PlanSymbols.PROP_TOP_IN, PlanSymbols.PROP_STYLE, PlanSymbols.PROP_HARDWARE -> {
                             val v = parseInches(value) ?: return@map element
                             if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
                         }
@@ -2585,6 +2596,22 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                                 "tileLengthIn" -> spec.copy(tileLengthIn = v)
                                 else -> spec.copy(tilePattern = v.toInt())
                             })
+                        }
+                        // Stair settings; the footprint follows the rise, treads and width.
+                        in Stairs.keys -> {
+                            val v = parseInches(value) ?: return@map element
+                            if (element !is DrawingElement.Symbol || v < 0f) return@map element
+                            val updated = element.copy(properties = element.properties + (property to v))
+                            val (wIn, dIn) = Stairs.footprintIn(updated)
+                            val st = _state.value
+                            updated.copy(size = Size(st.inchesToPx(wIn), st.inchesToPx(dIn)))
+                        }
+                        "stairSide" -> {
+                            val v = value.toIntOrNull() ?: return@map element
+                            if (element !is DrawingElement.ElevationView || v !in 0..1) return@map element
+                            val stair = _state.value.elements.find { it.id == element.spec.wallId } as? DrawingElement.Symbol ?: return@map element
+                            val spec = element.spec.copy(stairSide = v)
+                            element.copy(spec = spec, size = Elevation.sizePx(stair, spec, _state.value))
                         }
                         // Which face of the shower a shower elevation shows.
                         "showerFace" -> {
@@ -3093,4 +3120,6 @@ sealed class DrawingEvent {
     object ExplodeSelectedElement : DrawingEvent()
     /** Puts 2x4 walls along a shower's tiled sides, outside its footprint. */
     data class AddShowerWalls(val id: String) : DrawingEvent()
+    /** Sets this door style and hardware on every cabinet in the drawing. */
+    data class ApplyCabinetStyle(val style: Int, val hardware: Int) : DrawingEvent()
 }

@@ -74,6 +74,7 @@ object HelpContent {
                 "3. Tap the symbol, then tap the plan to place it.",
                 "4. Push cabinets and fixtures right against the wall face so elevations show them.",
                 "5. Select a cabinet to choose its Fronts (doors, drawer over doors, 3 or 4 drawers) and how many Doors it has.",
+                "Door style: select a cabinet and pick Slab, Shaker, Raised panel or Glass, and its Hardware (knobs with drawer pulls, bar pulls, or knobs). Use this style and hardware on all cabinets sets every cabinet at once.",
                 "6. Bathroom vanities are under Cabinets: 18\" to 48\" single, 60\" and 72\" double, drawer bases and a linen tower. Select one to set its Sinks (by size, 1, 2 or none) and Vanity height (36\" comfort height to start; 32\" is the older standard).",
                 "7. More sink styles are under Fixtures: pedestal, wall-hung, corner, vessel, undermount, drop-in, single bowl, farmhouse, bar and utility. Set a vessel, undermount or drop-in sink on a vanity with its Sinks set to No sink; the elevation puts it at the vanity's height.",
             ),
@@ -89,6 +90,19 @@ object HelpContent {
                 "5. Choose the wall for the valve and head, the niche and the bench, and their heights.",
                 "6. Add 2x4 walls around it puts walls outside the tiled sides if you have not drawn them.",
                 "7. Under Elevations tap a wall (Back, Left, Right or Front glass), then tap an empty spot: the elevation is live and follows the shower. Walls are seen from inside the shower, the glass from outside.",
+            ),
+        ),
+        HelpTopic(
+            title = "Stairs",
+            keywords = "stair stairs steps riser tread nosing landing L U deck open stringer spiral circular handrail guard baluster newel rail elevation",
+            lines = listOf(
+                "1. Tap Symbols, open Stairs and pick Straight, L (landing), U (landing), Deck (open stringers), Curved or Spiral.",
+                "2. Tap the plan to place it. It climbs up the page from the bottom step; use Rotate to turn it.",
+                "3. Select it and set the Total rise, floor to floor. The risers are sized as close to 7 1/2\" as the rise allows, never under 6 1/4\" or over 8 1/4\"; the plan size follows.",
+                "4. Set the tread depth, nosing and width (a spiral's diameter). For an L or U, set how many risers come before the landing, and which way an L turns.",
+                "5. Choose each side's rail: none, a handrail, or a guard with balusters. Set the handrail and guard heights.",
+                "6. Under Elevation tap Right side or Left side, then tap an empty spot. The elevation is live: change the stair and it redraws. An L or U is drawn unfolded.",
+                "Curved stairs: set the Inside (open) and Outside (wall) radius, e.g. 4' and 8'. The tread depth is measured on the walkline, 12\" in from the inside; Properties shows the tread at the inside and outside. Its two elevations are each unrolled along their own edge, so they give the true stringer and rail lengths.",
             ),
         ),
         HelpTopic(

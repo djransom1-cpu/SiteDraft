@@ -351,6 +351,15 @@ object DxfExport {
             s.category == PlanSymbols.WALLS ->
                 if (h > w) wallSection(p.turned(90f), name, h, w, inch) else wallSection(p, name, w, h, inch)
             s.category == PlanSymbols.SHOWERS -> showerPlan(p, s, w, h, inch)
+            s.category == PlanSymbols.STAIRS -> for (part in Stairs.planParts(s, w, h, inch)) {
+                val pen = if (part.inkIsDashed()) p.dashed() else p
+                when (part) {
+                    is Shower.Part.Seg -> pen.line(part.a, part.b)
+                    is Shower.Part.Poly -> pen.poly(part.points, part.closed)
+                    is Shower.Part.Ring -> pen.circle(part.c, part.r)
+                    is Shower.Part.Label -> pen.label(part.text, part.c, part.size)
+                }
+            }
             s.category == PlanSymbols.CABINETS -> cabinet(p, s, w, h, inch)
             s.category == PlanSymbols.CLOSET -> closetPart(p, name, w, h, inch)
             s.category == PlanSymbols.FURNITURE -> furniture(p, name, w, h, inch)

@@ -526,6 +526,30 @@ fun PropertiesPanel(
                                     }
                                 }
                             }
+                            // Door style and hardware, for this cabinet or all of them.
+                            if (PlanSymbols.hasStyleChoice(selectedElement)) {
+                                Text(text = "Door style", style = MaterialTheme.typography.labelLarge)
+                                val style = PlanSymbols.doorStyle(selectedElement)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    PlanSymbols.styleLabels.forEachIndexed { i, label ->
+                                        FilterChip(selected = style == i, onClick = {
+                                            onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_STYLE, i.toString()))
+                                        }, label = { Text(label) })
+                                    }
+                                }
+                                Text(text = "Hardware", style = MaterialTheme.typography.labelLarge)
+                                val hw = PlanSymbols.hardware(selectedElement)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    PlanSymbols.hardwareLabels.forEachIndexed { i, label ->
+                                        FilterChip(selected = hw == i, onClick = {
+                                            onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_HARDWARE, i.toString()))
+                                        }, label = { Text(label) })
+                                    }
+                                }
+                                TextButton(onClick = { onEvent(DrawingEvent.ApplyCabinetStyle(style, hw)) }) {
+                                    Text("Use this style and hardware on all cabinets")
+                                }
+                            }
                             // Vanities: how many sinks, and how high the top is.
                             if (PlanSymbols.hasSinkChoice(selectedElement)) {
                                 Text(text = "Sinks", style = MaterialTheme.typography.labelLarge)
@@ -545,6 +569,9 @@ fun PropertiesPanel(
                             }
                             if (selectedElement.category == PlanSymbols.SHOWERS) {
                                 ShowerSection(selectedElement, onEvent)
+                            }
+                            if (selectedElement.category == PlanSymbols.STAIRS) {
+                                StairSection(selectedElement, onEvent)
                             }
                             if (PlanSymbols.isIsland(selectedElement)) {
                                 Text(text = "Seating overhang", style = MaterialTheme.typography.labelLarge)
@@ -581,7 +608,22 @@ fun PropertiesPanel(
                     is DrawingElement.ElevationView -> {
                         val spec = selectedElement.spec
                         val wall = state.elements.find { it.id == spec.wallId } as? DrawingElement.Symbol
-                        if (spec.showerFace >= 0) {
+                        if (spec.stairSide >= 0) {
+                            Text(
+                                if (wall != null) "Live stair elevation: follows the stair. Change the rise, treads and rails on the stair in the plan."
+                                else "Live stair elevation: its stair has been deleted.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            if (wall != null && Stairs.type(wall.symbolName) != Stairs.Type.SPIRAL) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Stairs.sideLabelsFor(wall).forEachIndexed { i, label ->
+                                        FilterChip(selected = spec.stairSide == i, onClick = {
+                                            onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "stairSide", i.toString()))
+                                        }, label = { Text(label) })
+                                    }
+                                }
+                            }
+                        } else if (spec.showerFace >= 0) {
                             // A shower elevation: pick the face; heights live on the shower itself.
                             Text(
                                 if (wall != null) "Live shower elevation: follows the shower. Change heights, tile and glass on the shower in the plan."
@@ -1119,6 +1161,74 @@ private fun ShowerSection(shower: DrawingElement.Symbol, onEvent: (DrawingEvent)
                 )
                 onEvent(DrawingEvent.StartPlacement(Placement.Elevation(spec, "shower ${Shower.faceLabels[f].lowercase()} elevation")))
             }) { Text(Shower.faceLabels[f]) }
+        }
+    }
+}
+
+/** A stair's settings: rise, treads, width, landing split, rails, and its side elevations. */
+@Composable
+private fun StairSection(stair: DrawingElement.Symbol, onEvent: (DrawingEvent) -> Unit) {
+    val type = Stairs.type(stair.symbolName)
+    fun set(key: String, v: String) = onEvent(DrawingEvent.UpdateElementProperty(stair.id, key, v))
+    @Composable
+    fun inches(label: String, key: String) {
+        EditableProperty("$label (in)", formatInches(Stairs.prop(stair, key))) { set(key, it) }
+    }
+    @Composable
+    fun chips(title: String, key: String, labels: List<String>) {
+        Text(text = title, style = MaterialTheme.typography.labelLarge)
+        val chosen = Stairs.code(stair, key)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            labels.forEachIndexed { i, label -> FilterChip(selected = chosen == i, onClick = { set(key, i.toString()) }, label = { Text(label) }) }
+        }
+    }
+    Text(text = "Stair", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    Text(text = Stairs.summary(stair), style = MaterialTheme.typography.bodySmall)
+    Text(
+        text = "Risers aim for 7 1/2\", never under 6 1/4\" or over 8 1/4\".",
+        style = MaterialTheme.typography.bodySmall
+    )
+    inches("Total rise, floor to floor", Stairs.RISE)
+    inches("Tread depth", Stairs.TREAD)
+    inches("Nosing", Stairs.NOSING)
+    if (type == Stairs.Type.CURVED) {
+        inches("Inside (open) radius", Stairs.INNER_R)
+        inches("Outside (wall) radius", Stairs.OUTER_R)
+        inches("Walkline, in from the inside", Stairs.WALKLINE)
+        chips("Turns", Stairs.TURN, listOf("Right", "Left"))
+        val c = Stairs.curve(stair)
+        if (c.treadAt(c.ri) < 6f) Text(
+            text = "The inside tread is only ${formatInches(c.treadAt(c.ri))}\": IRC wants at least 6\" at the narrow end.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
+        )
+    } else {
+        inches(if (type == Stairs.Type.SPIRAL) "Diameter" else "Width", Stairs.WIDTH)
+    }
+    if (type == Stairs.Type.L_LANDING || type == Stairs.Type.U_LANDING) {
+        val l = Stairs.layout(stair)
+        EditableProperty("Risers before the landing", l.flight1.toString()) { set(Stairs.FLIGHT1, it) }
+    }
+    if (type == Stairs.Type.L_LANDING) chips("Turns", Stairs.TURN, listOf("Right", "Left"))
+    if (type == Stairs.Type.SPIRAL) {
+        EditableProperty("Treads per full turn", Stairs.code(stair, Stairs.PER_TURN).toString()) { set(Stairs.PER_TURN, it) }
+        chips("Outer rail", Stairs.RAIL_RIGHT, Stairs.railLabels)
+    } else if (type == Stairs.Type.CURVED) {
+        chips("Inside (open) side", Stairs.RAIL_LEFT, Stairs.railLabels)
+        chips("Outside (wall) side", Stairs.RAIL_RIGHT, Stairs.railLabels)
+    } else {
+        chips("Left side", Stairs.RAIL_LEFT, Stairs.railLabels)
+        chips(if (type == Stairs.Type.U_LANDING) "Between the flights" else "Right side", Stairs.RAIL_RIGHT, Stairs.railLabels)
+    }
+    inches("Handrail height", Stairs.RAIL_H)
+    inches("Guard height", Stairs.GUARD_H)
+    Text(text = "Elevation (tap one, then tap an empty spot on the canvas)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        val sides = if (type == Stairs.Type.SPIRAL) listOf(0) else listOf(0, 1)
+        sides.forEach { side ->
+            OutlinedButton(onClick = {
+                val spec = ElevationSpec(wallId = stair.id, side = ViewerSide.BELOW, stairSide = side)
+                onEvent(DrawingEvent.StartPlacement(Placement.Elevation(spec, "stair elevation")))
+            }) { Text(if (type == Stairs.Type.SPIRAL) "Side elevation" else Stairs.sideLabelsFor(stair)[side]) }
         }
     }
 }
