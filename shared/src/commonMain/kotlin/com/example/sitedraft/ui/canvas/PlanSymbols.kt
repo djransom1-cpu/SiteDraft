@@ -243,6 +243,9 @@ object PlanSymbols {
     fun isUpperCabinet(symbol: DrawingElement.Symbol) = symbol.category == CABINETS && symbol.symbolName.startsWith("Upper")
 
     fun isDoor(name: String) = name.startsWith("Door ")
+    /** A hinged door's hinge jamb: off = the left jamb seen from the side it swings into. */
+    const val PROP_HINGE_RIGHT = "hingeRight"
+    fun hingeRight(symbol: DrawingElement.Symbol) = (symbol.properties[PROP_HINGE_RIGHT] ?: 0f) >= 0.5f
     fun isSlidingDoor(name: String) = name.startsWith("Sliding Door")
     fun isWindow(name: String) = name.startsWith("Window ")
     /** A cased opening (doorway without a door). */
@@ -399,11 +402,20 @@ fun DrawScope.drawPlanSymbol(
                 val (cutTop, cutDepth) = doorWallCut(element, state, inch)
                 drawRect(color = state.backgroundColor, topLeft = Offset(-hw, cutTop), size = Size(w, cutDepth))
                 drawLine(color = faint, start = Offset(-hw, hh), end = Offset(hw, hh), strokeWidth = thin.width)
-                drawRect(color = lineColor, topLeft = Offset(-hw, hh - w), size = Size(leaf, w), style = line)
-                drawArc(
-                    color = accentColor, startAngle = -90f, sweepAngle = 90f, useCenter = false,
-                    topLeft = Offset(-hw - w, hh - w), size = Size(2f * w, 2f * w), style = thin
-                )
+                // Hinged on the right jamb: the same door mirrored, leaf up the right edge.
+                if (PlanSymbols.hingeRight(element)) {
+                    drawRect(color = lineColor, topLeft = Offset(hw - leaf, hh - w), size = Size(leaf, w), style = line)
+                    drawArc(
+                        color = accentColor, startAngle = -90f, sweepAngle = -90f, useCenter = false,
+                        topLeft = Offset(hw - w, hh - w), size = Size(2f * w, 2f * w), style = thin
+                    )
+                } else {
+                    drawRect(color = lineColor, topLeft = Offset(-hw, hh - w), size = Size(leaf, w), style = line)
+                    drawArc(
+                        color = accentColor, startAngle = -90f, sweepAngle = 90f, useCenter = false,
+                        topLeft = Offset(-hw - w, hh - w), size = Size(2f * w, 2f * w), style = thin
+                    )
+                }
             }
             PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) -> {
                 // Taller than wide = sitting in a vertical wall: draw it turned, like walls.

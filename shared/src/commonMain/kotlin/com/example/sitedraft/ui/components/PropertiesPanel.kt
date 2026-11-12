@@ -590,6 +590,17 @@ fun PropertiesPanel(
                                 }
                             }
                             // Doors and windows: their own heights, in inches, used by elevations.
+                            if (PlanSymbols.isDoor(selectedElement.symbolName)) {
+                                Text(text = "Swing", style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    text = "Hinged on the ${if (PlanSymbols.hingeRight(selectedElement)) "right" else "left"} jamb, seen from the side it swings into.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    OutlinedButton(onClick = { onEvent(DrawingEvent.SwapDoorHinge(selectedElement.id)) }) { Text("Swap hinge side") }
+                                    OutlinedButton(onClick = { onEvent(DrawingEvent.SwingDoorOtherSide(selectedElement.id)) }) { Text("Swing to other side") }
+                                }
+                            }
                             if (selectedElement.category == PlanSymbols.DOORS_WINDOWS) {
                                 val isWindow = PlanSymbols.isWindow(selectedElement.symbolName)
                                 if (isWindow) {

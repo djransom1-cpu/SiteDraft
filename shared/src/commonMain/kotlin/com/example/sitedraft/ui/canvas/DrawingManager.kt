@@ -271,6 +271,24 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 explodeSelectedElement()
                 triggerAutoSave()
             }
+            // Door handing. Swapping the hinge mirrors the door in place; swinging it to the
+            // other side turns it half round about its threshold (so it stays in the wall) and
+            // mirrors it, so the hinge stays on the same jamb.
+            is DrawingEvent.SwapDoorHinge, is DrawingEvent.SwingDoorOtherSide -> {
+                val id = if (event is DrawingEvent.SwapDoorHinge) event.id else (event as DrawingEvent.SwingDoorOtherSide).id
+                val door = _state.value.elements.find { it.id == id } as? DrawingElement.Symbol
+                if (door != null && PlanSymbols.isDoor(door.symbolName)) {
+                    val flipped = (if (PlanSymbols.hingeRight(door)) 0f else 1f)
+                    var updated = door.copy(properties = door.properties + (PlanSymbols.PROP_HINGE_RIGHT to flipped))
+                    if (event is DrawingEvent.SwingDoorOtherSide) {
+                        val threshold = rotateAbout(door.center + Offset(0f, door.size.height / 2f), door.center, door.rotation)
+                        updated = updated.copy(center = threshold * 2f - door.center, rotation = (door.rotation + 180f) % 360f)
+                    }
+                    pushUndoSnapshot()
+                    _state.value = _state.value.copy(elements = _state.value.elements.map { if (it.id == id) updated else it })
+                    triggerAutoSave()
+                }
+            }
             is DrawingEvent.ApplyCabinetStyle -> {
                 // One door style and hardware for every cabinet in the drawing.
                 pushUndoSnapshot()
@@ -3122,4 +3140,8 @@ sealed class DrawingEvent {
     data class AddShowerWalls(val id: String) : DrawingEvent()
     /** Sets this door style and hardware on every cabinet in the drawing. */
     data class ApplyCabinetStyle(val style: Int, val hardware: Int) : DrawingEvent()
+    /** Moves a hinged door's hinge to the other jamb, in place. */
+    data class SwapDoorHinge(val id: String) : DrawingEvent()
+    /** Swings a hinged door into the other side of its wall, hinge on the same jamb. */
+    data class SwingDoorOtherSide(val id: String) : DrawingEvent()
 }

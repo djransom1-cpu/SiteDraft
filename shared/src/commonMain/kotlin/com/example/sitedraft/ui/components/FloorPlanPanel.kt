@@ -43,6 +43,7 @@ import com.example.sitedraft.ui.canvas.Elevation
 import com.example.sitedraft.ui.canvas.ElevationSpec
 import com.example.sitedraft.ui.canvas.FloorPlan
 import com.example.sitedraft.ui.canvas.FillPattern
+import com.example.sitedraft.ui.canvas.TileTakeoff
 import com.example.sitedraft.ui.canvas.inchesToPx
 import com.example.sitedraft.ui.canvas.formatFeetInches
 import com.example.sitedraft.ui.canvas.parseFeet
@@ -79,6 +80,8 @@ fun FloorPlanPanel(
     var hatchPattern by rememberSaveable { mutableStateOf(FillPattern.TILE.name) }
     var hatchSize by rememberSaveable { mutableStateOf("12") }
     var hatchLength by rememberSaveable { mutableStateOf("12") }
+    var tileWaste by rememberSaveable { mutableStateOf("10") }
+    var tileBox by rememberSaveable { mutableStateOf("") }
 
     Surface(
         modifier = modifier.fillMaxHeight(),
@@ -247,6 +250,43 @@ fun FloorPlanPanel(
                 "Width runs up the page, length across it (a 12 x 24 tile laid long-side across: width 12, length 24). Grid, Brick (subway), Planks and Herringbone use both.",
                 style = MaterialTheme.typography.bodySmall
             )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // --- Tile takeoff ---
+            Text("Tile takeoff", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Tile counted from the drawing: tile-hatched floors (less cabinets, tubs, showers and stairs), shower floors and walls (with curb, bench and niche), and elevation wall tile (less what stands in front of it). Herringbone and hex add 5% to the waste.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NumberField("Waste %", tileWaste, Modifier.weight(1f)) { tileWaste = it }
+                NumberField("Sq ft per box", tileBox, Modifier.weight(1f)) { tileBox = it }
+            }
+            val takeoffRows = remember(state.elements, state.scale, state.unitSystem) { TileTakeoff.rows(state) }
+            val takeoffTotals = TileTakeoff.totals(takeoffRows, tileWaste.toFloatOrNull() ?: 0f, tileBox.toFloatOrNull())
+            if (takeoffRows.isEmpty()) {
+                Text("No tile in the drawing yet: hatch a floor with Grid, Brick, Herringbone or Hex tile, add a shower, or give an elevation wall tile.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Spacer(Modifier.height(4.dp))
+                takeoffRows.forEach { r ->
+                    Text("${r.location} - ${r.where}: ${r.tile.label}, ${TileTakeoff.fmt(r.netSqFt)} sq ft", style = MaterialTheme.typography.bodyMedium)
+                    if (r.note.isNotEmpty()) Text(r.note, style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text("Totals", style = MaterialTheme.typography.labelLarge)
+                takeoffTotals.forEach { t ->
+                    val boxes = t.boxes?.let { ", $it boxes" } ?: ""
+                    Text(
+                        "${t.tile.label}: ${TileTakeoff.fmt(t.netSqFt)} sq ft + ${TileTakeoff.fmt(t.wastePct)}% = ${TileTakeoff.fmt(t.withWasteSqFt)} sq ft, ${t.tiles} tiles$boxes",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                androidx.compose.material3.TextButton(onClick = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(TileTakeoff.csv(takeoffRows, takeoffTotals)))
+                }) { Text("Copy as a table (paste into Excel)") }
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 

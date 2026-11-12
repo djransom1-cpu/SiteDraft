@@ -446,7 +446,13 @@ object Elevation {
                         val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
                         rect(from, to, 0f, doorH, medium)
                         rect(from + 3f * inch, to - 3f * inch, 8f, doorH - 8f, light)
-                        circle(to - 3f * inch, 36f, 1f)
+                        // The knob is on the latch jamb: find which end of this view it is at.
+                        val d = item.symbol
+                        val latchLocal = Offset(if (PlanSymbols.hingeRight(d)) -d.size.width / 2f else d.size.width / 2f, d.size.height / 2f)
+                        val latch = rotateAbout(d.center + latchLocal, d.center, d.rotation)
+                        val wb = FloorPlan.bounds(wall)
+                        val latchAtTo = alongOf(wb, spec.side, latch) > alongOf(wb, spec.side, openingAnchor(d))
+                        circle(if (latchAtTo) to - 3f * inch else from + 3f * inch, 36f, 1f)
                     }
                 }
                 Kind.FIXTURE -> when {

@@ -366,8 +366,13 @@ object DxfExport {
             PlanSymbols.isDoor(name) -> {
                 // Hinge bottom-left, leaf standing open up the left edge, swing to the latch.
                 p.line(Offset(-hw, hh), Offset(hw, hh))
-                p.rect(Offset(-hw, hh - w), Size(inch * 1.75f, w))
-                p.arc(Offset(-hw, hh), w, -90f, 90f)
+                if (PlanSymbols.hingeRight(s)) {
+                    p.rect(Offset(hw - inch * 1.75f, hh - w), Size(inch * 1.75f, w))
+                    p.arc(Offset(hw, hh), w, -180f, 90f)
+                } else {
+                    p.rect(Offset(-hw, hh - w), Size(inch * 1.75f, w))
+                    p.arc(Offset(-hw, hh), w, -90f, 90f)
+                }
             }
             PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) ->
                 if (h > w) opening(p.turned(90f), name, h, w, inch) else opening(p, name, w, h, inch)

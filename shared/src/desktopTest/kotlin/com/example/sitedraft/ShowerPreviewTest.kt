@@ -187,4 +187,19 @@ class ShowerPreviewTest {
         val view = DrawingElement.ElevationView(spec = spec, origin = Offset(0f, 900f), size = Elevation.sizePx(wall, spec, CanvasState(elements = cabState)), color = ink)
         render("door-styles.png", cabState + view, 1050, 980)
     }
+
+    @Test
+    fun `render door handings`() {
+        val t = 4.5f * inch
+        val wall = DrawingElement.Symbol(symbolName = "2x4 Wall", category = PlanSymbols.WALLS, center = Offset(500f, 200f), size = Size(900f, t), color = ink)
+        val dw = 36f * inch
+        fun door(x: Float, hingeRight: Boolean, outward: Boolean): DrawingElement.Symbol {
+            val base = DrawingElement.Symbol(symbolName = "Door 3'-0\"", category = PlanSymbols.DOORS_WINDOWS, center = Offset(x, 200f - dw / 2f),
+                size = Size(dw, dw), color = ink, properties = mapOf(PlanSymbols.PROP_HINGE_RIGHT to if (hingeRight) 1f else 0f))
+            if (!outward) return base
+            val th = Offset(x, 200f)
+            return base.copy(center = th * 2f - base.center, rotation = 180f)
+        }
+        render("door-handing.png", listOf(wall, door(150f, false, false), door(370f, true, false), door(590f, false, true), door(810f, true, true)), 1000, 400)
+    }
 }
