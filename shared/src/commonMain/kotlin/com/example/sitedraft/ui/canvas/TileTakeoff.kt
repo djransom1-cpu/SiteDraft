@@ -169,15 +169,16 @@ object TileTakeoff {
             val spec = v.spec
             if (spec.showerFace >= 0 || spec.stairSide >= 0 || spec.tileToIn <= spec.tileFromIn) continue
             val top = minOf(spec.tileToIn, spec.wallHeightIn)
-            val band = Rect(v.origin.x, v.origin.y - top * inch, v.origin.x + v.size.width, v.origin.y - spec.tileFromIn * inch)
-            if (band.width <= 0f || band.height <= 0f) continue
-            // What stands in front of the tile: the parts the elevation blanks it with.
-            val covers = Elevation.partsOf(v, state).filterIsInstance<DrawingElement.Rectangle>()
-                .filter { it.fill.pattern == FillPattern.SOLID }
-                .mapNotNull { Rect(it.topLeft, it.size).intersectOrNull(band) }
-            val covered = unionArea(covers)
-            val net = (band.width * band.height - covered) / sqIn / 144f
             val wall = state.elements.find { it.id == spec.wallId } as? DrawingElement.Symbol
+            // The tile's own band(s): the whole wall, or just over the cabinet run(s).
+            val spans = if (wall != null) Elevation.tileSpans(wall, spec, state) else listOf(0f to v.size.width)
+            val bands = spans.map { (a, b) -> Rect(v.origin.x + a, v.origin.y - top * inch, v.origin.x + b, v.origin.y - spec.tileFromIn * inch) }
+                .filter { it.width > 0f && it.height > 0f }
+            if (bands.isEmpty()) continue
+            // What stands in front of the tile: the parts the elevation blanks it with.
+            val parts = Elevation.partsOf(v, state).filterIsInstance<DrawingElement.Rectangle>().filter { it.fill.pattern == FillPattern.SOLID }
+            val covered = bands.sumOf { band -> unionArea(parts.mapNotNull { Rect(it.topLeft, it.size).intersectOrNull(band) }).toDouble() }.toFloat()
+            val net = (bands.sumOf { (it.width * it.height).toDouble() }.toFloat() - covered) / sqIn / 144f
             val room = wall?.let { roomAt(FloorPlan.bounds(it).center, null) }
             val lengthLabel = formatFeetInches(v.size.width / inch / 12f)
             out += Row(

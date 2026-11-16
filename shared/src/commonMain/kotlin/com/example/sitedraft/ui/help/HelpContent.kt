@@ -75,6 +75,7 @@ object HelpContent {
                 "3. Tap the symbol, then tap the plan to place it.",
                 "4. Push cabinets and fixtures right against the wall face so elevations show them.",
                 "5. Select a cabinet to choose its Fronts (doors, drawer over doors, 3 or 4 drawers) and how many Doors it has.",
+                "Appliances: ranges (30\", 36\", 48\", slide-in), cooktops, wall ovens, an over-the-range microwave, a microwave drawer, refrigerators (30\" to 48\" built-in), wine, beverage and ice units and an 18\" dishwasher. Hoods: chimney, under-cabinet, island and custom wood hoods; select a hood to set its bottom height and, for a wood hood, its shape (box, tapered, curved), whether it goes to the uppers or the ceiling, and corbels.",
                 "Door style: select a cabinet and pick Slab, Shaker, Raised panel or Glass, and its Hardware (knobs with drawer pulls, bar pulls, or knobs). Use this style and hardware on all cabinets sets every cabinet at once.",
                 "6. Bathroom vanities are under Cabinets: 18\" to 48\" single, 60\" and 72\" double, drawer bases and a linen tower. Select one to set its Sinks (by size, 1, 2 or none) and Vanity height (36\" comfort height to start; 32\" is the older standard).",
                 "7. More sink styles are under Fixtures: pedestal, wall-hung, corner, vessel, undermount, drop-in, single bowl, farmhouse, bar and utility. Set a vessel, undermount or drop-in sink on a vanity with its Sinks set to No sink; the elevation puts it at the vanity's height.",
@@ -141,7 +142,7 @@ object HelpContent {
                 "It stays live: change the plan and the elevation redraws. Select it to change its heights or side in Properties.",
                 "To edit by hand, select it and tap Explode. It becomes plain lines and no longer follows the plan.",
                 "To print just the elevation, select it, tap Print and choose Selected elevation.",
-                "Wall tile: select the elevation and under Wall tile choose Backsplash (counter to uppers), Full wall, or set your own From and To heights, the pattern and the tile size. Cabinets, windows and doors cover the tile behind them.",
+                "Wall tile: select the elevation and under Wall tile choose Backsplash (counter to uppers, over the cabinet run only), Full wall, or set your own From and To heights, the pattern and the tile size. Tile runs: Whole wall, or Over the cabinet run only - it then stops at the ends of the base cabinets, carrying on behind a range but not past a refrigerator, a tall cabinet or open wall. Cabinets, windows and doors cover the tile behind them.",
             ),
         ),
         HelpTopic(

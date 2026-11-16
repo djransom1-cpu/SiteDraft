@@ -425,7 +425,7 @@ fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String
     // Upper cabinets are an overlay layer: they sit above the cut plane, so they draw after
     // everything else, dashed over the base cabinets and counters they hang above, whatever
     // order things were placed in.
-    val (uppers, rest) = state.elements.partition { it is DrawingElement.Symbol && PlanSymbols.isUpperCabinet(it) }
+    val (uppers, rest) = state.elements.partition { it is DrawingElement.Symbol && PlanSymbols.isOverlay(it) }
     (rest + uppers).forEach { element ->
         drawElement(element, isSelected = element.id == selectedElementId, state = state)
     }

@@ -80,7 +80,9 @@ object DxfExport {
         symbol.category == PlanSymbols.DOORS_WINDOWS -> DOORS_WINDOWS
         symbol.category == PlanSymbols.CABINETS && symbol.symbolName.startsWith("Upper") -> UPPER_CABINETS
         symbol.category == PlanSymbols.CABINETS || symbol.category == PlanSymbols.CLOSET -> CABINETS
-        symbol.category == PlanSymbols.FIXTURES || symbol.category == PlanSymbols.OUTDOOR || symbol.category == PlanSymbols.SHOWERS -> FIXTURES
+        symbol.category == PlanSymbols.HOODS || symbol.symbolName == Appliances.OTR_MICRO -> UPPER_CABINETS
+        symbol.category == PlanSymbols.FIXTURES || symbol.category == PlanSymbols.OUTDOOR || symbol.category == PlanSymbols.SHOWERS ||
+            symbol.category == PlanSymbols.APPLIANCES -> FIXTURES
         symbol.category == PlanSymbols.FURNITURE -> FURNITURE
         else -> SYMBOLS
     }
@@ -351,6 +353,15 @@ object DxfExport {
             s.category == PlanSymbols.WALLS ->
                 if (h > w) wallSection(p.turned(90f), name, h, w, inch) else wallSection(p, name, w, h, inch)
             s.category == PlanSymbols.SHOWERS -> showerPlan(p, s, w, h, inch)
+            s.category == PlanSymbols.APPLIANCES || s.category == PlanSymbols.HOODS -> for (part in Appliances.planParts(s, w, h, inch)) {
+                val pen = if (part.inkIsDashed()) p.dashed() else p
+                when (part) {
+                    is Shower.Part.Seg -> pen.line(part.a, part.b)
+                    is Shower.Part.Poly -> pen.poly(part.points, part.closed)
+                    is Shower.Part.Ring -> pen.circle(part.c, part.r)
+                    is Shower.Part.Label -> pen.label(part.text, part.c, part.size)
+                }
+            }
             s.category == PlanSymbols.STAIRS -> for (part in Stairs.planParts(s, w, h, inch)) {
                 val pen = if (part.inkIsDashed()) p.dashed() else p
                 when (part) {

@@ -202,4 +202,35 @@ class ShowerPreviewTest {
         }
         render("door-handing.png", listOf(wall, door(150f, false, false), door(370f, true, false), door(590f, false, true), door(810f, true, true)), 1000, 400)
     }
+
+    @Test
+    fun `render a kitchen with appliances, hoods and a backsplash over the run`() {
+        val t = 4.5f * inch
+        val wall = DrawingElement.Symbol(symbolName = "2x4 Wall", category = PlanSymbols.WALLS, center = Offset(600f, 100f), size = Size(1200f, t), color = ink)
+        val face = 100f + t / 2f
+        fun at(name: String, cat: String, xIn: Float, props: Map<String, Float> = emptyMap()): DrawingElement.Symbol {
+            val (w, d) = PlanSymbols.footprintInches.getValue(name)
+            return DrawingElement.Symbol(symbolName = name, category = cat, color = ink, properties = props,
+                center = Offset(300f - 600f + (xIn + w / 2f) * inch + 300f, face + d / 2f * inch), size = Size(w * inch, d * inch))
+        }
+        val A = com.example.sitedraft.ui.canvas.Appliances
+        val items = listOf(
+            at(A.OVEN_DOUBLE, PlanSymbols.APPLIANCES, 12f),
+            at("Base 30\"", PlanSymbols.CABINETS, 45f, mapOf(PlanSymbols.PROP_STYLE to 1f, PlanSymbols.PROP_HARDWARE to 1f)),
+            at("Upper 30\"", PlanSymbols.CABINETS, 45f, mapOf(PlanSymbols.PROP_STYLE to 1f, PlanSymbols.PROP_HARDWARE to 1f)),
+            at(A.RANGE_36, PlanSymbols.APPLIANCES, 75f),
+            at("Wood Hood 36\"", PlanSymbols.HOODS, 75f, mapOf(A.HOOD_STYLE to 1f)),
+            at("Base 24\"", PlanSymbols.CABINETS, 111f, mapOf(PlanSymbols.PROP_STYLE to 1f, PlanSymbols.PROP_HARDWARE to 1f, PlanSymbols.PROP_FRONT to 2f)),
+            at(A.DW_18, PlanSymbols.APPLIANCES, 135f),
+            at("Base 36\"", PlanSymbols.CABINETS, 153f, mapOf(PlanSymbols.PROP_STYLE to 1f, PlanSymbols.PROP_HARDWARE to 1f)),
+            at("Upper 36\"", PlanSymbols.CABINETS, 153f, mapOf(PlanSymbols.PROP_STYLE to 3f, PlanSymbols.PROP_HARDWARE to 1f)),
+            at(A.FRIDGE_36, PlanSymbols.APPLIANCES, 189f),
+            at(A.WINE_24, PlanSymbols.APPLIANCES, 240f),
+            at("Chimney Hood 30\"", PlanSymbols.HOODS, 240f)
+        )
+        val plan = listOf(wall) + items
+        val spec = ElevationSpec(wallId = wall.id, side = ViewerSide.BELOW, tileFromIn = 36f, tileToIn = 54f, tileSizeIn = 3f, tileLengthIn = 6f, tilePattern = 1, tileExtent = 1)
+        val view = DrawingElement.ElevationView(spec = spec, origin = Offset(0f, 950f), size = Elevation.sizePx(wall, spec, CanvasState(elements = plan)), color = ink)
+        render("kitchen-appliances.png", plan + view, 1250, 1020)
+    }
 }

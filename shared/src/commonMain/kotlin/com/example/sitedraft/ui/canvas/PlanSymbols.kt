@@ -36,7 +36,10 @@ object PlanSymbols {
     const val SHOWERS = "Showers"
     /** Stairs built from one symbol: see [Stairs]. */
     const val STAIRS = "Stairs"
-    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS, STAIRS)
+    /** Ranges, cooktops, ovens, refrigerators and the like: see [Appliances]. */
+    const val APPLIANCES = "Appliances"
+    const val HOODS = "Hoods"
+    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS, STAIRS, APPLIANCES, HOODS)
 
     /**
      * Closet parts, set against a closet wall with their backs at the top (like cabinets).
@@ -226,7 +229,7 @@ object PlanSymbols {
         // deep overall with the front 1 3/4" overhanging the island face; island cutout 35" x 22",
         // 10 1/8" deep; front panel 11" below the counter; hood 14 7/8" above it closed, 23 1/2" open.
         LYNX_36_GRILL to Pair(36f, LYNX_36_DEPTH)
-    ) + Shower.footprints + Stairs.footprints
+    ) + Shower.footprints + Stairs.footprints + Appliances.footprints
 
     const val LYNX_36_DEPTH = 26.375f
     const val LYNX_36_FRONT_LIP = 1.75f
@@ -241,6 +244,8 @@ object PlanSymbols {
 
     /** Upper (wall) cabinets: above the cut plane, drawn dashed as an overlay on whatever is below. */
     fun isUpperCabinet(symbol: DrawingElement.Symbol) = symbol.category == CABINETS && symbol.symbolName.startsWith("Upper")
+    /** Above the cut plane - upper cabinets, hoods, an over-the-range microwave: drawn dashed, last, without blanking. */
+    fun isOverlay(symbol: DrawingElement.Symbol) = isUpperCabinet(symbol) || Appliances.isOverlay(symbol)
 
     fun isDoor(name: String) = name.startsWith("Door ")
     /** A hinged door's hinge jamb: off = the left jamb seen from the side it swings into. */
@@ -375,7 +380,7 @@ fun DrawScope.drawPlanSymbol(
         // counter under it must still show through its dashed outline.
         // Round and shaped fixtures blank only their own shape, so a floor hatch shows right
         // up to a toilet bowl or a tub's corners rather than stopping in a rectangle around it.
-        if (!PlanSymbols.isDoor(name) && !PlanSymbols.isUpperCabinet(element)) {
+        if (!PlanSymbols.isDoor(name) && !PlanSymbols.isOverlay(element)) {
             val shape = blankShape(element, w, h, inch)
             if (shape != null) drawPath(shape, color = state.backgroundColor)
             else drawRect(color = state.backgroundColor, topLeft = Offset(-hw, -hh), size = Size(w, h))
@@ -389,6 +394,8 @@ fun DrawScope.drawPlanSymbol(
             }
             element.category == PlanSymbols.SHOWERS -> with(Shower) { drawShowerPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.STAIRS -> with(Stairs) { drawStairPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
+            element.category == PlanSymbols.APPLIANCES || element.category == PlanSymbols.HOODS ->
+                with(Appliances) { drawAppliancePlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.CABINETS -> drawCabinet(element, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.CLOSET -> drawClosetPart(name, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.FURNITURE -> drawFurniture(name, w, h, inch, lineColor, accentColor, faint, line, thin)

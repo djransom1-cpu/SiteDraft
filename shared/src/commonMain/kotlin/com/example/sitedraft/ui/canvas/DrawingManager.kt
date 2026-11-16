@@ -2602,6 +2602,15 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
                         }
                         // An elevation's wall tile: heights and size in inches, the pattern as an index.
+                        "tileExtent" -> {
+                            val v = value.toIntOrNull() ?: return@map element
+                            if (element is DrawingElement.ElevationView && v in 0..1) element.copy(spec = element.spec.copy(tileExtent = v)) else element
+                        }
+                        // Hood settings: inches, or small codes for the choices (see Appliances).
+                        in Appliances.keys -> {
+                            val v = parseInches(value) ?: return@map element
+                            if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
+                        }
                         "tileFromIn", "tileToIn", "tileSizeIn", "tileLengthIn", "tilePattern" -> {
                             if (element !is DrawingElement.ElevationView) return@map element
                             val v = (if (property == "tilePattern") value.toFloatOrNull() else parseInches(value)) ?: return@map element

@@ -573,6 +573,30 @@ fun PropertiesPanel(
                             if (selectedElement.category == PlanSymbols.STAIRS) {
                                 StairSection(selectedElement, onEvent)
                             }
+                            if (selectedElement.category == PlanSymbols.HOODS) {
+                                Text(text = "Hood", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                                EditableProperty("Bottom of hood (in)", formatInches(Appliances.prop(selectedElement, Appliances.HOOD_BOTTOM))) {
+                                    onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, Appliances.HOOD_BOTTOM, it))
+                                }
+                                Text("30\" over a 36\" cooking surface is 66\"; check the hood maker's range.", style = MaterialTheme.typography.bodySmall)
+                                if (Appliances.hoodKind(selectedElement.symbolName) == 3) {
+                                    @Composable
+                                    fun hoodChips(title: String, key: String, labels: List<String>) {
+                                        Text(text = title, style = MaterialTheme.typography.labelLarge)
+                                        val chosen = Appliances.prop(selectedElement, key).toInt()
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            labels.forEachIndexed { i, label ->
+                                                FilterChip(selected = chosen == i, onClick = {
+                                                    onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, key, i.toString()))
+                                                }, label = { Text(label) })
+                                            }
+                                        }
+                                    }
+                                    hoodChips("Shape", Appliances.HOOD_STYLE, Appliances.woodStyleLabels)
+                                    hoodChips("Goes up to", Appliances.HOOD_TO_CEILING, listOf("Top of the uppers", "Ceiling"))
+                                    hoodChips("Corbels", Appliances.HOOD_CORBELS, listOf("No", "Yes"))
+                                }
+                            }
                             if (PlanSymbols.isIsland(selectedElement)) {
                                 Text(text = "Seating overhang", style = MaterialTheme.typography.labelLarge)
                                 val over = selectedElement.properties[PlanSymbols.PROP_OVERHANG]?.toInt() ?: 0
@@ -695,6 +719,7 @@ fun PropertiesPanel(
                                 onClick = {
                                     onEvent(DrawingEvent.UpdateElementProperty(id, "tileFromIn", spec.counterHeightIn.toString()))
                                     onEvent(DrawingEvent.UpdateElementProperty(id, "tileToIn", spec.upperBottomIn.toString()))
+                                    onEvent(DrawingEvent.UpdateElementProperty(id, "tileExtent", "1"))
                                 },
                                 label = { Text("Backsplash") }
                             )
@@ -703,11 +728,20 @@ fun PropertiesPanel(
                                 onClick = {
                                     onEvent(DrawingEvent.UpdateElementProperty(id, "tileFromIn", "0"))
                                     onEvent(DrawingEvent.UpdateElementProperty(id, "tileToIn", spec.wallHeightIn.toString()))
+                                    onEvent(DrawingEvent.UpdateElementProperty(id, "tileExtent", "0"))
                                 },
                                 label = { Text("Full wall") }
                             )
                         }
                         if (spec.tileToIn > spec.tileFromIn) {
+                            Text(text = "Tile runs", style = MaterialTheme.typography.labelLarge)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("Whole wall", "Over the cabinet run only").forEachIndexed { i, label ->
+                                    FilterChip(selected = spec.tileExtent == i, onClick = {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileExtent", i.toString()))
+                                    }, label = { Text(label) })
+                                }
+                            }
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Shower.tilePatternLabels.forEachIndexed { i, label ->
                                     FilterChip(selected = spec.tilePattern == i, onClick = {

@@ -10,6 +10,8 @@ import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Bathtub
 import androidx.compose.material.icons.filled.Shower
 import androidx.compose.material.icons.filled.Stairs
+import androidx.compose.material.icons.filled.Microwave
+import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Weekend
 import androidx.compose.material.icons.filled.Close
@@ -71,6 +73,8 @@ fun SymbolLibraryPanel(
             SymbolCategory("Plumbing", Icons.Default.WaterDrop, listOf("Valve", "Faucet"), onEvent)
             SymbolCategory(PlanSymbols.FIXTURES, Icons.Default.Bathtub, PlanSymbols.fixtures, onEvent)
             SymbolCategory(PlanSymbols.SHOWERS, Icons.Default.Shower, com.example.sitedraft.ui.canvas.Shower.library, onEvent)
+            SymbolCategory(PlanSymbols.APPLIANCES, Icons.Default.Microwave, com.example.sitedraft.ui.canvas.Appliances.appliances, onEvent)
+            SymbolCategory(PlanSymbols.HOODS, Icons.Default.Air, com.example.sitedraft.ui.canvas.Appliances.hoods, onEvent)
             SymbolCategory(PlanSymbols.STAIRS, Icons.Default.Stairs, com.example.sitedraft.ui.canvas.Stairs.library, onEvent)
             SymbolCategory(PlanSymbols.CABINETS, Icons.Default.Kitchen, PlanSymbols.cabinets, onEvent)
             SymbolCategory(PlanSymbols.OUTDOOR, Icons.Default.OutdoorGrill, PlanSymbols.outdoor, onEvent)

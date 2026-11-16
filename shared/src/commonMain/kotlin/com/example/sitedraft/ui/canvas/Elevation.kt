@@ -39,6 +39,8 @@ data class ElevationSpec(
     val tileSizeIn: Float = 4f,
     /** The tile's long side, laid along the wall; 0 = square (or the pattern's own proportion). */
     val tileLengthIn: Float = 0f,
+    /** 0 = the tile runs the whole wall; 1 = only over the counter-height cabinet run(s) (a backsplash). */
+    val tileExtent: Int = 0,
     /** Set (0 right side, 1 left side) when [wallId] is a stair: its side elevation. */
     val stairSide: Int = -1,
 )
@@ -114,6 +116,41 @@ object Elevation {
         return rotateAbout(threshold, symbol.center, symbol.rotation)
     }
 
+    /**
+     * Where along the wall (px from the viewer's left) the wall tile runs: the whole wall, or
+     * for a backsplash only over the counter-height run(s) - base cabinets, vanities, the range,
+     * dishwasher and other undercounter appliances, side by side - so it stops at a tall
+     * cabinet, the refrigerator or open wall.
+     */
+    fun tileSpans(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): List<Pair<Float, Float>> {
+        val length = lengthPx(wall)
+        if (spec.tileExtent != 1) return listOf(0f to length)
+        val inch = state.inchesToPx(1f)
+        val runs = itemsOnWall(wall, spec.side, state)
+            .filter { it.kind == Kind.FIXTURE && sitsAtCounter(it.symbol) }
+            .map { it.from to it.to }.sortedBy { it.first }
+        val merged = mutableListOf<Pair<Float, Float>>()
+        for (r in runs) {
+            val last = merged.lastOrNull()
+            if (last != null && r.first <= last.second + inch) merged[merged.size - 1] = last.first to maxOf(last.second, r.second)
+            else merged += r
+        }
+        return merged
+    }
+
+    /** Counter height and standing in the cabinet run. */
+    fun sitsAtCounter(s: DrawingElement.Symbol): Boolean {
+        val n = s.symbolName
+        return when (s.category) {
+            PlanSymbols.CABINETS -> n.startsWith("Base") || n.startsWith("Corner Base") || PlanSymbols.isVanity(n) ||
+                (PlanSymbols.isFiller(n) && !n.startsWith("Upper"))
+            PlanSymbols.FIXTURES -> n == "Dishwasher" || n == "Range" || n == "Kitchen Sink" || n in PlanSymbols.counterSinks
+            PlanSymbols.APPLIANCES -> Appliances.atCounter(n)
+            PlanSymbols.OUTDOOR -> true
+            else -> false
+        }
+    }
+
     fun lengthPx(wall: DrawingElement.Symbol): Float = if (isHorizontal(wall)) wall.size.width else wall.size.height
 
     fun sizePx(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): Size =
@@ -173,7 +210,8 @@ object Elevation {
                     }
                     if (perpendicular && touches) Kind.CUT_WALL else continue
                 }
-                PlanSymbols.FIXTURES, PlanSymbols.CABINETS, PlanSymbols.OUTDOOR, PlanSymbols.CLOSET, PlanSymbols.FURNITURE -> {
+                PlanSymbols.FIXTURES, PlanSymbols.CABINETS, PlanSymbols.OUTDOOR, PlanSymbols.CLOSET, PlanSymbols.FURNITURE,
+                PlanSymbols.APPLIANCES, PlanSymbols.HOODS -> {
                     if (s.symbolName.startsWith("Island")) continue
                     // Signed gap from the viewed face to the item's back edge: positive = in front of the wall.
                     val back = when (side) {
@@ -376,7 +414,7 @@ object Elevation {
         if (tiled) {
             val top = spec.tileToIn.coerceAtMost(spec.wallHeightIn)
             val pattern = Shower.tilePatterns.getOrElse(spec.tilePattern) { FillPattern.TILE }
-            rect(0f, length, spec.tileFromIn, top, light, Fill(
+            for ((a, b) in tileSpans(wall, spec, state)) rect(a, b, spec.tileFromIn, top, light, Fill(
                 pattern = pattern, spacing = spec.tileSizeIn.coerceAtLeast(1f) * inch, lineWidth = 0.75f,
                 length = if (spec.tileLengthIn > 0f) spec.tileLengthIn * inch else 0f
             ))
@@ -403,6 +441,20 @@ object Elevation {
         fun faucet(xc: Float, topIn: Float, tall: Float = 8f) {
             line(xc, topIn, xc, topIn + tall, medium)
             line(xc, topIn + tall, xc + 4f * inch, topIn + tall - 1.5f, medium)
+        }
+        // The appliance and hood drawings use this builder's own helpers.
+        val rectFn: (Float, Float, Float, Float, Float, Fill) -> Unit = { a, b, c, d, e, f -> rect(a, b, c, d, e, f) }
+        val lineFn: (Float, Float, Float, Float, Float) -> Unit = { a, b, c, d, e -> line(a, b, c, d, e) }
+        val circleFn: (Float, Float, Float, Float) -> Unit = { a, b, c, d -> circle(a, b, c, d) }
+        val doorsFn: (Float, Float, Float, Float, Int, Boolean) -> Unit = { a, b, c, d, e, f -> doors(a, b, c, d, e, f) }
+        val drawersFn: (Float, Float, Float, Float, Int) -> Unit = { a, b, c, d, e -> drawers(a, b, c, d, e) }
+        val appliancePen = object : Appliances.ElevPen {
+            override val inch = inch
+            override fun rect(x1: Float, x2: Float, h1: Float, h2: Float, sw: Float) = rectFn(x1, x2, h1, h2, sw, opaque)
+            override fun line(x1: Float, h1: Float, x2: Float, h2: Float, sw: Float) = lineFn(x1, h1, x2, h2, sw)
+            override fun circle(xc: Float, hc: Float, rIn: Float, sw: Float) = circleFn(xc, hc, rIn, sw)
+            override fun doors(x1: Float, x2: Float, h1: Float, h2: Float, count: Int, knobsLow: Boolean) = doorsFn(x1, x2, h1, h2, count, knobsLow)
+            override fun drawers(x1: Float, x2: Float, h1: Float, h2: Float, n: Int) = drawersFn(x1, x2, h1, h2, n)
         }
         for (item in items) {
             doorStyle = PlanSymbols.doorStyle(item.symbol)
@@ -456,6 +508,10 @@ object Elevation {
                     }
                 }
                 Kind.FIXTURE -> when {
+                    item.symbol.category == PlanSymbols.APPLIANCES || item.symbol.category == PlanSymbols.HOODS -> {
+                        Appliances.drawElevation(item.symbol, from, to, counterTop, spec.upperBottomIn + spec.upperHeightIn, spec.wallHeightIn, appliancePen)
+                        if (Appliances.underCounter(name)) counterRuns += Pair(from, to)
+                    }
                     PlanSymbols.isFiller(name) -> {
                         // A blank strip at base or upper height, no door.
                         if (name.startsWith("Upper")) {
