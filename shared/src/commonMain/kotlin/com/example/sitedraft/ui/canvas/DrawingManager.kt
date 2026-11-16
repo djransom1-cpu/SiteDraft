@@ -78,6 +78,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     // A press on a plan that was not selected: a drag from there is a box-select (so groups can
     // be picked over the plan), a plain tap selects the plan - decided in endDrawing().
     private var planTapCandidate: String? = null
+    // Where a Dimension-tool press landed, unsnapped: a tap there (no drag) dimensions what is under it.
+    private var dimensionTapRaw: Offset? = null
+    // The dimension placed last with the Dimension tool: the next one that starts at its end and
+    // runs the same way continues its string on the same line, with no third tap.
+    private var lastPlacedDimensionId: String? = null
     // Bosch GLM laser client (Android only; null elsewhere). Lazy so unit tests never touch Bluetooth.
     private val laserDelegate = lazy { platform.createLaserClient() }
     val laser: Any? by laserDelegate
@@ -308,7 +313,25 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     triggerAutoSave()
                 }
             }
+            is DrawingEvent.DimensionPlan -> replaceOwnedDimensions(
+                AutoDimension.PLAN_OWNER,
+                AutoDimension.plan(_state.value, AutoDimension.PlanOptions(event.outside, event.rooms, event.interiorToCenter))
+            )
+            is DrawingEvent.DimensionElevation -> {
+                val view = _state.value.elements.find { it.id == event.id } as? DrawingElement.ElevationView
+                if (view != null) replaceOwnedDimensions(view.id, AutoDimension.elevation(view, _state.value))
+            }
+            is DrawingEvent.RemoveOwnedDimensions -> replaceOwnedDimensions(event.ownerId, emptyList())
         }
+    }
+
+    /** Swaps the dimensions [owner] (the plan, or an elevation) made last time for [dims], as one undo step. */
+    private fun replaceOwnedDimensions(owner: String, dims: List<DrawingElement.Dimension>) {
+        val had = _state.value.elements.any { it.isOwnedBy(owner) }
+        if (!had && dims.isEmpty()) return
+        pushUndoSnapshot()
+        _state.value = _state.value.copy(elements = _state.value.elements.filterNot { it.isOwnedBy(owner) } + dims)
+        triggerAutoSave()
     }
 
     private fun deleteSelectedElement() {
@@ -316,7 +339,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         if (groupIds.isNotEmpty()) {
             pushUndoSnapshot()
             _state.value = _state.value.copy(
-                elements = _state.value.elements.filterNot { it.id in groupIds },
+                elements = _state.value.elements.filterNot { it.id in groupIds || groupIds.any { id -> it.isOwnedBy(id) } },
                 selectedElementIds = emptySet()
             )
             return
@@ -324,7 +347,8 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         val selectedId = _state.value.selectedElementId ?: return
         pushUndoSnapshot()
         _state.value = _state.value.copy(
-            elements = _state.value.elements.filter { it.id != selectedId },
+            // An elevation's dimensions go with it.
+            elements = _state.value.elements.filter { it.id != selectedId && !it.isOwnedBy(selectedId) },
             selectedElementId = null
         )
     }
@@ -418,7 +442,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         is DrawingElement.Triangle -> element.copy(id = randomId(), topLeft = element.topLeft + offset)
         is DrawingElement.Circle -> element.copy(id = randomId(), center = element.center + offset)
         is DrawingElement.Symbol -> element.copy(id = randomId(), center = element.center + offset)
-        is DrawingElement.Dimension -> element.copy(id = randomId(), start = element.start + offset, end = element.end + offset)
+        is DrawingElement.Dimension -> element.copy(id = randomId(), start = element.start + offset, end = element.end + offset, ownerId = null)
         is DrawingElement.Text -> element.copy(id = randomId(), topLeft = element.topLeft + offset)
         is DrawingElement.Image -> element.copy(id = randomId(), topLeft = element.topLeft + offset)
         is DrawingElement.Pdf -> element.copy(id = randomId(), topLeft = element.topLeft + offset)
@@ -1450,7 +1474,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                         pushUndoSnapshot()
                         _state.value = _state.value.copy(
                             elements = _state.value.elements.map {
-                                if (it.id == selectedId) it.move(delta) else it
+                                if (it.id == selectedId || it.isOwnedBy(selectedId)) it.move(delta) else it
                             },
                             preciseMoveFromPoint = null
                         )
@@ -1470,6 +1494,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 // down event doesn't stomp the points just picked; moveDrawing/endDrawing handle
                 // previewing and committing the offset from here.
                 if (!_state.value.awaitingDimensionOffset) {
+                    dimensionTapRaw = offset
                     _state.value = _state.value.copy(
                         currentDrawingElement = DrawingElement.Dimension(
                             start = snappedOffset,
@@ -1791,7 +1816,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                                     isResizing -> it.resize(delta, _state.value.scale.ratio, _state.value.unitSystem)
                                     else -> it.move(delta)
                                 }
-                            } else it
+                            } else if (!isResizing && !isRotating && it.isOwnedBy(selectedId)) it.move(delta) else it
                         }
                     )
                 }
@@ -1805,7 +1830,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     }
                     _state.value = _state.value.copy(
                         elements = _state.value.elements.map {
-                            if (it.id == selectedId) it.move(delta) else it
+                            if (it.id == selectedId || it.isOwnedBy(selectedId)) it.move(delta) else it
                         }
                     )
                 }
@@ -1986,13 +2011,35 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 // to place a dimension - cancel it outright instead of leaving a stuck
                 // zero-length dimension waiting on a phase 2 that was never intended.
                 val dist = (current.end - current.start).getDistance()
-                _state.value = if (dist < 2f) {
-                    _state.value.copy(currentDrawingElement = null, lastSnapPoint = null)
+                val previous = lastPlacedDimensionId?.let { id -> _state.value.elements.find { it.id == id } as? DrawingElement.Dimension }
+                val chainOffset = if (dist >= 2f && previous != null)
+                    AutoDimension.continued(previous, current.start, current.end, _state.value.inchesToPx(1f)) else null
+                if (dist < 2f) {
+                    // A tap, not a drag: dimension what is under it (a wall, a door or window, a
+                    // cabinet or fixture, or the room's inside size). Nothing there: no dimension.
+                    val quick = AutoDimension.quick(dimensionTapRaw ?: current.start, _state.value)
+                    if (quick.isNotEmpty()) {
+                        pushUndoSnapshot()
+                        _state.value = _state.value.copy(elements = _state.value.elements + quick, currentDrawingElement = null, lastSnapPoint = null)
+                        lastPlacedDimensionId = quick.last().id
+                        triggerAutoSave()
+                    } else {
+                        _state.value = _state.value.copy(currentDrawingElement = null, lastSnapPoint = null)
+                    }
+                } else if (chainOffset != null) {
+                    // Starts where the last one ended and runs the same way: it continues that
+                    // string on the same dimension line, so it needs no third tap.
+                    val placed = current.copy(offset = chainOffset)
+                    pushUndoSnapshot()
+                    _state.value = _state.value.copy(elements = _state.value.elements + placed, currentDrawingElement = null, lastSnapPoint = null)
+                    lastPlacedDimensionId = placed.id
+                    triggerAutoSave()
                 } else {
-                    _state.value.copy(awaitingDimensionOffset = true, lastSnapPoint = null)
+                    _state.value = _state.value.copy(awaitingDimensionOffset = true, lastSnapPoint = null)
                 }
             } else {
                 // Phase 2 (placing the offset) just finished - the dimension is fully defined now.
+                lastPlacedDimensionId = current.id
                 pushUndoSnapshot()
                 _state.value = _state.value.copy(
                     elements = _state.value.elements + current,
@@ -3153,4 +3200,10 @@ sealed class DrawingEvent {
     data class SwapDoorHinge(val id: String) : DrawingEvent()
     /** Swings a hinged door into the other side of its wall, hinge on the same jamb. */
     data class SwingDoorOtherSide(val id: String) : DrawingEvent()
+    /** Dimensions around the outside of the plan and across each room; replaces the last set. */
+    data class DimensionPlan(val outside: Boolean, val rooms: Boolean, val interiorToCenter: Boolean) : DrawingEvent()
+    /** Dimensions an elevation: widths across the top, heights down the side; replaces its last set. */
+    data class DimensionElevation(val id: String) : DrawingEvent()
+    /** Deletes the dimensions the plan ([AutoDimension.PLAN_OWNER]) or an elevation (its id) made. */
+    data class RemoveOwnedDimensions(val ownerId: String) : DrawingEvent()
 }

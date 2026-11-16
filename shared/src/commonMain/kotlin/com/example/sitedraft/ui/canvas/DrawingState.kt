@@ -241,7 +241,10 @@ sealed class DrawingElement {
         // placed yet - the state mid-way through placing a new dimension). AutoCAD-style:
         // extension lines connect the real points out to the offset dimension line/text so the
         // label can be read clear of the drawing without moving what's actually being measured.
-        val offset: Float = 0f
+        val offset: Float = 0f,
+        // Set on dimensions made in one tap for a plan (AutoDimension.PLAN_OWNER) or an elevation
+        // (its id): running it again replaces them, and an elevation's move and delete with it.
+        val ownerId: String? = null
     ) : DrawingElement()
 
     @Serializable

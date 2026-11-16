@@ -109,10 +109,15 @@ object HelpContent {
         ),
         HelpTopic(
             title = "Dimensions",
-            keywords = "dimension measure label size snap",
+            keywords = "dimension measure label size snap auto automatic one tap string chain continue elevation room",
             lines = listOf(
                 "1. Tap Dimension on the top bar.",
-                "2. Drag from one point to the other. Turn on Snap to Objects in Settings so the ends lock onto wall corners.",
+                "2. Drag from one point to the other, then tap where the dimension line goes. Turn on Snap to Objects in Settings so the ends lock onto wall corners.",
+                "One tap: with the Dimension tool, tap a wall, door, window, cabinet or the floor of a room (no drag) to dimension it.",
+                "Strings: start the next dimension at the end of the last one, going the same way. It lands on the same line with no third tap.",
+                "Whole plan: Floor Plan > Dimensions > Dimension the plan. Outside strings (openings to their centres, wall jogs and interior walls, overall) and each room's size.",
+                "Elevation: select the elevation, then Dimension this elevation in Properties. Widths across the top, heights down the side, window sills and heads.",
+                "All of these are ordinary dimensions: drag, retype or delete any of them. Tap the button again after changing the plan to redo them.",
                 "3. Select a dimension to change its style or color in Properties.",
             ),
         ),

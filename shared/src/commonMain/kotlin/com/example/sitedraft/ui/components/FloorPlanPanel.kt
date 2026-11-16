@@ -36,7 +36,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.remember
+import com.example.sitedraft.ui.canvas.AutoDimension
 import com.example.sitedraft.ui.canvas.CanvasState
+import com.example.sitedraft.ui.canvas.isOwnedBy
 import com.example.sitedraft.ui.canvas.DrawingElement
 import com.example.sitedraft.ui.canvas.DrawingEvent
 import com.example.sitedraft.ui.canvas.Elevation
@@ -218,6 +220,41 @@ fun FloorPlanPanel(
             } else {
                 ElevationControls(selectedWall, state, onEvent)
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // --- Dimensions ---
+            var dimOutside by rememberSaveable { mutableStateOf(true) }
+            var dimRooms by rememberSaveable { mutableStateOf(true) }
+            var dimToCenter by rememberSaveable { mutableStateOf(true) }
+            Text("Dimensions", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "One tap dimensions the whole plan: strings around the outside (doors and windows to their centres, the wall jogs and interior walls, the overall size) and each room's inside width and depth. They are ordinary dimensions: drag, retype or delete any of them. Tap again after changing the plan to redo them.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.height(4.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = dimOutside, onClick = { dimOutside = !dimOutside }, label = { Text("Outside strings") })
+                FilterChip(selected = dimRooms, onClick = { dimRooms = !dimRooms }, label = { Text("Room sizes") })
+            }
+            Text("Interior walls dimensioned to", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = dimToCenter, onClick = { dimToCenter = true }, label = { Text("Their centre") })
+                FilterChip(selected = !dimToCenter, onClick = { dimToCenter = false }, label = { Text("Both faces") })
+            }
+            val hasPlanDims = state.elements.any { it.isOwnedBy(AutoDimension.PLAN_OWNER) }
+            Button(
+                onClick = { onEvent(DrawingEvent.DimensionPlan(dimOutside, dimRooms, dimToCenter)) },
+                enabled = dimOutside || dimRooms,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (hasPlanDims) "Redo the plan's dimensions" else "Dimension the plan") }
+            if (hasPlanDims) {
+                androidx.compose.material3.TextButton(onClick = { onEvent(DrawingEvent.RemoveOwnedDimensions(AutoDimension.PLAN_OWNER)) }) { Text("Remove the plan's dimensions") }
+            }
+            Text(
+                "With the Dimension tool: tap a wall, door, window, cabinet or room to dimension it in one tap. Draw one dimension, then start the next at its end going the same way: it continues the string on the same line, no third tap.",
+                style = MaterialTheme.typography.bodySmall
+            )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 

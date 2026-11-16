@@ -755,6 +755,20 @@ fun PropertiesPanel(
                             EditableProperty("Tile length (in, 0 = square)", formatInches(spec.tileLengthIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileLengthIn", it)) }
                         }
                         }
+                        // Dimensions in one tap; ordinary dimensions afterwards, so each can be edited.
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        Text(text = "Dimensions", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "Widths across the top, heights down the right side, and each window's sill and head. Drag, retype or delete any of them afterwards. They move and delete with the elevation; tap again after changing the plan to redo them.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        val hasElevDims = state.elements.any { it.isOwnedBy(selectedElement.id) }
+                        Button(onClick = { onEvent(DrawingEvent.DimensionElevation(selectedElement.id)) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (hasElevDims) "Redo its dimensions" else "Dimension this elevation")
+                        }
+                        if (hasElevDims) {
+                            TextButton(onClick = { onEvent(DrawingEvent.RemoveOwnedDimensions(selectedElement.id)) }) { Text("Remove its dimensions") }
+                        }
                     }
                     else -> {}
                 }

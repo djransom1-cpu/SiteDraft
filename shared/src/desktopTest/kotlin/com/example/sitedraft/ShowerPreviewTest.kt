@@ -232,5 +232,35 @@ class ShowerPreviewTest {
         val spec = ElevationSpec(wallId = wall.id, side = ViewerSide.BELOW, tileFromIn = 36f, tileToIn = 54f, tileSizeIn = 3f, tileLengthIn = 6f, tilePattern = 1, tileExtent = 1)
         val view = DrawingElement.ElevationView(spec = spec, origin = Offset(0f, 950f), size = Elevation.sizePx(wall, spec, CanvasState(elements = plan)), color = ink)
         render("kitchen-appliances.png", plan + view, 1250, 1020)
+        val all = plan + view
+        val dims = com.example.sitedraft.ui.canvas.AutoDimension.elevation(view, CanvasState(elements = all, backgroundColor = Color.White))
+        render("kitchen-dimensions.png", all + dims, 1450, 1050)
+    }
+
+    @Test
+    fun `render an L-shaped plan dimensioned in one tap`() {
+        val ox = 150f
+        val oy = 200f
+        fun w(l: Float, t: Float, r: Float, b: Float) = DrawingElement.Symbol(
+            symbolName = "2x6 Wall", category = PlanSymbols.WALLS, color = ink,
+            center = Offset(ox + (l + r) / 2f * inch, oy + (t + b) / 2f * inch), size = Size((r - l) * inch, (b - t) * inch)
+        )
+        val walls = listOf(
+            w(0f, 0f, 240f, 6f), w(234f, 6f, 240f, 120f), w(234f, 120f, 360f, 126f), w(354f, 126f, 360f, 240f),
+            w(0f, 234f, 360f, 240f), w(0f, 6f, 6f, 234f),
+            w(150f, 6f, 154.5f, 234f), w(154.5f, 180f, 354f, 184.5f)
+        )
+        val win1 = DrawingElement.Symbol(symbolName = "Window 3'-0\"", category = PlanSymbols.DOORS_WINDOWS, color = ink,
+            center = Offset(ox + 80f * inch, oy + 3f * inch), size = Size(36f * inch, 6f * inch))
+        val win2 = DrawingElement.Symbol(symbolName = "Window 4'-0\"", category = PlanSymbols.DOORS_WINDOWS, color = ink,
+            center = Offset(ox + 357f * inch, oy + 210f * inch), size = Size(48f * inch, 6f * inch), rotation = 90f)
+        val plan = walls + win1 + win2
+        val dims = com.example.sitedraft.ui.canvas.AutoDimension.plan(CanvasState(elements = plan, backgroundColor = Color.White))
+        assertTrue(dims.size > 10)
+        // The interior wall running the full depth shows in the top string, to its centre (152-1/4").
+        assertTrue(dims.any { it.start.y == it.end.y && kotlin.math.abs(it.value * 12f - 152.25f) < 0.01f })
+        // No room dimension runs through the jog wall (154-1/2" to 354" at the upper right).
+        assertTrue(dims.none { it.offset == 0f && kotlin.math.abs(it.value * 12f - 199.5f) < 0.01f && it.start.y < oy + 120f * inch })
+        render("plan-dimensions.png", plan + dims, 1200, 900, zoom = 0.6f)
     }
 }
