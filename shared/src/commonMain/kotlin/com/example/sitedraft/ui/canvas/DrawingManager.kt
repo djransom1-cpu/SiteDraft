@@ -183,8 +183,17 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     is Placement.Hatch -> placeHatch(event.point, pending)
                     // One room's inside size, its strings outside its walls; tapping it again redoes them.
                     is Placement.DimensionRoom -> {
-                        val dims = AutoDimension.room(event.point, _state.value)
-                        dims.firstOrNull()?.ownerId?.let { replaceOwnedDimensions(it, dims) }
+                        // The room's inside size, and the elevations of its walls and of an island in it.
+                        val s = _state.value
+                        val dims = AutoDimension.room(event.point, s)
+                        val owner = dims.firstOrNull()?.ownerId
+                        if (owner != null) {
+                            val sets = linkedMapOf(owner to dims)
+                            FloorPlan.areaAt(event.point, s)?.let { room ->
+                                for (v in AutoDimension.elevationsOf(room, s)) sets[v.id] = AutoDimension.elevation(v, s)
+                            }
+                            replaceOwnedDimensionsMany(sets)
+                        }
                     }
                     // Unsnapped: the point goes exactly where the pen lifted on the printed plan.
                     is Placement.Calibrate -> calibrationPointPlaced(pending, event.point)
@@ -364,10 +373,13 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     triggerAutoSave()
                 }
             }
-            is DrawingEvent.DimensionPlan -> replaceOwnedDimensions(
-                AutoDimension.PLAN_OWNER,
-                AutoDimension.plan(_state.value, AutoDimension.PlanOptions(event.outside, event.rooms, event.interiorToCenter))
-            )
+            is DrawingEvent.DimensionPlan -> {
+                val s = _state.value
+                val sets = linkedMapOf(AutoDimension.PLAN_OWNER to AutoDimension.plan(s, AutoDimension.PlanOptions(event.outside, event.rooms, event.interiorToCenter)))
+                // Every elevation too, in the same tap (and the same undo step).
+                if (event.elevations) for (v in s.elements.filterIsInstance<DrawingElement.ElevationView>()) sets[v.id] = AutoDimension.elevation(v, s)
+                replaceOwnedDimensionsMany(sets)
+            }
             is DrawingEvent.DimensionElevation -> {
                 val view = _state.value.elements.find { it.id == event.id } as? DrawingElement.ElevationView
                 if (view != null) replaceOwnedDimensions(view.id, AutoDimension.elevation(view, _state.value))
@@ -382,6 +394,16 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         if (!had && dims.isEmpty()) return
         pushUndoSnapshot()
         _state.value = _state.value.copy(elements = _state.value.elements.filterNot { it.isOwnedBy(owner) } + dims)
+        triggerAutoSave()
+    }
+
+    /** [replaceOwnedDimensions] for several owners at once, as one undo step. */
+    private fun replaceOwnedDimensionsMany(sets: Map<String, List<DrawingElement.Dimension>>) {
+        val owners = sets.keys
+        val had = _state.value.elements.any { e -> owners.any { e.isOwnedBy(it) } }
+        if (!had && sets.values.all { it.isEmpty() }) return
+        pushUndoSnapshot()
+        _state.value = _state.value.copy(elements = _state.value.elements.filterNot { e -> owners.any { e.isOwnedBy(it) } } + sets.values.flatten())
         triggerAutoSave()
     }
 
@@ -3315,7 +3337,7 @@ sealed class DrawingEvent {
     /** Swings a hinged door into the other side of its wall, hinge on the same jamb. */
     data class SwingDoorOtherSide(val id: String) : DrawingEvent()
     /** Dimensions around the outside of the plan and across each room; replaces the last set. */
-    data class DimensionPlan(val outside: Boolean, val rooms: Boolean, val interiorToCenter: Boolean) : DrawingEvent()
+    data class DimensionPlan(val outside: Boolean, val rooms: Boolean, val interiorToCenter: Boolean, val elevations: Boolean = true) : DrawingEvent()
     /** Dimensions an elevation: widths across the top, heights down the side; replaces its last set. */
     data class DimensionElevation(val id: String) : DrawingEvent()
     /** Deletes the dimensions the plan ([AutoDimension.PLAN_OWNER]) or an elevation (its id) made. */

@@ -82,6 +82,18 @@ class AutoDimensionTest {
     }
 
     @Test
+    fun `a room's elevations are the ones of its own walls`() {
+        fun view(w: DrawingElement.Symbol, side: ViewerSide) = DrawingElement.ElevationView(
+            spec = ElevationSpec(wallId = w.id, side = side), origin = Offset(0f, 3000f), size = Size(100f, 100f), color = Color.White)
+        val topView = view(top, ViewerSide.BELOW)
+        val partitionView = view(partition, ViewerSide.LEFT)
+        val rightView = view(right, ViewerSide.LEFT)
+        val s = state.copy(elements = state.elements + topView + partitionView + rightView)
+        val leftRoom = com.example.sitedraft.ui.canvas.FloorPlan.areaAt(Offset(60f * inch, 70f * inch), s)!!
+        assertEquals(setOf(topView.id, partitionView.id), AutoDimension.elevationsOf(leftRoom, s).map { it.id }.toSet())
+    }
+
+    @Test
     fun `one room is dimensioned on its own, and again replaces it`() {
         val dims = AutoDimension.room(Offset(60f * inch, 70f * inch), state)
         assertEquals(2, dims.size)

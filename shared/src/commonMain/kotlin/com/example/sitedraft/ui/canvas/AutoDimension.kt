@@ -226,6 +226,28 @@ object AutoDimension {
         )
     }
 
+    /**
+     * The elevations that belong to [room]: those of the walls around it (a wall whose face is
+     * on one of the room's sides and runs along it) and of an island standing in it.
+     */
+    fun elevationsOf(room: Rect, state: CanvasState): List<DrawingElement.ElevationView> {
+        val inch = state.inchesToPx(1f)
+        return state.elements.filterIsInstance<DrawingElement.ElevationView>().filter { v ->
+            val host = state.elements.find { it.id == v.spec.wallId } as? DrawingElement.Symbol ?: return@filter false
+            val b = FloorPlan.bounds(host)
+            when {
+                PlanSymbols.isIsland(host) -> room.contains(host.center)
+                host.category == PlanSymbols.WALLS -> {
+                    val alongX = b.right > room.left + inch && b.left < room.right - inch
+                    val alongY = b.bottom > room.top + inch && b.top < room.bottom - inch
+                    (alongX && (abs(b.bottom - room.top) <= inch || abs(b.top - room.bottom) <= inch)) ||
+                        (alongY && (abs(b.right - room.left) <= inch || abs(b.left - room.right) <= inch))
+                }
+                else -> room.contains(host.center)
+            }
+        }
+    }
+
     /** The owner tag for one room's dimensions, so tapping the same room again replaces them. */
     fun roomOwner(room: Rect): String =
         "room:${kotlin.math.round(room.left)},${kotlin.math.round(room.top)},${kotlin.math.round(room.right)},${kotlin.math.round(room.bottom)}"

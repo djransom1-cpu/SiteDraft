@@ -230,6 +230,7 @@ fun FloorPlanPanel(
             var dimOutside by rememberSaveable { mutableStateOf(true) }
             var dimRooms by rememberSaveable { mutableStateOf(true) }
             var dimToCenter by rememberSaveable { mutableStateOf(true) }
+            var dimElevations by rememberSaveable { mutableStateOf(true) }
             Text("Dimensions", style = MaterialTheme.typography.titleMedium)
             Text(
                 "One tap dimensions the whole plan: strings around the outside (doors and windows to their centres, the wall jogs and interior walls, the overall size) and each room's inside width and depth, set outside its walls. They are ordinary dimensions: drag, retype or delete any of them. Tap again after changing the plan to redo them.",
@@ -239,6 +240,7 @@ fun FloorPlanPanel(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(selected = dimOutside, onClick = { dimOutside = !dimOutside }, label = { Text("Outside strings") })
                 FilterChip(selected = dimRooms, onClick = { dimRooms = !dimRooms }, label = { Text("Room sizes") })
+                FilterChip(selected = dimElevations, onClick = { dimElevations = !dimElevations }, label = { Text("Elevations") })
             }
             Text("Interior walls dimensioned to", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -247,8 +249,8 @@ fun FloorPlanPanel(
             }
             val hasPlanDims = state.elements.any { it.isOwnedBy(AutoDimension.PLAN_OWNER) }
             Button(
-                onClick = { onEvent(DrawingEvent.DimensionPlan(dimOutside, dimRooms, dimToCenter)) },
-                enabled = dimOutside || dimRooms,
+                onClick = { onEvent(DrawingEvent.DimensionPlan(dimOutside, dimRooms, dimToCenter, dimElevations)) },
+                enabled = dimOutside || dimRooms || dimElevations,
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (hasPlanDims) "Redo the plan's dimensions" else "Dimension the plan") }
             if (hasPlanDims) {
@@ -257,7 +259,7 @@ fun FloorPlanPanel(
             androidx.compose.material3.OutlinedButton(
                 onClick = { onEvent(DrawingEvent.StartPlacement(Placement.DimensionRoom)) },
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Dimension one room (then tap inside it)") }
+            ) { Text("Dimension one room and its elevations (then tap inside it)") }
             Text(
                 "With the Dimension tool: tap a wall, door, window, cabinet or room to dimension it in one tap. Draw one dimension, then start the next at its end going the same way: it continues the string on the same line, no third tap.",
                 style = MaterialTheme.typography.bodySmall
