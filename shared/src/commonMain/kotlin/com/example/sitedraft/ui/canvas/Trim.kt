@@ -81,6 +81,12 @@ object Trim {
             HEAD_BACKBAND -> headIn + leg
             else -> headIn + maxOf(spec.friezeIn, MIN_FRIEZE_IN)
         }
+        // The casing stands in front of any wall tile: hide the tile behind each piece first.
+        val blankStart = if (window && !stoolApron && !mitered) bottomInner else legsFrom
+        p.blank(xo1, xi1, blankStart, if (mitered) headTop else headIn)
+        p.blank(xi2, xo2, blankStart, if (mitered) headTop else headIn)
+        p.blank(xo1, xo2, headIn, headTop)
+        if (window && !stoolApron) p.blank(xo1, xo2, legsFrom, bottomInner)
         // Legs: outer and inner edges; the backband line just inside the outer edge. On a
         // picture frame with a butted bottom the legs stand on the bottom piece.
         val legTop = if (mitered) headTop else headIn

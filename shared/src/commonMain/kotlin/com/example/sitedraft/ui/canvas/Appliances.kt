@@ -198,6 +198,8 @@ object Appliances {
         fun circle(xc: Float, hc: Float, rIn: Float, sw: Float)
         fun doors(x1: Float, x2: Float, h1: Float, h2: Float, count: Int, knobsLow: Boolean)
         fun drawers(x1: Float, x2: Float, h1: Float, h2: Float, n: Int)
+        /** Hides the wall tile behind an area (no outline); nothing when the wall has no tile. */
+        fun blank(x1: Float, x2: Float, h1: Float, h2: Float) {}
     }
 
     /**

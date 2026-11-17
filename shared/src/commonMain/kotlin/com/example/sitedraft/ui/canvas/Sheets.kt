@@ -177,7 +177,7 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
         // An elevation is drawn from the plan, which is not in the view: hand the page its
         // finished parts instead. No canvas grid on a sheet.
         val shown = Sheets.viewElements(view, state).flatMap { e ->
-            if (e is DrawingElement.ElevationView) Elevation.partsOf(e, state) else listOf(e)
+            if (e is DrawingElement.ElevationView) Elevation.partsOf(e, state.copy(backgroundColor = Color.White)) else listOf(e)
         }
         val pageState = PrintPage.pageState(state, shown, page).copy(background = DrawingBackground.PLAIN)
         val pad = 0.1f * dpi

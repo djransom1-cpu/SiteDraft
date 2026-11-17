@@ -79,6 +79,24 @@ class TrimTest {
     }
 
     @Test
+    fun `the casing hides the wall tile behind it`() {
+        val d = door(30f)
+        val state = CanvasState(elements = listOf(wall, d))
+        val tiled = spec.copy(tileFromIn = 0f, tileToIn = 96f)
+        val parts = Elevation.build(wall, tiled, Offset(0f, 1000f), state)
+        val item = Elevation.itemsOnWall(wall, ViewerSide.BELOW, state).first()
+        val (casL, _) = Trim.outerEdges(item.from, item.to, false, tiled, inch)
+        // A solid, outline-less backing over the left leg of the casing.
+        val backs = parts.filterIsInstance<DrawingElement.Rectangle>().filter {
+            it.color == Color.Transparent && it.fill.pattern == com.example.sitedraft.ui.canvas.FillPattern.SOLID
+        }
+        assertTrue(backs.any { kotlin.math.abs(it.topLeft.x - casL) < 0.01f && it.size.width > 2f * inch })
+        // Without tile there is nothing to hide, so no backing.
+        val plain = Elevation.build(wall, spec, Offset(0f, 1000f), state)
+        assertTrue(plain.filterIsInstance<DrawingElement.Rectangle>().none { it.color == Color.Transparent })
+    }
+
+    @Test
     fun `every head and window style draws`() {
         val window = DrawingElement.Symbol(symbolName = "Window 3'-0\"", category = PlanSymbols.DOORS_WINDOWS, color = Color.White,
             center = Offset(150f * inch, t / 2f), size = Size(36f * inch, 6f * inch))

@@ -227,7 +227,8 @@ object PrintPage {
     fun pageState(state: CanvasState, elements: List<DrawingElement>, layout: PageLayout): CanvasState = state.copy(
         // A live elevation is rebuilt from the plan when drawn, and the plan may not be among
         // [elements] (printing just the elevation): hand the page its finished parts instead.
-        elements = elements.flatMap { e -> if (e is DrawingElement.ElevationView) Elevation.partsOf(e, state) else listOf(e) }
+        // Built against a white canvas, so the solid backing that hides wall tile prints white.
+        elements = elements.flatMap { e -> if (e is DrawingElement.ElevationView) Elevation.partsOf(e, state.copy(backgroundColor = Color.White)) else listOf(e) }
             .map { inkForPaper(it) },
         zoom = layout.zoom,
         pan = layout.pan,

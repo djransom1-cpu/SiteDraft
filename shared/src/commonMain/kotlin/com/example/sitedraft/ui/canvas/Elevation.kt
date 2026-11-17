@@ -510,6 +510,13 @@ object Elevation {
             override fun circle(xc: Float, hc: Float, rIn: Float, sw: Float) = circleFn(xc, hc, rIn, sw)
             override fun doors(x1: Float, x2: Float, h1: Float, h2: Float, count: Int, knobsLow: Boolean) = doorsFn(x1, x2, h1, h2, count, knobsLow)
             override fun drawers(x1: Float, x2: Float, h1: Float, h2: Float, n: Int) = drawersFn(x1, x2, h1, h2, n)
+            override fun blank(x1: Float, x2: Float, h1: Float, h2: Float) {
+                if (!tiled || x2 <= x1 || h2 <= h1) return
+                out += DrawingElement.Rectangle(
+                    topLeft = px(x1, h2), size = Size(x2 - x1, (h2 - h1) * inch),
+                    color = androidx.compose.ui.graphics.Color.Transparent, strokeWidth = 0f, fill = opaque
+                )
+            }
         }
         for (item in items) {
             doorStyle = PlanSymbols.doorStyle(item.symbol)
