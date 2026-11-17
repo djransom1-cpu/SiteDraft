@@ -817,6 +817,44 @@ fun PropertiesPanel(
                         if (spec.crownIn > 0f) {
                             EditableProperty("Crown height (in)", formatInches(spec.crownIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "crownIn", it)) }
                         }
+                        // Door and window trim, and the base.
+                        Text(text = "Door & window trim", style = MaterialTheme.typography.labelLarge)
+                        fun trimSet(key: String, v: String) = onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, key, v))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = !spec.trimOn, onClick = { trimSet("trimOn", "0") }, label = { Text("None") })
+                            FilterChip(selected = spec.trimOn, onClick = { trimSet("trimOn", "1") }, label = { Text("Casing") })
+                        }
+                        if (spec.trimOn) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Trim.casingChoices.forEach { c ->
+                                    FilterChip(selected = kotlin.math.abs(spec.casingIn - c) < 0.01f, onClick = { trimSet("casingIn", c.toString()) }, label = { Text("${formatInches(c)}\" casing") })
+                                }
+                            }
+                            EditableProperty("Casing width (in)", formatInches(spec.casingIn)) { trimSet("casingIn", it) }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Trim.headLabels.forEachIndexed { i, label ->
+                                    FilterChip(selected = spec.headStyle == i, onClick = { trimSet("headStyle", i.toString()) }, label = { Text(label) })
+                                }
+                            }
+                            if (spec.headStyle == Trim.HEAD_CORNICE) {
+                                EditableProperty("Frieze height (in, 5 1/2 min)", formatInches(spec.friezeIn)) { trimSet("friezeIn", it) }
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Trim.windowLabels.forEachIndexed { i, label ->
+                                    FilterChip(selected = spec.windowTrim == i, onClick = { trimSet("windowTrim", i.toString()) }, label = { Text("Windows: $label") })
+                                }
+                            }
+                        }
+                        Text(text = "Base", style = MaterialTheme.typography.labelLarge)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = spec.baseIn <= 0f, onClick = { trimSet("baseIn", "0") }, label = { Text("None") })
+                            Trim.baseChoices.forEach { b ->
+                                FilterChip(selected = kotlin.math.abs(spec.baseIn - b) < 0.01f, onClick = { trimSet("baseIn", b.toString()) }, label = { Text("${formatInches(b)}\"") })
+                            }
+                        }
+                        if (spec.baseIn > 0f) {
+                            EditableProperty("Base height (in)", formatInches(spec.baseIn)) { trimSet("baseIn", it) }
+                        }
                         Text(text = "Valance over the sink", style = MaterialTheme.typography.labelLarge)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             FilterChip(selected = !spec.valance, onClick = { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "valance", "0")) }, label = { Text("No") })

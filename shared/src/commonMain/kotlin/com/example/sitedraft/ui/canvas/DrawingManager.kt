@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlin.math.atan2
 
@@ -293,6 +294,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     _state.value = _state.value.copy(elements = _state.value.elements.map { if (it.id == o.id) updated else it })
                     triggerAutoSave()
                 }
+            }
+            is DrawingEvent.UpdateSheets -> {
+                _state.value = _state.value.copy(sheets = event.sheets)
+                triggerAutoSave()
             }
             is DrawingEvent.ShowCabinetLabels -> {
                 _state.value = _state.value.copy(showCabinetLabels = event.show)
@@ -2709,6 +2714,25 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             if (element !is DrawingElement.ElevationView || v < 0f) return@map element
                             element.copy(spec = element.spec.copy(crownIn = v))
                         }
+                        "trimOn", "casingIn", "headStyle", "windowTrim", "friezeIn", "baseIn" -> {
+                            // Door and window casing and the base on an elevation (Trim.kt).
+                            if (element !is DrawingElement.ElevationView) return@map element
+                            val sp = element.spec
+                            val spec = when (property) {
+                                "trimOn" -> sp.copy(trimOn = value == "1" || value.equals("true", ignoreCase = true))
+                                "headStyle" -> sp.copy(headStyle = (value.toIntOrNull() ?: return@map element).coerceIn(0, 2))
+                                "windowTrim" -> sp.copy(windowTrim = (value.toIntOrNull() ?: return@map element).coerceIn(0, 1))
+                                else -> {
+                                    val v = parseInches(value) ?: return@map element
+                                    when (property) {
+                                        "casingIn" -> if (v > 0f) sp.copy(casingIn = v) else return@map element
+                                        "friezeIn" -> sp.copy(friezeIn = v.coerceAtLeast(Trim.MIN_FRIEZE_IN))
+                                        else -> if (v >= 0f) sp.copy(baseIn = v) else return@map element
+                                    }
+                                }
+                            }
+                            element.copy(spec = spec)
+                        }
                         "valance" -> {
                             if (element !is DrawingElement.ElevationView) return@map element
                             element.copy(spec = element.spec.copy(valance = value == "1" || value.equals("true", ignoreCase = true)))
@@ -3117,6 +3141,16 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
      */
     private fun composePage(settings: PrintSettings, density: Float): Pair<PageSpec, DrawScope.() -> Unit>? {
         val state = _state.value
+        if (settings.subject == PrintSubject.SHEET) {
+            // A sheet of views: its own paper, each view at its own scale (Sheets.kt).
+            val sheet = state.sheets.firstOrNull { it.id == settings.sheetId } ?: state.sheets.firstOrNull()
+            if (sheet == null || sheet.views.isEmpty()) { platform.toast("Add a view to the sheet first"); return null }
+            val dpi = PrintPage.dpiFor(sheet.paper)
+            val (wIn, hIn) = Sheets.paperIn(sheet)
+            val spec = PageSpec((wIn * dpi).roundToInt(), (hIn * dpi).roundToInt(), dpi, density)
+            val date = todayDateText()
+            return spec to { drawSheet(sheet, state, dpi, state.projectName, date) }
+        }
         val elements = PrintPage.subjectElements(state, settings.subject)
         if (elements == null) { platform.toast("Select an elevation view first"); return null }
         val metric = state.unitSystem == UnitSystem.METRIC
@@ -3140,6 +3174,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
 
     /** "Kitchen Remodel - Floor Plan" made safe for a file name. */
     private fun sheetFileStem(settings: PrintSettings): String {
+        if (settings.subject == PrintSubject.SHEET) {
+            val sheet = _state.value.sheets.firstOrNull { it.id == settings.sheetId } ?: _state.value.sheets.firstOrNull()
+            if (sheet != null) return "${_state.value.projectName.trim()} - ${sheet.number} ${sheet.title}".replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+        }
         val sheet = settings.sheetTitle.trim().ifEmpty { PrintPage.defaultSheetTitle(settings.subject) }
         return "${_state.value.projectName.trim()} - $sheet".replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
     }
@@ -3261,6 +3299,8 @@ sealed class DrawingEvent {
      * [outside] corner; with [distance] (feet-inches typed) it slides to sit that far along.
      */
     data class PositionOpening(val id: String, val fromEnd: Boolean, val toCenter: Boolean, val outside: Boolean, val distance: String? = null) : DrawingEvent()
+    /** The project's print sheets, as edited in the Print dialog. */
+    data class UpdateSheets(val sheets: List<SheetLayout>) : DrawingEvent()
     /** Cabinet codes (W2430, BD18...) on the plan, on or off. */
     data class ShowCabinetLabels(val show: Boolean) : DrawingEvent()
     object DeleteSelectedElement : DrawingEvent()

@@ -49,6 +49,17 @@ data class ElevationSpec(
     val crownIn: Float = 0f,
     /** A valance across the gap between two uppers over a sink (the window over the sink). */
     val valance: Boolean = false,
+    /** Door and window casing on this elevation (see [Trim]). */
+    val trimOn: Boolean = false,
+    val casingIn: Float = 2.25f,
+    /** [Trim.HEAD_MITERED], [Trim.HEAD_BACKBAND] or [Trim.HEAD_CORNICE]. */
+    val headStyle: Int = 0,
+    /** 0 picture frame, 1 stool and apron. */
+    val windowTrim: Int = 0,
+    /** Height of a cornice head's frieze, inches (5 1/2" at least). */
+    val friezeIn: Float = 5.5f,
+    /** Baseboard height, inches; 0 = none. */
+    val baseIn: Float = 0f,
 )
 
 /**
@@ -166,6 +177,17 @@ object Elevation {
         val line = spec.upperBottomIn + spec.upperHeightIn
         val own = PlanSymbols.upperHeightOf(upper) ?: return spec.upperBottomIn to line
         return if (own < spec.upperHeightIn) (line - own) to line else spec.upperBottomIn to (spec.upperBottomIn + own)
+    }
+
+    /** Whether [s] stands on the floor in front of the wall (the base stops at it). */
+    fun standsOnFloor(s: DrawingElement.Symbol): Boolean = when {
+        PlanSymbols.isUpperCabinet(s) -> false
+        s.category == PlanSymbols.HOODS -> false
+        s.category == PlanSymbols.APPLIANCES && Appliances.isOverlay(s) -> false
+        s.symbolName == PlanSymbols.WALL_HUNG_SINK -> false
+        s.category == PlanSymbols.FIXTURES && s.symbolName in PlanSymbols.counterSinks -> false
+        s.symbolName.startsWith("TV") && !s.symbolName.startsWith("TV Stand") -> false
+        else -> true
     }
 
     fun lengthPx(wall: DrawingElement.Symbol): Float = if (isHorizontal(wall)) wall.size.width else wall.size.height
@@ -512,13 +534,13 @@ object Elevation {
                         rect(from, to, sill, top, medium)
                         line(xc, sill, xc, top)
                         line(from, (sill + top) / 2f, to, (sill + top) / 2f)
-                        rect(from - inch, to + inch, sill - 1.5f, sill, light) // sill
+                        if (!spec.trimOn) rect(from - inch, to + inch, sill - 1.5f, sill, light) // sill (the trim brings its own stool)
                     }
                     PlanSymbols.isOpening(name) -> {
                         // Cased opening: the hole with its casing, nothing hung in it.
                         val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
                         rect(from, to, 0f, doorH, medium)
-                        rect(from - 2f * inch, to + 2f * inch, 0f, doorH + 2f, light)
+                        if (!spec.trimOn) rect(from - 2f * inch, to + 2f * inch, 0f, doorH + 2f, light)
                     }
                     PlanSymbols.isSlidingDoor(name) -> {
                         val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
@@ -826,6 +848,27 @@ object Elevation {
                 }
             }
         }
+
+        // Door and window casing, and the base, which stops at the door casing and at anything
+        // standing on the floor.
+        val openings = items.filter { it.kind == Kind.OPENING }
+        val blocked = mutableListOf<Pair<Float, Float>>()
+        for (it in items) {
+            when (it.kind) {
+                Kind.CUT_WALL -> blocked += it.from to it.to
+                Kind.FIXTURE -> if (standsOnFloor(it.symbol)) blocked += it.from to it.to
+                Kind.OPENING -> Unit
+            }
+        }
+        for (o in openings) {
+            val props = o.symbol.properties
+            val window = PlanSymbols.isWindow(o.symbol.symbolName)
+            val bottom = if (window) props[PlanSymbols.PROP_SILL_IN] ?: spec.sillIn else 0f
+            val top = if (window) bottom + (props[PlanSymbols.PROP_HEIGHT_IN] ?: spec.windowHeightIn) else props[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
+            if (spec.trimOn) Trim.drawOpening(appliancePen, o.from, o.to, bottom, top, window, spec)
+            if (!window) blocked += if (spec.trimOn) Trim.outerEdges(o.from, o.to, false, spec, inch) else (o.from to o.to)
+        }
+        Trim.drawBase(appliancePen, length, blocked, spec)
 
         // Crown molding along the tops of the uppers and pantries: one piece per stretch at the
         // same top, returned 1 1/2" past each open end, stopping at the ceiling.

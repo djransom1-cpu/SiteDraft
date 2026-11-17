@@ -139,7 +139,7 @@ object HelpContent {
         ),
         HelpTopic(
             title = "Elevations",
-            keywords = "elevation wall view side counter uppers heights place live explode print island",
+            keywords = "elevation wall view side counter uppers heights place live explode print island trim casing base baseboard backband cornice stool apron picture frame",
             lines = listOf(
                 "An elevation is built from the plan: everything against the wall, its doors and windows, and walls that butt into it, at the plan's scale.",
                 "1. Choose Select and tap the wall on the plan.",
@@ -151,6 +151,7 @@ object HelpContent {
                 "It stays live: change the plan and the elevation redraws. Select it to change its heights or side in Properties.",
                 "To edit by hand, select it and tap Explode. It becomes plain lines and no longer follows the plan.",
                 "To print just the elevation, select it, tap Print and choose Selected elevation.",
+                "Door & window trim: select the elevation, under Door & window trim tap Casing, pick 2 1/4\" or 3 1/4\" (or type a width), the head (Mitered; Backband, legs butt into the head; Cornice head with a 5 1/2\" or taller frieze, bed mold and cap) and Windows: Picture frame or Stool & apron. Doors are cased 3/16\" back from the jamb (a 3-0 door with 2 1/4\" casing is 40 7/8\" outside to outside); windows are sized to the outside of the jamb and cased 9/16\" in from it. Base: pick 3 1/4\", 4 1/4\", 5 1/4\" or type it; it stops at the door casing and at cabinets and anything on the floor.",
                 "Crown and valance: select the elevation; under Crown molding tap Crown (3 1/2\" to start, change the height) and under Valance over the sink tap Yes. The valance spans the gap between two uppers with a sink under it.",
                 "Uppers over a range or sink: select that upper on the plan and set its Upper height (18\", 24\"...). A shorter upper keeps the top line and its bottom rises; a taller one (42\") keeps the bottom and goes up.",
                 "Island: select the island, tap Plan, and under Elevation pick Front, Back, Left end or Right end, then Place island elevation. It shows the island's fronts, door style, hardware and countertop overhang, and stays live.",
@@ -193,14 +194,15 @@ object HelpContent {
         ),
         HelpTopic(
             title = "Printing and PDF",
-            keywords = "print paper letter tabloid arch scale sheet title export pdf",
+            keywords = "print paper letter tabloid arch scale sheet title export pdf large format views layout title block 24x36 30x42",
             lines = listOf(
                 "1. Tap Print (top bar, far right).",
                 "2. Under What to print, pick Whole drawing, Current view or Selected elevation.",
-                "3. Pick the Paper (Letter, Legal, Tabloid 11x17, Arch C 18x24, Arch D 24x36) and Portrait or Landscape.",
+                "3. Pick the Paper (Letter, Legal, Tabloid 11x17, Arch C 18x24, Arch D 24x36, Arch E1 30x42) and Portrait or Landscape.",
                 "4. Set the Scale and a Sheet title.",
                 "5. Tap Print, or Export PDF to save a file you can email.",
                 "Printing always uses black ink, even on the Blueprint canvas.",
+                "Large-format sheets: under What to print pick Sheet with views, then New sheet. It starts with the floor plan at 1/4\" = 1'-0\". Add elevations (they start at 1/2\"), pick each view's own scale, and drag the views where you want them on the preview. Set the sheet number, title, Drawn by and paper. The title block runs down the right edge. Sheets are saved with the project; make as many as you need.",
             ),
         ),
         HelpTopic(

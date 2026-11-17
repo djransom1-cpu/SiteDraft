@@ -371,6 +371,8 @@ data class CanvasState(
     val dimensionFormat: DimensionFormat = DimensionFormat.ARCHITECTURAL,
     // Cabinet codes (W2430, BD18...) drawn on the plan's cabinets.
     val showCabinetLabels: Boolean = true,
+    // Large-format print sheets of views (Print > Sheet with views).
+    val sheets: List<SheetLayout> = emptyList(),
     val zoom: Float = 1f,
     @Serializable(with = OffsetSerializer::class)
     val pan: Offset = Offset.Zero,

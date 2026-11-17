@@ -21,6 +21,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
+import com.example.sitedraft.ui.canvas.SheetLayout
 import androidx.compose.ui.unit.dp
 import com.example.sitedraft.platform.LocalPlatform
 import com.example.sitedraft.ui.canvas.CanvasState
@@ -52,6 +54,7 @@ fun PrintDialog(
     primary: PrintAction,
     onPrint: (PrintSettings) -> Unit,
     onExportPdf: (PrintSettings) -> Unit,
+    onSheetsChange: (List<SheetLayout>) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val prefs = LocalPlatform.current.prefs
@@ -71,17 +74,22 @@ fun PrintDialog(
         PrintPage.layout(settings, PrintPage.subjectBounds(state, settings.subject), PrintPage.worldPxPerInch(state), metric)
     }
     val empty = PrintPage.subjectBounds(state, settings.subject) == null
+    var sheetId by remember { mutableStateOf(state.sheets.firstOrNull()?.id) }
+    val sheetMode = settings.subject == PrintSubject.SHEET
 
     fun commit(action: (PrintSettings) -> Unit) {
         prefs.putString(PREF_PAPER, settings.paper.name)
         prefs.putString(PREF_ORIENTATION, settings.orientation.name)
         prefs.putString(PREF_SCALE, settings.scale.name)
-        action(settings)
+        action(settings.copy(sheetId = sheetId ?: state.sheets.firstOrNull()?.id))
         onDismiss()
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        // A sheet of views needs room for its preview: the dialog widens to most of the window.
+        properties = DialogProperties(usePlatformDefaultWidth = !sheetMode),
+        modifier = if (sheetMode) Modifier.fillMaxWidth(0.95f) else Modifier,
         // Match the Settings/Properties panels: the default light dialog surface renders the
         // Blueprint theme's white text nearly invisible.
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -115,6 +123,9 @@ fun PrintDialog(
                     }
                 }
 
+                if (sheetMode) {
+                    SheetEditor(state, sheetId, onSelect = { sheetId = it }, onSheetsChange = onSheetsChange)
+                } else {
                 Text("Paper", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PaperSize.entries.forEach { paper ->
@@ -171,6 +182,7 @@ fun PrintDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
+                }
                 }
             }
         }

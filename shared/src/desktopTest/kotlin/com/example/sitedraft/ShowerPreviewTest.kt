@@ -20,6 +20,7 @@ import com.example.sitedraft.ui.canvas.PlanSymbols
 import com.example.sitedraft.ui.canvas.Shower
 import com.example.sitedraft.ui.canvas.ViewerSide
 import com.example.sitedraft.ui.canvas.drawDocumentContents
+import com.example.sitedraft.ui.canvas.drawSheet
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -235,6 +236,43 @@ class ShowerPreviewTest {
         val all = plan + view
         val dims = com.example.sitedraft.ui.canvas.AutoDimension.elevation(view, CanvasState(elements = all, backgroundColor = Color.White))
         render("kitchen-dimensions.png", all + dims, 1450, 1050)
+
+        // The same kitchen on a 24 x 36 sheet: the plan at 1/4", the elevation at 1/2", at 30 dpi.
+        val S = com.example.sitedraft.ui.canvas.Sheets
+        val withDims = CanvasState(elements = all + dims, backgroundColor = Color.White)
+        var sheet = com.example.sitedraft.ui.canvas.SheetLayout(number = "A-1", title = "Kitchen", drawnBy = "D. Ransom")
+        sheet = sheet.copy(views = listOf(S.placed(sheet, com.example.sitedraft.ui.canvas.SheetView(kind = com.example.sitedraft.ui.canvas.SheetViewKind.PLAN, title = "Floor Plan"), withDims)))
+        sheet = sheet.copy(views = sheet.views + S.placed(sheet, com.example.sitedraft.ui.canvas.SheetView(
+            kind = com.example.sitedraft.ui.canvas.SheetViewKind.ELEVATION, elementId = view.id, title = "Elevation 1",
+            scale = com.example.sitedraft.ui.canvas.PrintScale.HALF), withDims))
+        val dpi = 30f
+        val bitmap = ImageBitmap((36 * dpi).toInt(), (24 * dpi).toInt())
+        CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bitmap), Size(36 * dpi, 24 * dpi)) {
+            drawSheet(sheet, withDims, dpi, "Martin Cottage", "11/17/2026")
+        }
+        val out = File(File("build/previews").apply { mkdirs() }, "sheet-arch-d.png")
+        ImageIO.write(bitmap.toAwtImage(), "png", out)
+        assertTrue(out.exists())
+    }
+
+    @Test
+    fun `render door and window trim`() {
+        val t = 4.5f * inch
+        val wall = DrawingElement.Symbol(symbolName = "2x4 Wall", category = PlanSymbols.WALLS, center = Offset(600f, 100f), size = Size(1200f, t), color = ink)
+        val w = 36f * inch
+        fun door(x: Float) = DrawingElement.Symbol(symbolName = "Door 3'-0\"", category = PlanSymbols.DOORS_WINDOWS, color = ink,
+            center = Offset(x + w / 2f, 100f - w / 2f), size = Size(w, w))
+        fun window(x: Float) = DrawingElement.Symbol(symbolName = "Window 3'-0\"", category = PlanSymbols.DOORS_WINDOWS, color = ink,
+            center = Offset(x + w / 2f, 100f), size = Size(w, 6f * inch))
+        val plan = listOf(wall, door(60f), window(330f), door(620f), window(900f))
+        val state = CanvasState(elements = plan)
+        val a = ElevationSpec(wallId = wall.id, side = ViewerSide.BELOW, trimOn = true, baseIn = 5.25f)
+        val b = a.copy(headStyle = 1, windowTrim = 1, casingIn = 3.25f)
+        val c = a.copy(headStyle = 2, windowTrim = 1, friezeIn = 7f)
+        val views = listOf(a to 650f, b to 1150f, c to 1650f).map { (spec, y) ->
+            DrawingElement.ElevationView(spec = spec, origin = Offset(0f, y), size = Elevation.sizePx(wall, spec, state), color = ink)
+        }
+        render("trim.png", plan + views, 1250, 1700)
     }
 
     @Test

@@ -33,7 +33,8 @@ enum class PaperSize(val label: String, val shortIn: Float, val longIn: Float) {
     LEGAL("Legal 8½×14", 8.5f, 14f),
     TABLOID("Tabloid 11×17", 11f, 17f),
     ARCH_C("Arch C 18×24", 18f, 24f),
-    ARCH_D("Arch D 24×36", 24f, 36f);
+    ARCH_D("Arch D 24×36", 24f, 36f),
+    ARCH_E1("Arch E1 30×42", 30f, 42f);
 }
 
 enum class PageOrientation(val label: String) { PORTRAIT("Portrait"), LANDSCAPE("Landscape") }
@@ -46,6 +47,7 @@ enum class PrintScale(val label: String, val denominator: Int?) {
     FIT("Fit to page", null),
     EIGHTH("1/8\" = 1'-0\"", 96),
     QUARTER("1/4\" = 1'-0\"", 48),
+    THREE_EIGHTHS("3/8\" = 1'-0\"", 32),
     HALF("1/2\" = 1'-0\"", 24),
     THREE_QUARTER("3/4\" = 1'-0\"", 16),
     ONE("1\" = 1'-0\"", 12);
@@ -54,7 +56,9 @@ enum class PrintScale(val label: String, val denominator: Int?) {
 enum class PrintSubject(val label: String) {
     WHOLE_DRAWING("Whole drawing"),
     CURRENT_VIEW("Current view"),
-    SELECTED_ELEVATION("Selected elevation");
+    SELECTED_ELEVATION("Selected elevation"),
+    /** A large-format sheet of views, each at its own scale (see [Sheets]). */
+    SHEET("Sheet with views");
 }
 
 data class PrintSettings(
@@ -63,7 +67,9 @@ data class PrintSettings(
     val orientation: PageOrientation = PageOrientation.LANDSCAPE,
     val scale: PrintScale = PrintScale.FIT,
     /** Blank = a default from the subject ("Floor Plan", "Elevation"). */
-    val sheetTitle: String = ""
+    val sheetTitle: String = "",
+    /** The sheet printed when [subject] is [PrintSubject.SHEET]. */
+    val sheetId: String? = null
 )
 
 /** What goes in the strip along the bottom of the sheet. */
@@ -187,7 +193,7 @@ object PrintPage {
 
     /** The subject's extent in world px, or null for an empty drawing. */
     fun subjectBounds(state: CanvasState, subject: PrintSubject): Rect? = when (subject) {
-        PrintSubject.WHOLE_DRAWING -> union(state.elements.map { it.boundingRect() })
+        PrintSubject.WHOLE_DRAWING, PrintSubject.SHEET -> union(state.elements.map { it.boundingRect() })
         PrintSubject.CURRENT_VIEW -> {
             val v = state.viewportSize
             if (v == Size.Zero) union(state.elements.map { it.boundingRect() })
@@ -219,7 +225,10 @@ object PrintPage {
      * a blueprint-blue page state came out as light cyan lines on the white sheet.
      */
     fun pageState(state: CanvasState, elements: List<DrawingElement>, layout: PageLayout): CanvasState = state.copy(
-        elements = elements.map { inkForPaper(it) },
+        // A live elevation is rebuilt from the plan when drawn, and the plan may not be among
+        // [elements] (printing just the elevation): hand the page its finished parts instead.
+        elements = elements.flatMap { e -> if (e is DrawingElement.ElevationView) Elevation.partsOf(e, state) else listOf(e) }
+            .map { inkForPaper(it) },
         zoom = layout.zoom,
         pan = layout.pan,
         backgroundColor = Color.White,
@@ -311,7 +320,7 @@ private fun DrawScope.drawTitleBlock(layout: PageLayout, block: TitleBlock, line
 }
 
 /** One line of page text anchored at its top-left, clipped to [maxWidth]. */
-private fun DrawScope.drawPageText(text: String, topLeft: Offset, sizePx: Float, color: Color, bold: Boolean, maxWidth: Float) {
+internal fun DrawScope.drawPageText(text: String, topLeft: Offset, sizePx: Float, color: Color, bold: Boolean, maxWidth: Float) {
     val measurer = TextDrawing.measurer ?: return
     val style = TextStyle(color = color, fontSize = sizePx.toSp(), fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
     val layout = measurer.measure(AnnotatedString(text), style, maxLines = 1, softWrap = false)

@@ -468,6 +468,7 @@ fun MainScreen(
             primary = action,
             onPrint = { viewModel.onEvent(DrawingEvent.Print(it, density)) },
             onExportPdf = { viewModel.onEvent(DrawingEvent.ExportPdf(it, density)) },
+            onSheetsChange = { viewModel.onEvent(DrawingEvent.UpdateSheets(it)) },
             onDismiss = { printDialog = null }
         )
     }
