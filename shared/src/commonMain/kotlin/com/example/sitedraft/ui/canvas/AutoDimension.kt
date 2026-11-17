@@ -278,8 +278,9 @@ object AutoDimension {
             if (it.kind != Elevation.Kind.FIXTURE) continue
             val s = it.symbol
             if (PlanSymbols.isUpperCabinet(s)) {
-                hs += spec.upperBottomIn
-                hs += spec.upperBottomIn + spec.upperHeightIn
+                val (bottom, top) = Elevation.upperSpan(s, spec)
+                hs += bottom
+                hs += top
             } else if (Elevation.sitsAtCounter(s)) {
                 hs += if (s.category == PlanSymbols.CABINETS && PlanSymbols.isVanity(s.symbolName)) PlanSymbols.vanityTop(s) else spec.counterHeightIn
             }

@@ -636,6 +636,32 @@ fun PropertiesPanel(
                                 }
                             }
                             if (selectedElement.category == PlanSymbols.DOORS_WINDOWS) {
+                                // Where it sits along its wall, measured the way it is laid out on site.
+                                val host = OpeningPosition.hostWall(selectedElement, state)
+                                if (host != null) {
+                                    val ref = OpeningPosition.ref(selectedElement)
+                                    val horizontal = Elevation.isHorizontal(host)
+                                    fun position(fromEnd: Boolean = ref.fromEnd, toCenter: Boolean = ref.toCenter, outside: Boolean = ref.outside, distance: String? = null) =
+                                        onEvent(DrawingEvent.PositionOpening(selectedElement.id, fromEnd, toCenter, outside, distance))
+                                    Text(text = "Position on the wall", style = MaterialTheme.typography.labelLarge)
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        FilterChip(selected = !ref.fromEnd, onClick = { position(fromEnd = false) }, label = { Text(if (horizontal) "From left" else "From top") })
+                                        FilterChip(selected = ref.fromEnd, onClick = { position(fromEnd = true) }, label = { Text(if (horizontal) "From right" else "From bottom") })
+                                    }
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        FilterChip(selected = !ref.toCenter, onClick = { position(toCenter = false) }, label = { Text("To near edge") })
+                                        FilterChip(selected = ref.toCenter, onClick = { position(toCenter = true) }, label = { Text("To centre") })
+                                    }
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        FilterChip(selected = !ref.outside, onClick = { position(outside = false) }, label = { Text("Inside corner") })
+                                        FilterChip(selected = ref.outside, onClick = { position(outside = true) }, label = { Text("Outside corner") })
+                                    }
+                                    val d = OpeningPosition.distance(selectedElement, state, ref)
+                                    EditableProperty(
+                                        if (state.unitSystem == UnitSystem.IMPERIAL) "Distance (12'-6\")" else "Distance (m)",
+                                        d?.let { formatLength(it / state.scale.ratio, state.unitSystem) } ?: ""
+                                    ) { position(distance = it) }
+                                }
                                 val isWindow = PlanSymbols.isWindow(selectedElement.symbolName)
                                 if (isWindow) {
                                     val sill = selectedElement.properties[PlanSymbols.PROP_SILL_IN] ?: 36f
@@ -778,6 +804,28 @@ fun PropertiesPanel(
                             EditableProperty("Tile height (in)", formatInches(spec.tileSizeIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileSizeIn", it)) }
                             EditableProperty("Tile length (in, 0 = square)", formatInches(spec.tileLengthIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileLengthIn", it)) }
                         }
+                        // Crown on the uppers, and a valance over the sink.
+                        Text(text = "Crown molding", style = MaterialTheme.typography.labelLarge)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = spec.crownIn <= 0f, onClick = {
+                                onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "crownIn", "0"))
+                            }, label = { Text("None") })
+                            FilterChip(selected = spec.crownIn > 0f, onClick = {
+                                if (spec.crownIn <= 0f) onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "crownIn", "3.5"))
+                            }, label = { Text("Crown") })
+                        }
+                        if (spec.crownIn > 0f) {
+                            EditableProperty("Crown height (in)", formatInches(spec.crownIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "crownIn", it)) }
+                        }
+                        Text(text = "Valance over the sink", style = MaterialTheme.typography.labelLarge)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = !spec.valance, onClick = { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "valance", "0")) }, label = { Text("No") })
+                            FilterChip(selected = spec.valance, onClick = { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "valance", "1")) }, label = { Text("Yes") })
+                        }
+                        Text(
+                            "Crown runs along the tops of the uppers and pantries. The valance spans the gap between two uppers with a sink under it. To raise one upper (over a range or sink), select it on the plan and set its Upper height: shorter ones keep the top line.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                         }
                         // Dimensions in one tap; ordinary dimensions afterwards, so each can be edited.
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

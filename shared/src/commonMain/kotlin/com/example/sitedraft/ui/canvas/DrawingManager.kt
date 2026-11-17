@@ -273,6 +273,27 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             }
             is DrawingEvent.ToggleSnap -> _state.value = _state.value.copy(snapEnabled = event.enabled)
             is DrawingEvent.ToggleGridSnap -> _state.value = _state.value.copy(snapToGrid = event.enabled)
+            is DrawingEvent.PositionOpening -> {
+                // A door or window's position along its wall: the way it is measured, and (when
+                // a distance is typed) slid along the wall to sit that far from the chosen end.
+                val s = _state.value
+                val o = s.elements.find { it.id == event.id } as? DrawingElement.Symbol
+                if (o != null && o.category == PlanSymbols.DOORS_WINDOWS) {
+                    var updated = o.copy(properties = o.properties +
+                        (OpeningPosition.PROP_FROM_END to if (event.fromEnd) 1f else 0f) +
+                        (OpeningPosition.PROP_TO_CENTER to if (event.toCenter) 1f else 0f) +
+                        (OpeningPosition.PROP_OUTSIDE to if (event.outside) 1f else 0f))
+                    val typed = event.distance?.let { t ->
+                        if (s.unitSystem == UnitSystem.METRIC) t.trim().removeSuffix("m").trim().toFloatOrNull() else parseFeet(t)
+                    }
+                    if (typed != null && typed >= 0f) {
+                        OpeningPosition.placed(updated, s, typed * s.scale.ratio)?.let { updated = it }
+                    }
+                    pushUndoSnapshot()
+                    _state.value = _state.value.copy(elements = _state.value.elements.map { if (it.id == o.id) updated else it })
+                    triggerAutoSave()
+                }
+            }
             is DrawingEvent.ShowCabinetLabels -> {
                 _state.value = _state.value.copy(showCabinetLabels = event.show)
                 triggerAutoSave()
@@ -2683,6 +2704,15 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             val v = parseInches(value) ?: return@map element
                             if (element is DrawingElement.Symbol && v > 0f) element.copy(properties = element.properties + (property to v)) else element
                         }
+                        "crownIn" -> {
+                            val v = parseInches(value) ?: return@map element
+                            if (element !is DrawingElement.ElevationView || v < 0f) return@map element
+                            element.copy(spec = element.spec.copy(crownIn = v))
+                        }
+                        "valance" -> {
+                            if (element !is DrawingElement.ElevationView) return@map element
+                            element.copy(spec = element.spec.copy(valance = value == "1" || value.equals("true", ignoreCase = true)))
+                        }
                         "islandFace" -> {
                             val v = value.toIntOrNull() ?: return@map element
                             if (element !is DrawingElement.ElevationView || v !in 0..3) return@map element
@@ -3225,6 +3255,12 @@ sealed class DrawingEvent {
     object NewProject : DrawingEvent()
     data class ToggleSnap(val enabled: Boolean) : DrawingEvent()
     data class ToggleGridSnap(val enabled: Boolean) : DrawingEvent()
+    /**
+     * A door or window's position on its wall: measured from the left/top end ([fromEnd] false)
+     * or the right/bottom end, to its near edge or [toCenter], from the inside corner or the
+     * [outside] corner; with [distance] (feet-inches typed) it slides to sit that far along.
+     */
+    data class PositionOpening(val id: String, val fromEnd: Boolean, val toCenter: Boolean, val outside: Boolean, val distance: String? = null) : DrawingEvent()
     /** Cabinet codes (W2430, BD18...) on the plan, on or off. */
     data class ShowCabinetLabels(val show: Boolean) : DrawingEvent()
     object DeleteSelectedElement : DrawingEvent()

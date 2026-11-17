@@ -30,11 +30,67 @@ object CabinetList {
         return area to (if (named) first!! else "Room $size")
     }
 
-    private fun description(s: DrawingElement.Symbol): String {
+    /** [p] lies on [s] as drawn (turned with it). */
+    private fun hits(s: DrawingElement.Symbol, p: Offset): Boolean {
+        val local = rotateAbout(p, s.center, -s.rotation) - s.center
+        return kotlin.math.abs(local.x) <= s.size.width / 2f && kotlin.math.abs(local.y) <= s.size.height / 2f
+    }
+
+    /** Things at the same level as [c] that close off its side: what is beside a base, or beside an upper. */
+    private fun closesSide(c: DrawingElement.Symbol, other: DrawingElement.Symbol): Boolean {
+        if (other.id == c.id) return false
+        val upper = PlanSymbols.isUpperCabinet(c)
+        return when (other.category) {
+            PlanSymbols.WALLS -> true
+            PlanSymbols.CABINETS -> {
+                val otherUpper = PlanSymbols.isUpperCabinet(other)
+                val tall = other.symbolName.startsWith("Pantry") || PlanSymbols.isLinenTower(other.symbolName)
+                if (upper) otherUpper || tall else !otherUpper
+            }
+            PlanSymbols.HOODS -> upper
+            PlanSymbols.APPLIANCES -> if (upper) Appliances.isWallOven(other.symbolName) || Appliances.isFridge(other.symbolName)
+                else !Appliances.isOverlay(other)
+            PlanSymbols.FIXTURES, PlanSymbols.OUTDOOR, PlanSymbols.SHOWERS, PlanSymbols.STAIRS -> !upper
+            else -> false
+        }
+    }
+
+    /**
+     * Which ends of [c] are open to the room and need finishing, as you face its front: left,
+     * right. An end counts as open when nothing at its level (a cabinet, an appliance, a wall)
+     * stands against it. Islands are finished all round and fillers are not finished; both null.
+     */
+    fun finishedEnds(c: DrawingElement.Symbol, state: CanvasState): Pair<Boolean, Boolean>? {
+        if (c.category != PlanSymbols.CABINETS || PlanSymbols.isIsland(c) || PlanSymbols.isFiller(c.symbolName)) return null
+        val inch = state.inchesToPx(1f)
+        val others = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { closesSide(c, it) }
+        val hw = c.size.width / 2f
+        val hh = c.size.height / 2f
+        fun open(sign: Float): Boolean {
+            // Three points just past that end, along the cabinet's depth.
+            val covered = listOf(-0.6f, 0f, 0.6f).count { f ->
+                val world = rotateAbout(c.center + Offset(sign * (hw + inch), f * hh), c.center, c.rotation)
+                others.any { o -> if (o.category == PlanSymbols.WALLS) FloorPlan.bounds(o).contains(world) else hits(o, world) }
+            }
+            return covered < 2
+        }
+        // Facing the front (the symbol's bottom edge), the left end is its -x side.
+        return open(-1f) to open(1f)
+    }
+
+    private fun finishNote(ends: Pair<Boolean, Boolean>?): String? = when (ends) {
+        true to true -> "finish both ends"
+        true to false -> "finish left end"
+        false to true -> "finish right end"
+        else -> null
+    }
+
+    private fun description(s: DrawingElement.Symbol, state: CanvasState): String {
         val parts = mutableListOf(s.symbolName)
         if (PlanSymbols.hasFrontChoice(s)) parts += PlanSymbols.frontLabels.getOrElse(PlanSymbols.front(s)) { "" }
         if (PlanSymbols.isUpperCabinet(s)) PlanSymbols.upperHeightOf(s)?.let { parts += "${PlanSymbols.codeInches(it)}\" high" }
         if (PlanSymbols.hasStyleChoice(s)) parts += PlanSymbols.styleLabels.getOrElse(PlanSymbols.doorStyle(s)) { "" }
+        finishNote(finishedEnds(s, state))?.let { parts += it }
         return parts.filter { it.isNotBlank() }.joinToString(", ")
     }
 
@@ -44,7 +100,7 @@ object CabinetList {
         for (c in cabinets) {
             val code = PlanSymbols.cabinetLabel(c, state) ?: continue
             val room = roomAt(c.center, state)?.second ?: NO_ROOM
-            val key = Triple(room, code, description(c))
+            val key = Triple(room, code, description(c, state))
             counted[key] = (counted[key] ?: 0) + 1
         }
         return counted.map { (k, n) -> Row(k.first, k.second, k.third, n) }

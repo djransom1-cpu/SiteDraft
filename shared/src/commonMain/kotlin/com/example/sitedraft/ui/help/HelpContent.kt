@@ -57,13 +57,14 @@ object HelpContent {
         ),
         HelpTopic(
             title = "Doors and windows",
-            keywords = "door window opening sliding hinge swing sill height rotate",
+            keywords = "door window opening sliding hinge swing sill height rotate position distance locate from corner center centre edge",
             lines = listOf(
                 "1. Open Plan and scroll to Doors & windows.",
                 "2. Pick one: Door 2'-6\", 2'-8\" or 3'-0\"; Sliding Door 6'-0\"; Opening 2'-6\" to 6'-0\"; Window 3'-0\", 4'-0\" or 6'-0\".",
                 "3. Tap the wall. For a swinging door, the spot you tap is the hinge, at the bottom-left corner of the swing.",
                 "4. Swings the wrong way? Select the door and, under Swing in Properties, tap Swap hinge side (other jamb) or Swing to other side (other side of the wall). The door stays in its opening.",
                 "5. In Properties, set this opening's Door height, Window height or Sill height. Elevations use these numbers.",
+                "6. Exact spot: under Position on the wall pick From left or From right (From top or From bottom on an up-down wall), To near edge or To centre, and Inside corner (the room's wall face) or Outside corner (the building's outside), then type the Distance, e.g. 3'-6\". It slides along the wall to that spot; the distance always reads back the way you chose.",
             ),
         ),
         HelpTopic(
@@ -76,7 +77,7 @@ object HelpContent {
                 "4. Push cabinets and fixtures right against the wall face so elevations show them.",
                 "5. Select a cabinet to choose its Fronts (doors, drawer over doors, 3 or 4 drawers) and how many Doors it has.",
                 "Cabinet codes show on the plan: B24 base, BD18 drawer base (3 or 4 drawers), SB36 sink base (a sink in its top), LS36 corner base, W2430 wall cabinet (24\" wide, 30\" high), WDC2430 diagonal corner, P2484 pantry, V30 vanity, VD18 vanity drawers, LT18 linen tower, ISL72 island, BF3 / WF3 fillers. Select an upper to set its own height (36\" makes it W2436). Turn the codes off under Plan > Cabinets.",
-                "Cabinet list: Plan > Cabinets lists every cabinet by room and code (the room comes from its room label). Copy it and paste into Excel.",
+                "Cabinet list: Plan > Cabinets lists every cabinet by room and code (the room comes from its room label). A cabinet whose end is open to the room says finish left end, finish right end or finish both ends (as you face it). Copy it and paste into Excel.",
                 "Appliances: ranges (30\", 36\", 48\", slide-in), cooktops, wall ovens, an over-the-range microwave, a microwave drawer, refrigerators (30\" to 48\" built-in), wine, beverage and ice units and an 18\" dishwasher. Hoods: chimney, under-cabinet, island and custom wood hoods; select a hood to set its bottom height and, for a wood hood, its shape (box, tapered, curved), whether it goes to the uppers or the ceiling, and corbels.",
                 "Door style: select a cabinet and pick Slab, Shaker, Raised panel or Glass, and its Hardware (knobs with drawer pulls, bar pulls, or knobs). Use this style and hardware on all cabinets sets every cabinet at once.",
                 "6. Bathroom vanities are under Cabinets: 18\" to 48\" single, 60\" and 72\" double, drawer bases and a linen tower. Select one to set its Sinks (by size, 1, 2 or none) and Vanity height (36\" comfort height to start; 32\" is the older standard).",
@@ -150,6 +151,8 @@ object HelpContent {
                 "It stays live: change the plan and the elevation redraws. Select it to change its heights or side in Properties.",
                 "To edit by hand, select it and tap Explode. It becomes plain lines and no longer follows the plan.",
                 "To print just the elevation, select it, tap Print and choose Selected elevation.",
+                "Crown and valance: select the elevation; under Crown molding tap Crown (3 1/2\" to start, change the height) and under Valance over the sink tap Yes. The valance spans the gap between two uppers with a sink under it.",
+                "Uppers over a range or sink: select that upper on the plan and set its Upper height (18\", 24\"...). A shorter upper keeps the top line and its bottom rises; a taller one (42\") keeps the bottom and goes up.",
                 "Island: select the island, tap Plan, and under Elevation pick Front, Back, Left end or Right end, then Place island elevation. It shows the island's fronts, door style, hardware and countertop overhang, and stays live.",
                 "Wall tile: select the elevation and under Wall tile choose Backsplash (counter to uppers, over the cabinet run only), Full wall, or set your own From and To heights, the pattern and the tile size. Tile runs: Whole wall, or Over the cabinet run only - it then stops at the ends of the base cabinets, carrying on behind a range but not past a refrigerator, a tall cabinet or open wall. Cabinets, windows and doors cover the tile behind them.",
             ),

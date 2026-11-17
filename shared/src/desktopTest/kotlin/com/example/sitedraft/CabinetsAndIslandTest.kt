@@ -61,7 +61,9 @@ class CabinetsAndIslandTest {
         val cabs = listOf(cab("Base 24\"", 4.5f, 4.5f), cab("Base 24\"", 28.5f, 4.5f), cab("Upper 24\"", 4.5f, 4.5f), cab("Base 30\"", 160f, 4.5f))
         val rows = CabinetList.rows(CanvasState(elements = walls + label + cabs))
         val kitchen = rows.filter { it.room == "Kitchen" }
-        assertEquals(listOf("B24" to 2, "W2430" to 1), kitchen.map { it.code to it.qty })
+        // By code (a B24 with an open end lists apart from one without, so add them up).
+        assertEquals(mapOf("B24" to 2, "W2430" to 1), kitchen.groupBy { it.code }.mapValues { (_, r) -> r.sumOf { it.qty } })
+        assertTrue(kitchen.any { it.code == "B24" && it.description.endsWith("finish right end") })
         val other = rows.filter { it.room != "Kitchen" }
         assertEquals(1, other.size)
         assertTrue(other[0].room.startsWith("Room "))

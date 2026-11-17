@@ -45,6 +45,10 @@ data class ElevationSpec(
     val stairSide: Int = -1,
     /** Set (0 front, 1 back, 2 left end, 3 right end) when [wallId] is an island: that face of it. */
     val islandFace: Int = -1,
+    /** Crown molding on top of the uppers (and pantries), this tall in inches; 0 = none. */
+    val crownIn: Float = 0f,
+    /** A valance across the gap between two uppers over a sink (the window over the sink). */
+    val valance: Boolean = false,
 )
 
 /**
@@ -151,6 +155,17 @@ object Elevation {
             PlanSymbols.OUTDOOR -> true
             else -> false
         }
+    }
+
+    /**
+     * Bottom and top (inches) of an upper. Uppers line up at the top: one shorter than the
+     * elevation's "Uppers high" (an 18" one over the range, 24" over the sink) keeps the top line
+     * and its bottom rises; a taller one (42") keeps the bottom and its top rises.
+     */
+    fun upperSpan(upper: DrawingElement.Symbol, spec: ElevationSpec): Pair<Float, Float> {
+        val line = spec.upperBottomIn + spec.upperHeightIn
+        val own = PlanSymbols.upperHeightOf(upper) ?: return spec.upperBottomIn to line
+        return if (own < spec.upperHeightIn) (line - own) to line else spec.upperBottomIn to (spec.upperBottomIn + own)
     }
 
     fun lengthPx(wall: DrawingElement.Symbol): Float = if (isHorizontal(wall)) wall.size.width else wall.size.height
@@ -443,6 +458,8 @@ object Elevation {
 
         val counterTop = spec.counterHeightIn
         val counterRuns = mutableListOf<Pair<Float, Float>>()
+        // Uppers and pantries (from, to, bottom, top), for the crown and the valance.
+        val upperRuns = mutableListOf<FloatArray>()
         val items = itemsOnWall(wall, spec.side, state)
         // Vanities carry their own top height; sinks set into a vanity sit at that height
         // instead of the kitchen counter's. Vanity tops are kept apart from the counter runs.
@@ -532,6 +549,7 @@ object Elevation {
                         // A blank strip at base or upper height, no door.
                         if (name.startsWith("Upper")) {
                             rect(from, to, spec.upperBottomIn, spec.upperBottomIn + spec.upperHeightIn)
+                            upperRuns += floatArrayOf(from, to, spec.upperBottomIn, spec.upperBottomIn + spec.upperHeightIn)
                         } else {
                             rect(from, to, 0f, counterTop - 1.5f)
                             line(from, 4f, to, 4f) // toe kick
@@ -645,19 +663,22 @@ object Elevation {
                         line(xc, 41f, xc + 4f * inch, 39.5f, medium)
                     }
                     name == PlanSymbols.UPPER_CORNER -> {
-                        val top = spec.upperBottomIn + (PlanSymbols.upperHeightOf(item.symbol) ?: spec.upperHeightIn)
-                        rect(from, to, spec.upperBottomIn, top)
-                        cornerUnit(from, to, spec.upperBottomIn, top, cornerDoorAtToEnd(item.symbol, wall, spec.side, state), 12f, upper = true)
+                        val (bottom, top) = upperSpan(item.symbol, spec)
+                        rect(from, to, bottom, top)
+                        cornerUnit(from, to, bottom, top, cornerDoorAtToEnd(item.symbol, wall, spec.side, state), 12f, upper = true)
+                        upperRuns += floatArrayOf(from, to, bottom, top)
                     }
                     name.startsWith("Upper") -> {
-                        // Each upper can carry its own height (a 36" or 42" upper); else the elevation's.
-                        val top = spec.upperBottomIn + (PlanSymbols.upperHeightOf(item.symbol) ?: spec.upperHeightIn)
-                        rect(from, to, spec.upperBottomIn, top)
-                        doors(from, to, spec.upperBottomIn, top, PlanSymbols.doorCount(item.symbol, w / inch), knobsLow = true)
+                        // Each upper can carry its own height; see upperSpan.
+                        val (bottom, top) = upperSpan(item.symbol, spec)
+                        rect(from, to, bottom, top)
+                        doors(from, to, bottom, top, PlanSymbols.doorCount(item.symbol, w / inch), knobsLow = true)
+                        upperRuns += floatArrayOf(from, to, bottom, top)
                     }
                     name.startsWith("Pantry") -> {
                         val top = spec.upperBottomIn + spec.upperHeightIn
                         rect(from, to, 0f, top)
+                        upperRuns += floatArrayOf(from, to, 0f, top)
                         line(from, 4f, to, 4f)
                         doors(from, to, 4f, top, PlanSymbols.doorCount(item.symbol, w / inch))
                     }
@@ -802,6 +823,52 @@ object Elevation {
                         rect(from + inch, to - inch, 31f, 29f + screenH, light)
                     }
                     else -> rect(from, to, 0f, 30f)
+                }
+            }
+        }
+
+        // Crown molding along the tops of the uppers and pantries: one piece per stretch at the
+        // same top, returned 1 1/2" past each open end, stopping at the ceiling.
+        if (spec.crownIn > 0f && upperRuns.isNotEmpty()) {
+            val runs = upperRuns.sortedBy { it[0] }
+            val pieces = mutableListOf<FloatArray>() // from, to, top
+            for (r in runs) {
+                val last = pieces.lastOrNull()
+                if (last != null && r[0] <= last[1] + inch && kotlin.math.abs(r[3] - last[2]) < 0.25f) last[1] = maxOf(last[1], r[1])
+                else pieces += floatArrayOf(r[0], r[1], r[3])
+            }
+            for (p in pieces) {
+                val c = minOf(spec.crownIn, spec.wallHeightIn - p[2])
+                if (c <= 0.1f) continue
+                rect(p[0] - 1.5f * inch, p[1] + 1.5f * inch, p[2], p[2] + c, medium)
+                line(p[0] - 1f * inch, p[2] + c * 0.4f, p[1] + 1f * inch, p[2] + c * 0.4f)
+                line(p[0] - 0.5f * inch, p[2] + c * 0.75f, p[1] + 0.5f * inch, p[2] + c * 0.75f)
+            }
+        }
+        // Valance: across the gap between two uppers with a sink under it, at the uppers'
+        // bottom, a board with a shallow arch cut in its bottom edge.
+        if (spec.valance && upperRuns.size >= 2) {
+            val runs = upperRuns.filter { it[2] > 0f }.sortedBy { it[0] }
+            for (k in 0 until runs.size - 1) {
+                val a = runs[k][1]
+                val b = runs[k + 1][0]
+                if (b - a < 12f * inch || b - a > 84f * inch) continue
+                if (sinkItems.none { it.from < b && it.to > a }) continue
+                val bottom = minOf(runs[k][2], runs[k + 1][2])
+                val board = 5f
+                line(a, bottom + board, b, bottom + board, medium)
+                line(a, bottom, a, bottom + board)
+                line(b, bottom, b, bottom + board)
+                val rise = 3f
+                var prevX = a
+                var prevH = bottom
+                for (i in 1..12) {
+                    val t = i / 12f
+                    val x = a + (b - a) * t
+                    val hgt = bottom + rise * 4f * t * (1f - t)
+                    line(prevX, prevH, x, hgt, medium)
+                    prevX = x
+                    prevH = hgt
                 }
             }
         }
