@@ -260,7 +260,7 @@ class ShowerPreviewTest {
         // The interior wall running the full depth shows in the top string, to its centre (152-1/4").
         assertTrue(dims.any { it.start.y == it.end.y && kotlin.math.abs(it.value * 12f - 152.25f) < 0.01f })
         // No room dimension runs through the jog wall (154-1/2" to 354" at the upper right).
-        assertTrue(dims.none { it.offset == 0f && kotlin.math.abs(it.value * 12f - 199.5f) < 0.01f && it.start.y < oy + 120f * inch })
+        assertTrue(dims.none { kotlin.math.abs(it.value * 12f - 199.5f) < 0.01f && it.start.y < oy + 120f * inch })
         render("plan-dimensions.png", plan + dims, 1200, 900, zoom = 0.6f)
     }
 }

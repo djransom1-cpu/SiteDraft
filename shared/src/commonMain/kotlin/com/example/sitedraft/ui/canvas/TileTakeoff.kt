@@ -167,7 +167,7 @@ object TileTakeoff {
         // Wall tile on elevations.
         for (v in state.elements.filterIsInstance<DrawingElement.ElevationView>()) {
             val spec = v.spec
-            if (spec.showerFace >= 0 || spec.stairSide >= 0 || spec.tileToIn <= spec.tileFromIn) continue
+            if (spec.showerFace >= 0 || spec.stairSide >= 0 || spec.islandFace >= 0 || spec.tileToIn <= spec.tileFromIn) continue
             val top = minOf(spec.tileToIn, spec.wallHeightIn)
             val wall = state.elements.find { it.id == spec.wallId } as? DrawingElement.Symbol
             // The tile's own band(s): the whole wall, or just over the cabinet run(s).

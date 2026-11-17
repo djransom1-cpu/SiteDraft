@@ -208,15 +208,32 @@ object AutoDimension {
         return taken
     }
 
-    /** A room's inside width and depth, wall face to wall face, set in from its top-left so they clear the room label. */
+    /**
+     * A room's inside width and depth, wall face to wall face, set OUTSIDE its walls: the width
+     * over its top wall, the depth beside its left wall, 9" past the wall's outer face (12" from
+     * the face when there is no wall there).
+     */
     fun roomDims(room: Rect, state: CanvasState, owner: String?): List<DrawingElement.Dimension> {
         val inch = state.inchesToPx(1f)
-        val y = room.top + minOf(room.height * 0.25f, 24f * inch)
-        val x = room.left + minOf(room.width * 0.25f, 24f * inch)
+        val walls = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS }.map { FloorPlan.bounds(it) }
+        val topWall = walls.filter { abs(it.bottom - room.top) <= inch && it.right > room.left + inch && it.left < room.right - inch }.maxOfOrNull { it.height }
+        val leftWall = walls.filter { abs(it.right - room.left) <= inch && it.bottom > room.top + inch && it.top < room.bottom - inch }.maxOfOrNull { it.width }
+        val up = (topWall?.let { it + 9f * inch }) ?: (12f * inch)
+        val side = (leftWall?.let { it + 9f * inch }) ?: (12f * inch)
         return listOf(
-            dim(Offset(room.left, y), Offset(room.right, y), Offset(0f, -1f), 0f, state, owner),
-            dim(Offset(x, room.top), Offset(x, room.bottom), Offset(-1f, 0f), 0f, state, owner)
+            dim(Offset(room.left, room.top), Offset(room.right, room.top), Offset(0f, -1f), up, state, owner),
+            dim(Offset(room.left, room.top), Offset(room.left, room.bottom), Offset(-1f, 0f), side, state, owner)
         )
+    }
+
+    /** The owner tag for one room's dimensions, so tapping the same room again replaces them. */
+    fun roomOwner(room: Rect): String =
+        "room:${kotlin.math.round(room.left)},${kotlin.math.round(room.top)},${kotlin.math.round(room.right)},${kotlin.math.round(room.bottom)}"
+
+    /** The dimensions for the room [p] is in (see [FloorPlan.areaAt]); none outside any room. */
+    fun room(p: Offset, state: CanvasState): List<DrawingElement.Dimension> {
+        val r = FloorPlan.areaAt(p, state) ?: return emptyList()
+        return roomDims(r, state, roomOwner(r))
     }
 
     // ---------------------------------------------------------------- elevation
@@ -239,7 +256,7 @@ object AutoDimension {
         fun upAt(x: Float, hs: List<Float>, toward: Offset, dist: Float) {
             for (k in 0 until hs.size - 1) out += dim(p(x, hs[k]), p(x, hs[k + 1]), toward, dist, state, owner)
         }
-        val regular = spec.showerFace < 0 && spec.stairSide < 0
+        val regular = spec.showerFace < 0 && spec.stairSide < 0 && spec.islandFace < 0
         if (!regular) {
             // Showers and stairs draw their own detail dimensions; add the overall size.
             across(listOf(0f, w), ELEV_TIER_IN * inch)

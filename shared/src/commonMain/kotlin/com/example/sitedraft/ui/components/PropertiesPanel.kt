@@ -502,6 +502,16 @@ fun PropertiesPanel(
                                     onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "height", it))
                                 }
                             }
+                            // The cabinet's shop code, and an upper's own height (it goes into the code).
+                            PlanSymbols.cabinetLabel(selectedElement, state)?.let { code ->
+                                PropertyRow("Cabinet code", code)
+                            }
+                            if (PlanSymbols.isUpperCabinet(selectedElement)) {
+                                EditableProperty(
+                                    "Upper height (in)",
+                                    formatInches(PlanSymbols.upperHeightOf(selectedElement) ?: PlanSymbols.DEFAULT_UPPER_HEIGHT_IN)
+                                ) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_UPPER_HEIGHT_IN, it)) }
+                            }
                             // Cabinets: what the front is (doors, a drawer over doors, a drawer
                             // bank), how many doors, and an island's seating overhang.
                             if (PlanSymbols.hasFrontChoice(selectedElement)) {
@@ -674,6 +684,20 @@ fun PropertiesPanel(
                                             label = { Text(Shower.faceLabels[f]) }
                                         )
                                     }
+                                }
+                            }
+                        } else if (spec.islandFace >= 0) {
+                            // An island: pick the face; fronts, style and overhang live on the island.
+                            Text(
+                                if (wall != null) "Live island elevation: follows the island. Change its fronts, door style and overhang on the island in the plan."
+                                else "Live island elevation: its island has been deleted.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Elevation.islandFaceLabels.forEachIndexed { i, label ->
+                                    FilterChip(selected = spec.islandFace == i, onClick = {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "islandFace", i.toString()))
+                                    }, label = { Text(label) })
                                 }
                             }
                         } else {

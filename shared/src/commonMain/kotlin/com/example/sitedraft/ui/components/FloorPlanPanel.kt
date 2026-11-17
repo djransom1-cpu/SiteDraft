@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.remember
 import com.example.sitedraft.ui.canvas.AutoDimension
+import com.example.sitedraft.ui.canvas.CabinetList
 import com.example.sitedraft.ui.canvas.CanvasState
 import com.example.sitedraft.ui.canvas.isOwnedBy
 import com.example.sitedraft.ui.canvas.DrawingElement
@@ -212,9 +213,11 @@ fun FloorPlanPanel(
             // --- Elevation of a wall ---
             Text("Elevation", style = MaterialTheme.typography.titleMedium)
             val selectedWall = state.elements.find { it.id == state.selectedElementId } as? DrawingElement.Symbol
-            if (selectedWall == null || selectedWall.category != PlanSymbols.WALLS) {
+            if (selectedWall != null && PlanSymbols.isIsland(selectedWall)) {
+                IslandElevationControls(selectedWall, onEvent)
+            } else if (selectedWall == null || selectedWall.category != PlanSymbols.WALLS) {
                 Text(
-                    "Select a wall on the plan with the Select tool. Everything against that wall (cabinets, appliances, fixtures, doors, windows) is drawn as an elevation at the plan's scale.",
+                    "Select a wall on the plan with the Select tool. Everything against that wall (cabinets, appliances, fixtures, doors, windows) is drawn as an elevation at the plan's scale. Select an island for an elevation of its front, back or ends.",
                     style = MaterialTheme.typography.bodySmall
                 )
             } else {
@@ -229,7 +232,7 @@ fun FloorPlanPanel(
             var dimToCenter by rememberSaveable { mutableStateOf(true) }
             Text("Dimensions", style = MaterialTheme.typography.titleMedium)
             Text(
-                "One tap dimensions the whole plan: strings around the outside (doors and windows to their centres, the wall jogs and interior walls, the overall size) and each room's inside width and depth. They are ordinary dimensions: drag, retype or delete any of them. Tap again after changing the plan to redo them.",
+                "One tap dimensions the whole plan: strings around the outside (doors and windows to their centres, the wall jogs and interior walls, the overall size) and each room's inside width and depth, set outside its walls. They are ordinary dimensions: drag, retype or delete any of them. Tap again after changing the plan to redo them.",
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(4.dp))
@@ -251,10 +254,42 @@ fun FloorPlanPanel(
             if (hasPlanDims) {
                 androidx.compose.material3.TextButton(onClick = { onEvent(DrawingEvent.RemoveOwnedDimensions(AutoDimension.PLAN_OWNER)) }) { Text("Remove the plan's dimensions") }
             }
+            androidx.compose.material3.OutlinedButton(
+                onClick = { onEvent(DrawingEvent.StartPlacement(Placement.DimensionRoom)) },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Dimension one room (then tap inside it)") }
             Text(
                 "With the Dimension tool: tap a wall, door, window, cabinet or room to dimension it in one tap. Draw one dimension, then start the next at its end going the same way: it continues the string on the same line, no third tap.",
                 style = MaterialTheme.typography.bodySmall
             )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // --- Cabinets ---
+            Text("Cabinets", style = MaterialTheme.typography.titleMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = state.showCabinetLabels, onClick = { onEvent(DrawingEvent.ShowCabinetLabels(!state.showCabinetLabels)) }, label = { Text("Codes on the plan (W2430, BD18...)") })
+            }
+            val cabinetRows = remember(state.elements, state.scale, state.unitSystem) { CabinetList.rows(state) }
+            if (cabinetRows.isEmpty()) {
+                Text("No cabinets in the drawing yet.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text(
+                    "B base, BD drawer base, SB sink base, LS corner base, W wall (width then height), WDC diagonal corner wall, P pantry, V vanity, VD vanity drawers, LT linen tower, ISL island, BF / WF fillers. A cabinet counts in the room it stands in; rooms are named by their room label.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                cabinetRows.groupBy { it.room }.forEach { (room, rows) ->
+                    Spacer(Modifier.height(4.dp))
+                    Text("$room (${rows.sumOf { it.qty }})", style = MaterialTheme.typography.labelLarge)
+                    rows.forEach { r ->
+                        Text("${r.qty} x ${r.code}  -  ${r.description}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                val cabClipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                androidx.compose.material3.TextButton(onClick = {
+                    cabClipboard.setText(androidx.compose.ui.text.AnnotatedString(CabinetList.csv(cabinetRows)))
+                }) { Text("Copy the cabinet list (paste into Excel)") }
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
@@ -423,6 +458,33 @@ private fun ElevationControls(wall: DrawingElement.Symbol, state: CanvasState, o
         "Then tap an empty spot on the canvas: that is the bottom-left corner of the floor line. The elevation is placed selected, so it can be moved as a group.",
         style = MaterialTheme.typography.bodySmall
     )
+}
+
+/** Elevation of an island: pick the face and the counter height, then tap where it goes. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun IslandElevationControls(island: DrawingElement.Symbol, onEvent: (DrawingEvent) -> Unit) {
+    var face by remember(island.id) { mutableStateOf(0) }
+    var counter by rememberSaveable { mutableStateOf("36") }
+    Text("Island: an elevation of one face, with its fronts, door style, hardware and countertop overhang.", style = MaterialTheme.typography.bodySmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Elevation.islandFaceLabels.forEachIndexed { i, label ->
+            FilterChip(selected = face == i, onClick = { face = i }, label = { Text(label) })
+        }
+    }
+    NumberField("Counter (in)", counter, Modifier.fillMaxWidth()) { counter = it }
+    val c = counter.toFloatOrNull()
+    Button(
+        onClick = {
+            if (c != null && c > 0f) {
+                val spec = ElevationSpec(wallId = island.id, side = com.example.sitedraft.ui.canvas.ViewerSide.BELOW, counterHeightIn = c, islandFace = face)
+                onEvent(DrawingEvent.StartPlacement(Placement.Elevation(spec, "island elevation (${Elevation.islandFaceLabels[face].lowercase()})")))
+            }
+        },
+        enabled = c != null && c > 0f,
+        modifier = Modifier.fillMaxWidth()
+    ) { Text("Place island elevation") }
+    Text("Then tap an empty spot: that is the left end of its floor line.", style = MaterialTheme.typography.bodySmall)
 }
 
 private fun fmt(v: Float): String =

@@ -369,6 +369,8 @@ data class CanvasState(
     @Serializable(with = ColorSerializer::class)
     val backgroundColor: Color = Color(0xFF003366), // Blueprint Blue
     val dimensionFormat: DimensionFormat = DimensionFormat.ARCHITECTURAL,
+    // Cabinet codes (W2430, BD18...) drawn on the plan's cabinets.
+    val showCabinetLabels: Boolean = true,
     val zoom: Float = 1f,
     @Serializable(with = OffsetSerializer::class)
     val pan: Offset = Offset.Zero,

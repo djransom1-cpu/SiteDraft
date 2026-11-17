@@ -43,6 +43,11 @@ sealed class Placement {
         override val label get() = "inside the area to hatch"
     }
 
+    /** Dimensions for the room the tap lands in (inside faces, outside its walls). Not snapped. */
+    object DimensionRoom : Placement() {
+        override val label get() = "inside the room to dimension"
+    }
+
     /** An elevation of a plan wall; the tap is the bottom-left corner of its floor line. */
     data class Elevation(val spec: ElevationSpec, override val label: String) : Placement()
 
@@ -310,6 +315,7 @@ object FloorPlan {
                 listOf(inside.inflate(t), inside)
             }
             is Placement.Hatch -> listOfNotNull(areaAt(point, state))
+            is Placement.DimensionRoom -> listOfNotNull(areaAt(point, state))
             is Placement.Elevation -> {
                 val wall = state.elements.find { it.id == placement.spec.wallId } as? DrawingElement.Symbol ?: return emptyList()
                 val size = Elevation.sizePx(wall, placement.spec, state)

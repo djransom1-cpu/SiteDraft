@@ -285,6 +285,63 @@ object PlanSymbols {
             symbol.symbolName != UPPER_CORNER && !isVanityDrawers(symbol.symbolName)
     fun isIsland(symbol: DrawingElement.Symbol) = symbol.category == CABINETS && symbol.symbolName.startsWith("Island")
 
+    /** An upper cabinet's own height (30", 36", 42"...), inches; unset = the elevation's "Uppers high". */
+    const val PROP_UPPER_HEIGHT_IN = "upperHeightIn"
+    const val DEFAULT_UPPER_HEIGHT_IN = 30f
+    /** Pantries stand from the floor to the tops of the uppers: 54" + 30". */
+    const val PANTRY_HEIGHT_IN = 84f
+    fun upperHeightOf(symbol: DrawingElement.Symbol): Float? = symbol.properties[PROP_UPPER_HEIGHT_IN]
+
+    /** Inches as a cabinet code writes them: 24, 30, 1-1/2 (to the nearest 1/8"). */
+    fun codeInches(v: Float): String {
+        val eighths = kotlin.math.round(v * 8f).toInt()
+        val whole = eighths / 8
+        val rest = eighths % 8
+        if (rest == 0) return whole.toString()
+        var num = rest
+        var den = 8
+        while (num % 2 == 0) { num /= 2; den /= 2 }
+        return if (whole == 0) "$num/$den" else "$whole-$num/$den"
+    }
+
+    /** A sink set into this cabinet's top: its centre lies over the cabinet. */
+    fun hasSinkOver(cabinet: DrawingElement.Symbol, state: CanvasState): Boolean {
+        val b = FloorPlan.bounds(cabinet)
+        return state.elements.any { it is DrawingElement.Symbol && it.category == FIXTURES && it.symbolName in counterSinks && b.contains(it.center) }
+    }
+
+    /**
+     * The shop code for a cabinet, the way cabinet lists and plans write them: width in inches,
+     * and for wall cabinets the height too. B24 base, BD18 drawer base (3 or 4 drawers), SB36
+     * sink base (a sink sits in its top), LS36 corner (lazy Susan) base, W2430 wall, WDC2430
+     * diagonal corner wall, P2484 pantry, V30 vanity (VD18 vanity drawers), LT18 linen tower,
+     * BF3 / WF3 base and wall fillers, ISL72 island. Null for anything that is not a cabinet.
+     */
+    fun cabinetLabel(symbol: DrawingElement.Symbol, state: CanvasState): String? {
+        if (symbol.category != CABINETS) return null
+        val name = symbol.symbolName
+        val inch = state.inchesToPx(1f)
+        val w = codeInches(symbol.size.width / inch)
+        val upperH = codeInches(upperHeightOf(symbol) ?: DEFAULT_UPPER_HEIGHT_IN)
+        return when {
+            isFiller(name) -> (if (name.startsWith("Upper")) "WF" else "BF") + w
+            name == UPPER_CORNER -> "WDC$w$upperH"
+            name.startsWith("Upper") -> "W$w$upperH"
+            name.startsWith("Corner Base") -> "LS$w"
+            name.startsWith("Base") -> when {
+                hasSinkOver(symbol, state) -> "SB$w"
+                front(symbol) == FRONT_THREE_DRAWERS || front(symbol) == FRONT_FOUR_DRAWERS -> "BD$w"
+                else -> "B$w"
+            }
+            name.startsWith("Pantry") -> "P$w${codeInches(PANTRY_HEIGHT_IN)}"
+            isLinenTower(name) -> "LT$w"
+            isVanityDrawers(name) -> "VD$w"
+            isVanity(name) -> "V$w"
+            isIsland(symbol) -> "ISL$w"
+            else -> null
+        }
+    }
+
     /** Bathroom vanities, including the drawer bases that sit in a vanity run (not the linen tower). */
     fun isVanity(name: String) = name.startsWith("Vanity")
     fun isVanityDrawers(name: String) = name.startsWith("Vanity Drawers")
@@ -620,6 +677,20 @@ fun DrawScope.drawPlanSymbol(
                 label("DW", lineColor, min(hw, hh) * 0.45f)
             }
             else -> drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+        }
+        // The cabinet's code (W2430, BD18, SB36...): in the front of a base (its back is under the
+        // uppers), in the middle of anything else, and never upside down. Fillers too narrow to
+        // read get none on the plan (they are still in the cabinet list).
+        if (state.showCabinetLabels && element.category == PlanSymbols.CABINETS && w >= inch * 8f) {
+            PlanSymbols.cabinetLabel(element, state)?.let { text ->
+                val frontZone = !PlanSymbols.isUpperCabinet(element) && !PlanSymbols.isIsland(element) &&
+                    !name.startsWith("Corner") && h >= inch * 20f
+                val at = if (frontZone) Offset(0f, hh - inch * 6f) else Offset.Zero
+                val r = ((element.rotation % 360f) + 360f) % 360f
+                val flip = r > 90.5f && r <= 270.5f
+                val size = minOf(inch * 4f, w * 1.6f / text.length, h * 0.4f)
+                drawLabel(text, at, size, lineColor, rotationDegrees = if (flip) 180f else 0f)
+            }
         }
     }
 }

@@ -125,7 +125,23 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     boxSelectEnd = null
                 )
             }
-            is DrawingEvent.SelectColor -> _state.value = _state.value.copy(currentColor = event.color)
+            is DrawingEvent.SelectColor -> {
+                // The top-bar colour is the colour for what is drawn next, and it recolours what
+                // is selected too: picking black with an elevation selected used to change only
+                // the next drawing, which left no obvious way to fix a brown elevation.
+                val s = _state.value
+                val ids = s.selectedElementIds.ifEmpty { setOfNotNull(s.selectedElementId) }
+                if (ids.isNotEmpty() && s.elements.any { it.id in ids && it.color != event.color }) {
+                    pushUndoSnapshot()
+                    _state.value = _state.value.copy(
+                        currentColor = event.color,
+                        elements = _state.value.elements.map { if (it.id in ids) it.withColor(event.color) else it }
+                    )
+                    triggerAutoSave()
+                } else {
+                    _state.value = _state.value.copy(currentColor = event.color)
+                }
+            }
             is DrawingEvent.SelectStrokeWidth -> {
                 _state.value = _state.value.copy(currentStrokeWidth = event.width)
                 triggerAutoSave()
@@ -145,7 +161,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             is DrawingEvent.StartPlacement -> _state.value = _state.value.copy(pendingPlacement = event.placement, placementPreview = null)
             is DrawingEvent.PreviewPlacementAt -> _state.value.pendingPlacement?.let { pending ->
                 // Calibration points are not snapped, so neither is their crosshair.
-                val at = if (pending is Placement.Calibrate || pending is Placement.Plan || pending is Placement.Hatch) event.point else findSnapPoint(event.point)
+                val at = if (pending is Placement.Calibrate || pending is Placement.Plan || pending is Placement.Hatch || pending is Placement.DimensionRoom) event.point else findSnapPoint(event.point)
                 _state.value = _state.value.copy(placementPreview = at)
             }
             is DrawingEvent.PlaceAt -> _state.value.pendingPlacement?.let { pending ->
@@ -164,6 +180,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     is Placement.Elevation -> placeElevation(point, pending)
                     // Unsnapped: the tap only has to land inside the area.
                     is Placement.Hatch -> placeHatch(event.point, pending)
+                    // One room's inside size, its strings outside its walls; tapping it again redoes them.
+                    is Placement.DimensionRoom -> {
+                        val dims = AutoDimension.room(event.point, _state.value)
+                        dims.firstOrNull()?.ownerId?.let { replaceOwnedDimensions(it, dims) }
+                    }
                     // Unsnapped: the point goes exactly where the pen lifted on the printed plan.
                     is Placement.Calibrate -> calibrationPointPlaced(pending, event.point)
                     // Unsnapped too: the tap is the middle of the plan.
@@ -252,6 +273,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             }
             is DrawingEvent.ToggleSnap -> _state.value = _state.value.copy(snapEnabled = event.enabled)
             is DrawingEvent.ToggleGridSnap -> _state.value = _state.value.copy(snapToGrid = event.enabled)
+            is DrawingEvent.ShowCabinetLabels -> {
+                _state.value = _state.value.copy(showCabinetLabels = event.show)
+                triggerAutoSave()
+            }
             DrawingEvent.DeleteSelectedElement -> {
                 deleteSelectedElement()
                 triggerAutoSave()
@@ -2654,6 +2679,17 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             if (element is DrawingElement.ElevationView && v in 0..1) element.copy(spec = element.spec.copy(tileExtent = v)) else element
                         }
                         // Hood settings: inches, or small codes for the choices (see Appliances).
+                        PlanSymbols.PROP_UPPER_HEIGHT_IN -> {
+                            val v = parseInches(value) ?: return@map element
+                            if (element is DrawingElement.Symbol && v > 0f) element.copy(properties = element.properties + (property to v)) else element
+                        }
+                        "islandFace" -> {
+                            val v = value.toIntOrNull() ?: return@map element
+                            if (element !is DrawingElement.ElevationView || v !in 0..3) return@map element
+                            val island = _state.value.elements.find { it.id == element.spec.wallId } as? DrawingElement.Symbol ?: return@map element
+                            val spec = element.spec.copy(islandFace = v)
+                            element.copy(spec = spec, size = Elevation.sizePx(island, spec, _state.value))
+                        }
                         in Appliances.keys -> {
                             val v = parseInches(value) ?: return@map element
                             if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
@@ -3189,6 +3225,8 @@ sealed class DrawingEvent {
     object NewProject : DrawingEvent()
     data class ToggleSnap(val enabled: Boolean) : DrawingEvent()
     data class ToggleGridSnap(val enabled: Boolean) : DrawingEvent()
+    /** Cabinet codes (W2430, BD18...) on the plan, on or off. */
+    data class ShowCabinetLabels(val show: Boolean) : DrawingEvent()
     object DeleteSelectedElement : DrawingEvent()
     object DeselectElement : DrawingEvent()
     object ExplodeSelectedElement : DrawingEvent()

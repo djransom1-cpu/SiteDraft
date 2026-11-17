@@ -27,7 +27,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
             )
             packageName = "SiteDraft"
-            packageVersion = "1.0.21"
+            packageVersion = "1.0.22"
             description = "Construction drafting: floor plans, elevations, laser-measured walls"
             vendor = "SiteDraft"
             // App icon: the tablet's pencil-and-square glyph on a white tile, generated from the

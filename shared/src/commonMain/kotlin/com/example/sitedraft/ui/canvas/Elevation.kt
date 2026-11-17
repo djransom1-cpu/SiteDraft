@@ -43,6 +43,8 @@ data class ElevationSpec(
     val tileExtent: Int = 0,
     /** Set (0 right side, 1 left side) when [wallId] is a stair: its side elevation. */
     val stairSide: Int = -1,
+    /** Set (0 front, 1 back, 2 left end, 3 right end) when [wallId] is an island: that face of it. */
+    val islandFace: Int = -1,
 )
 
 /**
@@ -156,6 +158,7 @@ object Elevation {
     fun sizePx(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): Size =
         if (spec.showerFace >= 0 && wall.category == PlanSymbols.SHOWERS) Shower.elevationSize(wall, spec.showerFace, state)
         else if (spec.stairSide >= 0 && wall.category == PlanSymbols.STAIRS) Stairs.elevationSize(wall, spec.stairSide, state)
+        else if (spec.islandFace >= 0 && PlanSymbols.isIsland(wall)) islandSize(wall, spec, state)
         else Size(lengthPx(wall), state.inchesToPx(spec.wallHeightIn))
 
     /** Where a point sits along the wall, measured from the end on the viewer's LEFT. */
@@ -259,6 +262,8 @@ object Elevation {
                 Shower.buildElevation(wall, view.spec.showerFace, view.origin, state, view.color)
             view.spec.stairSide >= 0 && wall.category == PlanSymbols.STAIRS ->
                 Stairs.buildElevation(wall, view.spec.stairSide, view.origin, state, view.color)
+            view.spec.islandFace >= 0 && PlanSymbols.isIsland(wall) ->
+                buildIsland(wall, view.spec, view.origin, state, view.color)
             else -> build(wall, view.spec, view.origin, state, view.color)
         }
     }
@@ -272,7 +277,16 @@ object Elevation {
         )
     }
 
-    fun build(wall: DrawingElement.Symbol, spec: ElevationSpec, origin: Offset, state: CanvasState, color: androidx.compose.ui.graphics.Color = state.currentColor): List<DrawingElement> {
+    /**
+     * [freeStanding]: no wall behind (an island): no ceiling or wall-end lines, only the floor.
+     * [title] replaces the usual "Elevation, ... wide x ... high" line. [counterExtendIn] runs
+     * the countertop past the first run's left end and the last run's right end (an overhang).
+     */
+    fun build(
+        wall: DrawingElement.Symbol, spec: ElevationSpec, origin: Offset, state: CanvasState,
+        color: androidx.compose.ui.graphics.Color = state.currentColor,
+        freeStanding: Boolean = false, title: String? = null, counterExtendIn: Pair<Float, Float> = 0f to 0f
+    ): List<DrawingElement> {
         val inch = state.inchesToPx(1f)
         val length = lengthPx(wall)
         val heavy = 3f
@@ -419,11 +433,13 @@ object Elevation {
                 length = if (spec.tileLengthIn > 0f) spec.tileLengthIn * inch else 0f
             ))
         }
-        // Frame: floor, ceiling, ends.
+        // Frame: floor, ceiling, ends (an island stands free: just its floor line).
         line(0f, 0f, length, 0f, heavy)
-        line(0f, spec.wallHeightIn, length, spec.wallHeightIn, medium)
-        line(0f, 0f, 0f, spec.wallHeightIn, medium)
-        line(length, 0f, length, spec.wallHeightIn, medium)
+        if (!freeStanding) {
+            line(0f, spec.wallHeightIn, length, spec.wallHeightIn, medium)
+            line(0f, 0f, 0f, spec.wallHeightIn, medium)
+            line(length, 0f, length, spec.wallHeightIn, medium)
+        }
 
         val counterTop = spec.counterHeightIn
         val counterRuns = mutableListOf<Pair<Float, Float>>()
@@ -629,12 +645,13 @@ object Elevation {
                         line(xc, 41f, xc + 4f * inch, 39.5f, medium)
                     }
                     name == PlanSymbols.UPPER_CORNER -> {
-                        val top = spec.upperBottomIn + spec.upperHeightIn
+                        val top = spec.upperBottomIn + (PlanSymbols.upperHeightOf(item.symbol) ?: spec.upperHeightIn)
                         rect(from, to, spec.upperBottomIn, top)
                         cornerUnit(from, to, spec.upperBottomIn, top, cornerDoorAtToEnd(item.symbol, wall, spec.side, state), 12f, upper = true)
                     }
                     name.startsWith("Upper") -> {
-                        val top = spec.upperBottomIn + spec.upperHeightIn
+                        // Each upper can carry its own height (a 36" or 42" upper); else the elevation's.
+                        val top = spec.upperBottomIn + (PlanSymbols.upperHeightOf(item.symbol) ?: spec.upperHeightIn)
                         rect(from, to, spec.upperBottomIn, top)
                         doors(from, to, spec.upperBottomIn, top, PlanSymbols.doorCount(item.symbol, w / inch), knobsLow = true)
                     }
@@ -797,7 +814,11 @@ object Elevation {
             if (last != null && run.first <= last.second + inch) merged[merged.size - 1] = Pair(last.first, maxOf(last.second, run.second))
             else merged += run
         }
-        for ((a, b) in merged) rect(a - 0.5f * inch, b + 0.5f * inch, counterTop - 1.5f, counterTop, medium)
+        merged.forEachIndexed { k, (a, b) ->
+            val left = if (k == 0) counterExtendIn.first * inch else 0f
+            val right = if (k == merged.lastIndex) counterExtendIn.second * inch else 0f
+            rect(a - 0.5f * inch - left, b + 0.5f * inch + right, counterTop - 1.5f, counterTop, medium)
+        }
 
         // One vanity top over each run of vanities that stand side by side at the same height.
         vanityRuns.sortBy { it.first }
@@ -813,11 +834,81 @@ object Elevation {
         val fontSize = (inch * 6f).coerceIn(10f, 36f)
         val lengthIn = length / inch
         out += DrawingElement.Text(
-            text = "Elevation, ${formatFeetInches(lengthIn)} wide x ${formatFeetInches(spec.wallHeightIn)} high, ${spec.side.looking}",
+            text = title ?: "Elevation, ${formatFeetInches(lengthIn)} wide x ${formatFeetInches(spec.wallHeightIn)} high, ${spec.side.looking}",
             topLeft = px(0f, -8f),
             fontSize = fontSize,
             color = color
         )
+        return out
+    }
+
+    // ------------------------------------------------------------------ islands
+
+    val islandFaceLabels = listOf("Front", "Back", "Left end", "Right end")
+
+    /** How far the island's countertop overhangs on its front, back, left and right (inches). */
+    private fun islandOverhangs(island: DrawingElement.Symbol): FloatArray {
+        val mode = island.properties[PlanSymbols.PROP_OVERHANG]?.toInt() ?: 0
+        val o = island.properties[PlanSymbols.PROP_OVERHANG_IN] ?: 12f
+        return when (mode) {
+            1 -> floatArrayOf(o, 0f, 0f, 0f)
+            2 -> floatArrayOf(o, o, 0f, 0f)
+            3 -> floatArrayOf(o, 0f, 0f, o)
+            else -> floatArrayOf(0f, 0f, 0f, 0f)
+        }
+    }
+
+    /** An island face: as long as that face, as high as the counter plus room for the title. */
+    fun islandSize(island: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): Size {
+        val along = if (spec.islandFace < 2) island.size.width else island.size.height
+        return Size(along, state.inchesToPx(spec.counterHeightIn))
+    }
+
+    /**
+     * The elevation of one face of an island: the same cabinet fronts, door style and hardware
+     * as wall cabinets (it is built as a run of 24"-ish bases against an invisible wall), the
+     * countertop with its overhang, and plain end panels on the ends. The plan's island has
+     * doors on both long sides, so the front and back look alike; seen from the back, the
+     * right-end overhang is on the viewer's left.
+     */
+    fun buildIsland(island: DrawingElement.Symbol, spec: ElevationSpec, origin: Offset, state: CanvasState, color: androidx.compose.ui.graphics.Color): List<DrawingElement> {
+        val inch = state.inchesToPx(1f)
+        val face = spec.islandFace.coerceIn(0, 3)
+        val along = if (face < 2) island.size.width else island.size.height
+        val t = 4.5f * inch
+        val wall = DrawingElement.Symbol(symbolName = "2x4 Wall", category = PlanSymbols.WALLS, center = Offset(along / 2f, -t / 2f), size = Size(along, t), color = color)
+        val bays = mutableListOf<DrawingElement.Symbol>()
+        if (face < 2) {
+            val count = kotlin.math.round(island.size.width / (24f * inch)).toInt().coerceAtLeast(1)
+            val bay = island.size.width / count
+            for (i in 0 until count) bays += DrawingElement.Symbol(
+                symbolName = "Base 24\"", category = PlanSymbols.CABINETS, color = color, properties = island.properties,
+                center = Offset(bay * (i + 0.5f), 12f * inch), size = Size(bay, 24f * inch)
+            )
+        }
+        // Overhang past each end of this view, viewer's left then right.
+        val (f, b, l, r) = islandOverhangs(island).toList()
+        val ext = when (face) {
+            0 -> l to r
+            1 -> r to l
+            2 -> b to f
+            else -> f to b
+        }
+        val lengthIn = along / inch
+        val title = "Island, ${islandFaceLabels[face].lowercase()}, ${formatFeetInches(lengthIn)} wide"
+        val flat = spec.copy(wallId = wall.id, side = ViewerSide.BELOW, tileFromIn = 0f, tileToIn = 0f, islandFace = -1, showerFace = -1, stairSide = -1)
+        val out = build(wall, flat, origin, CanvasState(elements = listOf(wall) + bays, scale = state.scale, unitSystem = state.unitSystem, backgroundColor = state.backgroundColor),
+            color, freeStanding = true, title = title, counterExtendIn = ext).toMutableList()
+        if (face >= 2) {
+            // An end: a finished end panel with a toe kick, the countertop over it.
+            val top = spec.counterHeightIn
+            fun px(x: Float, hIn: Float) = Offset(origin.x + x, origin.y - hIn * inch)
+            out += DrawingElement.Rectangle(topLeft = px(0f, top - 1.5f), size = Size(along, (top - 1.5f) * inch), color = color, strokeWidth = 2f)
+            out += DrawingElement.Rectangle(topLeft = px(2f * inch, top - 4f), size = Size((along - 4f * inch).coerceAtLeast(0f), (top - 9.5f) * inch), color = color, strokeWidth = 1f)
+            val x0 = -0.5f * inch - ext.first * inch
+            val x1 = along + 0.5f * inch + ext.second * inch
+            out += DrawingElement.Rectangle(topLeft = px(x0, top), size = Size(x1 - x0, 1.5f * inch), color = color, strokeWidth = 2f)
+        }
         return out
     }
 

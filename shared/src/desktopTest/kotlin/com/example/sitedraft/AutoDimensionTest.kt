@@ -56,13 +56,20 @@ class AutoDimensionTest {
         assertTrue(topDims.all { it.offset != 0f })
         val firstLine = topDims.first().let { it.start.y + it.offset * if (it.end.x > it.start.x) 1f else -1f }
         assertTrue(firstLine < 0f)
-        // Rooms: inside face to inside face.
-        val roomWidths = dims.filter { it.offset == 0f && it.start.y == it.end.y }.map { it.inches() }.sorted()
-        assertEquals(2, roomWidths.size)
-        assertEquals(117.75f - 6f, roomWidths[0], 0.01f)
-        assertEquals(234f - 122.25f, roomWidths[1], 0.01f)
-        val roomDepths = dims.filter { it.offset == 0f && it.start.x == it.end.x }.map { it.inches() }
-        assertTrue(roomDepths.all { kotlin.math.abs(it - 132f) < 0.01f })
+        // Rooms (the last four): inside face to inside face, set outside the room's walls, 9"
+        // past the wall's outer face (its top wall is 6" thick: 15" out from the inside face).
+        val roomDims = dims.takeLast(4)
+        val roomWidths = roomDims.filter { it.start.y == it.end.y }
+        val widths = roomWidths.map { it.inches() }.sorted()
+        assertEquals(117.75f - 6f, widths[0], 0.01f)
+        assertEquals(234f - 122.25f, widths[1], 0.01f)
+        assertTrue(roomWidths.all { kotlin.math.abs(it.start.y - 6f * inch) < 0.01f && kotlin.math.abs(it.offset + 15f * inch) < 0.01f })
+        val roomDepths = roomDims.filter { it.start.x == it.end.x }
+        assertTrue(roomDepths.all { kotlin.math.abs(it.inches() - 132f) < 0.01f })
+        // Beside the left wall (6" thick) for the left room, the 4 1/2" partition for the right one.
+        val sides = roomDepths.map { kotlin.math.abs(it.offset) / inch }.sorted()
+        assertEquals(13.5f, sides[0], 0.01f)
+        assertEquals(15f, sides[1], 0.01f)
     }
 
     @Test
@@ -72,6 +79,15 @@ class AutoDimensionTest {
         assertTrue(topDims.any { kotlin.math.abs(it - 117.75f) < 0.01f })
         assertTrue(topDims.any { kotlin.math.abs(it - 4.5f) < 0.01f })
         assertEquals(4, AutoDimension.plan(state, AutoDimension.PlanOptions(outside = false)).size)
+    }
+
+    @Test
+    fun `one room is dimensioned on its own, and again replaces it`() {
+        val dims = AutoDimension.room(Offset(60f * inch, 70f * inch), state)
+        assertEquals(2, dims.size)
+        assertTrue(dims.all { it.ownerId != null && it.ownerId == dims[0].ownerId })
+        assertEquals(dims[0].ownerId, AutoDimension.room(Offset(30f * inch, 100f * inch), state)[0].ownerId)
+        assertTrue(AutoDimension.room(Offset(-500f, -500f), state).isEmpty())
     }
 
     @Test
