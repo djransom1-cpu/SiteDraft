@@ -2575,9 +2575,9 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 if (category == PlanSymbols.STAIRS) properties = properties + Stairs.defaults(name)
                 if (category == PlanSymbols.DOORS_WINDOWS) {
                     properties = properties + if (PlanSymbols.isWindow(name)) {
-                        mapOf(PlanSymbols.PROP_SILL_IN to 36f, PlanSymbols.PROP_HEIGHT_IN to 48f)
+                        mapOf(PlanSymbols.PROP_SILL_IN to PlanSymbols.NEW_WINDOW_SILL_IN, PlanSymbols.PROP_HEIGHT_IN to PlanSymbols.NEW_WINDOW_HEIGHT_IN)
                     } else {
-                        mapOf(PlanSymbols.PROP_HEIGHT_IN to 80f)
+                        mapOf(PlanSymbols.PROP_HEIGHT_IN to PlanSymbols.DOOR_HEIGHT_IN)
                     }
                 }
                 Size(_state.value.inchesToPx(wIn), _state.value.inchesToPx(dIn))

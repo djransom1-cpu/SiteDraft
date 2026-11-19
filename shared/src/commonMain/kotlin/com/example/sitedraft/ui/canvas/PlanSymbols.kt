@@ -299,6 +299,12 @@ object PlanSymbols {
 
     /** An upper cabinet's own height (30", 36", 42"...), inches; unset = the elevation's "Uppers high". */
     const val PROP_UPPER_HEIGHT_IN = "upperHeightIn"
+    /** A door's height (its head), inches. */
+    const val DOOR_HEIGHT_IN = 80f
+    /** A new window: 48" tall, its head lined up with the door head (Dan, Nov 2026), so the sill is 32". */
+    const val NEW_WINDOW_HEIGHT_IN = 48f
+    const val NEW_WINDOW_SILL_IN = DOOR_HEIGHT_IN - NEW_WINDOW_HEIGHT_IN
+
     const val DEFAULT_UPPER_HEIGHT_IN = 30f
     /** Pantries stand from the floor to the tops of the uppers: 54" + 30". */
     const val PANTRY_HEIGHT_IN = 84f

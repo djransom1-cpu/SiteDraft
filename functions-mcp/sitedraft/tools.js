@@ -383,7 +383,7 @@ function placeOpening(state, a) {
   } else {
     const t = horizontal ? wb.height : wb.width;
     if (G.isWindow(name)) {
-      props[M.props.sillIn] = a.sill ? len(a.sill, "sill") : M.catalog.defaults.windowSillIn;
+      props[M.props.sillIn] = a.sill ? len(a.sill, "sill") : M.catalog.defaults.newWindowSillIn; // head lines up with the door head
       props[M.props.heightIn] = a.height ? len(a.height, "height") : M.catalog.defaults.windowHeightIn;
     } else if (a.height) props[M.props.heightIn] = len(a.height, "height");
     if (name.startsWith("Pocket")) {

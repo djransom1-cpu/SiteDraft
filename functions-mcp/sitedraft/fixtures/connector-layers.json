@@ -4,7 +4,7 @@
     "elements": [
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "2985b59d-17e4-44f7-afd8-b919458fe156",
+            "id": "99c1f832-7e91-4f6e-bc2c-aa242daee4b8",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "750.0,15.8854",
@@ -18,7 +18,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "58821ed0-f96e-4815-b2db-f883dbf8df62",
+            "id": "efd010cc-2f61-4fc7-9454-f44b77cefceb",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "1484.1146,600.0",
@@ -32,7 +32,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "96b6f547-cf63-48d4-9d59-9d1b0270f4e3",
+            "id": "86e8201a-191e-498b-b778-7fe9a37cf8ae",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "750.0,1184.1146",
@@ -46,7 +46,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "a03e219f-f0b5-467b-bcd2-02fa975d7aa1",
+            "id": "eccc47f9-78c5-488a-a98f-d2854e1d112c",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "15.8854,600.0",
@@ -60,7 +60,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "8b569801-67c6-4171-8b6c-99f8b0dcd205",
+            "id": "875094b1-ebee-43bc-be95-012d0d233646",
             "symbolName": "Base 24\"",
             "category": "Cabinets",
             "center": "416.6667,416.6667",
@@ -74,7 +74,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "b2418249-c8b2-4c4e-8f81-57865ed1117b",
+            "id": "7cfdd39b-5f06-4bb6-a5e4-1c1a7d6148c4",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "2083.3333,2083.3333",
@@ -84,7 +84,7 @@
                 "widthInches": 48,
                 "depthInches": 4.5
             },
-            "layerId": "custom-b3d0a4a3"
+            "layerId": "custom-b574cdc6"
         }
     ],
     "layers": [
@@ -160,7 +160,7 @@
             "visible": false
         },
         {
-            "id": "custom-b3d0a4a3",
+            "id": "custom-b574cdc6",
             "name": "Electrical",
             "trade": "CUSTOM",
             "levelId": "floor1"

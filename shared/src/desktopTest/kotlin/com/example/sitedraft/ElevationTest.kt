@@ -100,7 +100,7 @@ class ElevationTest {
         vm.onEvent(DrawingEvent.PlaceAt(Offset(500f, 0f)))
         val window = vm.state.value.elements.last() as DrawingElement.Symbol
         // Placed with the defaults, then given a 30" sill and 60" height typed as fractions.
-        assertEquals(36f, window.properties[PlanSymbols.PROP_SILL_IN])
+        assertEquals(32f, window.properties[PlanSymbols.PROP_SILL_IN]) // head at 80", lined up with the door head
         assertEquals(48f, window.properties[PlanSymbols.PROP_HEIGHT_IN])
         vm.onEvent(DrawingEvent.UpdateElementProperty(window.id, PlanSymbols.PROP_SILL_IN, "30"))
         vm.onEvent(DrawingEvent.UpdateElementProperty(window.id, PlanSymbols.PROP_HEIGHT_IN, "60 1/2"))

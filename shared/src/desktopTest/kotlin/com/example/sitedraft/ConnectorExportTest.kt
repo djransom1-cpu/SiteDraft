@@ -63,7 +63,10 @@ class ConnectorExportTest {
             putJsonObject("defaults") {
                 put("pxPerFoot", CanvasState().scale.ratio)
                 put("unitSystem", CanvasState().unitSystem.name)
+                // Read for windows saved without a sill of their own (old ones): stays 36".
                 put("windowSillIn", 36f)
+                // A new window: head lined up with the door head.
+                put("newWindowSillIn", PlanSymbols.NEW_WINDOW_SILL_IN)
                 put("windowHeightIn", 48f)
                 put("doorHeightIn", 80f)
                 put("upperHeightIn", PlanSymbols.DEFAULT_UPPER_HEIGHT_IN)

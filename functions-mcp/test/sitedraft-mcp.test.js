@@ -107,6 +107,12 @@ async function main() {
   // Window centred 6' from the left inside corner; door 4" off the bottom corner of the west wall.
   const win = await call(client, "place_opening", { project: "Ransom Kitchen", wall_id: north.id, kind: "window", width: "3'", from: "left", to: "center", distance: "6'" });
   assert.match(win.placed.measured, /^6'-0" from the left inside corner to the centre/);
+  // A new window's head lines up with the door head: 32" sill + 48" = 80".
+  {
+    const st = (await S.readProject(db, uid, "Ransom Kitchen")).state;
+    const w = st.elements.find((e) => e.id === win.placed.id);
+    assert.strictEqual(w.properties[M.props.sillIn] + w.properties[M.props.heightIn], 80);
+  }
   const doorMissingSwing = await call(client, "place_opening", { project: "Ransom Kitchen", wall_id: west.id, kind: "door", width: 36 });
   assert(doorMissingSwing.error.includes("swing"));
   const door = await call(client, "place_opening", { project: "Ransom Kitchen", wall_id: west.id, kind: "door", width: "2'8\"", from: "bottom", distance: '4"', swing_into: "east", hinge: "right" });

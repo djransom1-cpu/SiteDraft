@@ -4,6 +4,7 @@
         "pxPerFoot": 50.0,
         "unitSystem": "IMPERIAL",
         "windowSillIn": 36.0,
+        "newWindowSillIn": 32.0,
         "windowHeightIn": 48.0,
         "doorHeightIn": 80.0,
         "upperHeightIn": 30.0,
