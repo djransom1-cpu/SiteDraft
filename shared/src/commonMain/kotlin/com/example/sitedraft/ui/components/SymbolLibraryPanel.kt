@@ -80,11 +80,13 @@ fun SymbolLibraryPanel(
             val onFraming = activeTrade == LayerTrade.FLOOR_STRUCTURAL
             if (onFoundation) {
                 Text("Drawing on the foundation layer", style = MaterialTheme.typography.labelLarge)
+                Button(onClick = { onEvent(DrawingEvent.MatchFloorPlan) }, modifier = Modifier.fillMaxWidth()) { Text("Match floor plan") }
                 SymbolCategory(Structure.FOUNDATION, Icons.Default.Foundation, Structure.foundationLibrary, onEvent, startExpanded = true)
                 SymbolCategory("Foundation walls", Icons.Default.Fence, listOf("8\" Block Wall", "8\" Concrete Wall"), onEvent, startExpanded = true, category = PlanSymbols.WALLS)
             }
             if (onFraming) {
                 Text("Drawing on a floor structural layer", style = MaterialTheme.typography.labelLarge)
+                Button(onClick = { onEvent(DrawingEvent.MatchFloorPlan) }, modifier = Modifier.fillMaxWidth()) { Text("Match floor plan") }
                 SymbolCategory(Structure.FRAMING, Icons.Default.ViewWeek, Structure.framingLibrary, onEvent, startExpanded = true)
             }
             SymbolCategory("Electrical", Icons.Default.ElectricBolt, listOf("Outlet", "Switch", "Light Fixture", "Junction Box"), onEvent)

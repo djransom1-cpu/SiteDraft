@@ -111,6 +111,11 @@ fun BuildingPanel(
                     Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
                         Text(if (active.trade == LayerTrade.FOUNDATION) "Foundation tools" else "Framing tools")
                     }
+                    if (!state.building.autoLayers) {
+                        OutlinedButton(onClick = { onEvent(DrawingEvent.MatchFloorPlan) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Match floor plan")
+                        }
+                    }
                 }
             }
 
@@ -198,6 +203,7 @@ private fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSetting
     var crawl by remember(settings) { mutableStateOf(inch(settings.crawlClearanceIn)) }
     var footT by remember(settings) { mutableStateOf(inch(settings.footingThicknessIn)) }
     var footW by remember(settings) { mutableStateOf(inch(settings.footingWidthIn)) }
+    var footP by remember(settings) { mutableStateOf(inch(settings.footingProjectionIn)) }
     var floorName by remember(settings) { mutableStateOf("${Building.ordinal(settings.upperFloors.size + 2)} floor") }
     var floorElev by remember(settings) { mutableStateOf("") }
 
@@ -222,6 +228,7 @@ private fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSetting
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         field("Footing thick", footT, Modifier.weight(1f)) { footT = it }
         field("Footing wide", footW, Modifier.weight(1f)) { footW = it }
+        field("Past the wall", footP, Modifier.weight(1f)) { footP = it }
     }
 
     val parsed: BuildingSettings? = run {
@@ -236,7 +243,8 @@ private fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSetting
             courseIn = parseInches(course) ?: return@run null,
             crawlClearanceIn = parseInches(crawl) ?: return@run null,
             footingThicknessIn = parseInches(footT) ?: return@run null,
-            footingWidthIn = parseInches(footW) ?: return@run null
+            footingWidthIn = parseInches(footW) ?: return@run null,
+            footingProjectionIn = parseInches(footP) ?: return@run null
         )
     }
     Button(onClick = { parsed?.let(onApply) }, enabled = parsed != null && parsed != settings, modifier = Modifier.fillMaxWidth()) {

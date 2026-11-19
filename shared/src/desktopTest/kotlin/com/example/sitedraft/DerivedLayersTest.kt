@@ -52,10 +52,15 @@ class DerivedLayersTest {
         val fw = gen(s, "fw:top").single() as DrawingElement.Symbol
         assertEquals(0f, (fw.center.y - fw.size.height / 2f) / inch, 0.01f)
         assertEquals(7.625f, fw.size.height / inch, 0.01f)
-        // Footing 18" wide, centred on it.
+        // Footing 18" wide, 6" past the wall's outside face all the way round (corners too).
         val ftg = gen(s, "ftg:top").single() as DrawingElement.Symbol
         assertEquals(18f, ftg.size.height / inch, 0.01f)
-        assertEquals(fw.center.y, ftg.center.y, 0.01f)
+        assertEquals(-6f, (ftg.center.y - ftg.size.height / 2f) / inch, 0.01f)
+        assertEquals(492f, ftg.size.width / inch, 0.01f)
+        assertEquals(-6f, (ftg.center.x - ftg.size.width / 2f) / inch, 0.01f)
+        // The right-hand footing: 6" past the right wall's outside face.
+        val right = gen(s, "ftg:right").single() as DrawingElement.Symbol
+        assertEquals(486f, (right.center.x + right.size.width / 2f) / inch, 0.01f)
     }
 
     @Test
@@ -151,5 +156,29 @@ class DerivedLayersTest {
             listOf(androidx.compose.ui.geometry.Rect(-18f * inch, -60f * inch, 18f * inch, 60f * inch)))
         // Joists run across; a 36" x 120" opening breaks several of them in two and adds trimmers and headers.
         assertTrue(cut.size > whole.size)
+    }
+
+    @Test
+    fun `match floor plan draws the foundation once as ordinary parts`() {
+        val off = on.copy(building = BuildingSettings())
+        val parts = DerivedLayers.matchLayer(off, "foundation")
+        // 4 walls + 4 footings + 4 posts and 4 pads under the centre beam, + the bearing wall's posts and pads.
+        assertTrue(parts.count { it.symbolName == "8\" Block Wall" } == 4)
+        assertTrue(parts.count { it.symbolName == Structure.FOOTING } == 4)
+        assertTrue(parts.none { DerivedLayers.isGenerated(it) })
+        assertTrue(parts.all { it.layerId == "foundation" })
+        // Framing for the first floor's structural layer.
+        val framing = DerivedLayers.matchLayer(off, "floor1-structural")
+        assertEquals(1, framing.count { it.symbolName == Structure.JOIST_BAY })
+        assertEquals(1, framing.count { it.symbolName == Structure.LADDER })
+    }
+
+    @Test
+    fun `exterior walls moved to the foundation layer by mistake still count`() {
+        val misfiled = on.copy(
+            building = BuildingSettings(),
+            elements = walls.map { if (it.symbolName == ext) it.copy(layerId = "foundation") else it }
+        )
+        assertEquals(4, DerivedLayers.matchLayer(misfiled, "foundation").count { it.symbolName == Structure.FOOTING })
     }
 }

@@ -326,6 +326,25 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 _state.value = if (event.on) s else DerivedLayers.clearUntouched(s)
                 triggerAutoSave()
             }
+            // Match floor plan: draw the active layer's parts once, from the first-floor plan.
+            is DrawingEvent.MatchFloorPlan -> {
+                val s = _state.value
+                val layer = s.activeLayer
+                if (s.building.autoLayers) {
+                    platform.toast("Build from the floor plan is on: ${layer.name} already follows the plan")
+                } else {
+                    val parts = DerivedLayers.matchLayer(s, layer.id)
+                    if (parts.isEmpty()) {
+                        platform.toast("Nothing to match on ${layer.name}: draw the exterior (2x6) walls on the first-floor plan first")
+                    } else {
+                        pushUndoSnapshot()
+                        // Under the plan, and selected so they can be moved or checked together.
+                        _state.value = s.copy(elements = parts + s.elements, selectedElementIds = parts.map { it.id }.toSet(), selectedElementId = null)
+                        triggerAutoSave()
+                        platform.toast("${parts.size} parts drawn on ${layer.name} to match the floor plan")
+                    }
+                }
+            }
             is DrawingEvent.RebuildLayers -> {
                 pushUndoSnapshot()
                 _state.value = DerivedLayers.rebuild(_state.value)
@@ -3404,6 +3423,8 @@ sealed class DrawingEvent {
     data class SetAutoLayers(val on: Boolean) : DrawingEvent()
     /** Throw away the built layers (edits and deletions included) and build them again. */
     object RebuildLayers : DrawingEvent()
+    /** Draw the active layer's parts (foundation or framing) once, to match the first-floor plan. */
+    object MatchFloorPlan : DrawingEvent()
     /** The selected objects onto another layer (undoable; nothing moves). */
     data class MoveSelectionToLayer(val layerId: String) : DrawingEvent()
     /** Cabinet codes (W2430, BD18...) on the plan, on or off. */

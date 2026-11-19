@@ -47,6 +47,8 @@ data class BuildingSettings(
     val crawlClearanceIn: Float = 24f,
     val footingThicknessIn: Float = 8f,
     val footingWidthIn: Float = 18f,
+    /** How far the footing runs past the outside face of the foundation wall, all the way round (Dan: 6"). */
+    val footingProjectionIn: Float = 6f,
     val upperFloors: List<UpperFloor> = emptyList(),
     /** Top of the wall plate the roof bears on, inches; null until the roof is set up. */
     val roofPlateIn: Float? = null,

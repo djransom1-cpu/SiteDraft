@@ -3,6 +3,7 @@ package com.example.sitedraft.ui.canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import com.example.sitedraft.platform.randomId
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -14,8 +15,8 @@ import kotlin.math.roundToInt
  * From the plan's walls (symbols in [PlanSymbols.WALLS] on the first-floor plan layer, square to
  * the page):
  *  - Foundation: an 8" block foundation wall under every exterior wall ([FloorPlan.EXTERIOR_WALL]),
- *    outside faces flush, with a continuous footing centred under it (width and thickness from
- *    the building inputs).
+ *    outside faces flush, with a continuous footing 6" past its outside face all the way round
+ *    (projection, width and thickness from the building inputs).
  *  - First-floor framing: one joist bay over the footprint, joists run the short way at 16" o.c.,
  *    sized from the building's joist depth, with evenly spaced beams so no span is over 14'
  *    (ProCalc's floor layout). Posts on pad footings carry each beam at 8' o.c. at most.
@@ -79,6 +80,14 @@ object DerivedLayers {
         return state.copy(elements = elements, generatedIds = generatedIds, suppressedGenIds = suppressed)
     }
 
+    /**
+     * Match floor plan: the parts for [layerId] (the foundation, or a floor's framing) drawn once
+     * as ordinary elements - not live, edit them like anything you drew. Empty when the plan has
+     * no exterior walls or the layer isn't one the plan builds.
+     */
+    fun matchLayer(state: CanvasState, layerId: String): List<DrawingElement.Symbol> =
+        build(state).filter { it.layerId == layerId }.map { it.copy(id = randomId()) }
+
     /** Throws away every generated part, edited or deleted ones included, and builds them again. */
     fun rebuild(state: CanvasState): CanvasState =
         sync(state.copy(elements = state.elements.filter { !isGenerated(it) }, generatedIds = emptySet(), suppressedGenIds = emptySet()))
@@ -114,7 +123,13 @@ object DerivedLayers {
             it.category == PlanSymbols.WALLS && !isGenerated(it) && isSquare(it.rotation) &&
                 Layers.layerOf(it, state).id == Building.FLOOR1_PLAN
         }
-        val exterior = walls.filter { it.symbolName == FloorPlan.EXTERIOR_WALL }
+        // Exterior walls belong on the first-floor plan; ones moved to another layer by mistake
+        // (Nov 19 2026: a plan's 2x6 walls ended up on Foundation) still count when the plan has none.
+        val exterior = walls.filter { it.symbolName == FloorPlan.EXTERIOR_WALL }.ifEmpty {
+            state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
+                it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL && !isGenerated(it) && isSquare(it.rotation)
+            }
+        }
         if (exterior.isEmpty()) return emptyList()
         val footprint = exterior.map { wallRect(it) }.reduce { a, r ->
             Rect(minOf(a.left, r.left), minOf(a.top, r.top), maxOf(a.right, r.right), maxOf(a.bottom, r.bottom))
@@ -132,27 +147,35 @@ object DerivedLayers {
         if (foundationLayer != null) {
             val t = 7.625f * inch
             val f = s.footingWidthIn * inch
+            // Dan's footing: [footingProjectionIn] (6") past the wall's outside face all the way
+            // round, corners included, [footingWidthIn] (18") wide, the rest under and inside the wall.
+            val p = s.footingProjectionIn * inch
             for (ew in exterior) {
                 val r = wallRect(ew)
                 val vertical = r.height > r.width
                 val center: Offset
                 val wallSize: Size
+                val footCenter: Offset
                 val footSize: Size
                 if (!vertical) {
                     val outsideTop = r.center.y < footprint.center.y
-                    val cy = if (outsideTop) r.top + t / 2f else r.bottom - t / 2f
-                    center = Offset(r.center.x, cy)
+                    val face = if (outsideTop) r.top else r.bottom
+                    val inward = if (outsideTop) 1f else -1f
+                    center = Offset(r.center.x, face + inward * t / 2f)
                     wallSize = Size(r.width, t)
-                    footSize = Size(r.width + (f - t), f)
+                    footCenter = Offset(r.center.x, face + inward * (f / 2f - p))
+                    footSize = Size(r.width + 2f * p, f)
                 } else {
                     val outsideLeft = r.center.x < footprint.center.x
-                    val cx = if (outsideLeft) r.left + t / 2f else r.right - t / 2f
-                    center = Offset(cx, r.center.y)
+                    val face = if (outsideLeft) r.left else r.right
+                    val inward = if (outsideLeft) 1f else -1f
+                    center = Offset(face + inward * t / 2f, r.center.y)
                     wallSize = Size(t, r.height)
-                    footSize = Size(f, r.height + (f - t))
+                    footCenter = Offset(face + inward * (f / 2f - p), r.center.y)
+                    footSize = Size(f, r.height + 2f * p)
                 }
                 out += symbol("fw:${ew.id}", FOUNDATION_WALL, PlanSymbols.WALLS, center, wallSize, foundationLayer)
-                out += symbol("ftg:${ew.id}", Structure.FOOTING, Structure.FOUNDATION, center, footSize, foundationLayer,
+                out += symbol("ftg:${ew.id}", Structure.FOOTING, Structure.FOUNDATION, footCenter, footSize, foundationLayer,
                     mapOf(Structure.THICK to s.footingThicknessIn))
             }
         }
