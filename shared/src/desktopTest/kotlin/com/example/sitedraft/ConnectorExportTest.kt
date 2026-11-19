@@ -28,7 +28,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Writes what the Site Draft MCP connector (functions/sitedraft/) needs to stay in step with the
+ * Writes what the Site Draft MCP connector (functions-mcp/sitedraft/) needs to stay in step with the
  * app, straight from the app's own code, so nothing is typed twice:
  *
  * - catalog.json: every plan symbol by category with its footprint (width along the wall x depth,
@@ -41,7 +41,7 @@ import java.io.File
 class ConnectorExportTest {
     /** The app's own project encoder (DrawingManager.json). */
     private val appJson = Json { prettyPrint = true; ignoreUnknownKeys = true }
-    private val outDir = File("../functions/sitedraft").apply { mkdirs() }
+    private val outDir = File("../functions-mcp/sitedraft").apply { mkdirs() }
 
     @Test
     fun `export the symbol catalog`() {

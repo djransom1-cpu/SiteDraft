@@ -1,0 +1,30 @@
+{
+  "note": "Written by functions-mcp/test/sitedraft-mcp.test.js; ConnectorCheckTest checks it with the app's code.",
+  "codes": {
+    "d3f38562-d35b-4eeb-b8e9-c7e40c260ab3": "B18",
+    "7a7fbc74-69c6-4474-81d0-ce8768fab6e4": "B15",
+    "311b371a-cf4e-4433-bb9a-30f2b52f771f": "SB36",
+    "e8b1a72b-a963-481b-b92b-a1d0703bddb2": "BD18",
+    "0a4b3990-7aee-4c98-a0b6-abccd0fa2936": "B15",
+    "d30ddace-3030-49fc-a011-5956a901327f": "W1830",
+    "d3e3a606-b470-4ca7-aadd-4d52e73a71e2": "W1830",
+    "2eb09457-60f5-4393-8369-dafc385724b9": "W1830",
+    "55a4b99e-0dc9-41bf-a52f-eb5ed5718d3d": "W2430",
+    "a433134c-cd70-4c25-9308-0fc035b5e596": "B24",
+    "38a25d52-8889-4d76-9874-d0a57438a37f": "W3018"
+  },
+  "window": {
+    "id": "76cb0d92-2719-4d6d-a52a-4254c8798d55",
+    "fromLeftInsideCornerToCenterIn": 72
+  },
+  "door": {
+    "id": "b5d2eafe-5b19-4d69-9dba-4fb6aa1d668d",
+    "fromBottomInsideCornerToEdgeIn": 4,
+    "hingeRight": true
+  },
+  "kitchenInsideIn": [
+    144,
+    120
+  ],
+  "walls": 7
+}

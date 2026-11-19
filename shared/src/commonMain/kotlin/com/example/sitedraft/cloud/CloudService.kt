@@ -82,7 +82,7 @@ interface CloudStore {
     suspend fun writeProject(uid: String, name: String, json: String, updatedAt: Long, device: String)
     suspend fun deleteProject(uid: String, name: String)
     /**
-     * When the Site Draft connector (Claude, functions/sitedraft) last changed [name]:
+     * When the Site Draft connector (Claude, functions-mcp/sitedraft) last changed [name]:
      * `users/{uid}/projectStamps/{name}.updatedAt`, or null when it never has. The open project is
      * watched with this so a change Claude makes shows up without reopening it.
      */

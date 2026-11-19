@@ -190,7 +190,7 @@ async function main() {
   fs.writeFileSync(path.join(fx, "connector-L.json"), M.stringifyProject((await S.readProject(db, uid, "L")).state) + "\n");
   const seen = T.readDrawing(noPdf);
   fs.writeFileSync(path.join(fx, "connector-expect.json"), JSON.stringify({
-    note: "Written by functions/test/sitedraft-mcp.test.js; ConnectorCheckTest checks it with the app's code.",
+    note: "Written by functions-mcp/test/sitedraft-mcp.test.js; ConnectorCheckTest checks it with the app's code.",
     codes: Object.fromEntries(seen.cabinetsAndAppliances.filter((c) => c.code).map((c) => [c.id, c.code])),
     window: { id: win.placed.id, fromLeftInsideCornerToCenterIn: 72 },
     door: { id: door.placed.id, fromBottomInsideCornerToEdgeIn: 4, hingeRight: true },

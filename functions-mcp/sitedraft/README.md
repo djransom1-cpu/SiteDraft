@@ -2,7 +2,8 @@
 
 Lets Claude work in Site Draft: list and read projects, create projects, import PDF plans,
 draw walls from measured lengths, place doors, windows and cabinets, edit, delete and undo.
-Deployed as the Cloud Function `sitedraftMcp` in the `sitedraft-djransom` Firebase project;
+Deployed as the Cloud Function `sitedraftMcp` in the `sitedraft-djransom` Firebase project, in its own
+codebase `mcp` (folder `functions-mcp`, so it never needs the Stripe functions' secrets);
 built the same way as Crewsync's `crewsyncMcp`.
 
 ## Files
@@ -38,5 +39,5 @@ deploy prints (`https://sitedraftmcp-....run.app`), and type the key when asked.
 
 ## Test
 
-`cd functions && npm run test:mcp` (no network or Firebase needed), then the desktop tests
+`cd functions-mcp && npm test` (no network or Firebase needed), then the desktop tests
 (`ConnectorCheckTest`, `ProjectSyncWatchTest`).

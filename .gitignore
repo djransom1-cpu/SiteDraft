@@ -39,5 +39,6 @@ functions/.env.*
 
 # Cloud Functions packages and deploy logs
 functions/node_modules/
+functions-mcp/node_modules/
 /deploy-connector.log
 /push-to-github.log

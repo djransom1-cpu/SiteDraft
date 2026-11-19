@@ -23,14 +23,14 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Opens drawings the Site Draft MCP connector made (functions/sitedraft, written by
- * functions/test/sitedraft-mcp.test.js) with the app's own code, and checks the app measures
+ * Opens drawings the Site Draft MCP connector made (functions-mcp/sitedraft, written by
+ * functions-mcp/test/sitedraft-mcp.test.js) with the app's own code, and checks the app measures
  * them the way the connector said it placed them: wall positions, door and window distances,
  * cabinet codes, the room.
  */
 class ConnectorCheckTest {
     private val appJson = Json { prettyPrint = true; ignoreUnknownKeys = true }
-    private val dir = File("../functions/sitedraft/fixtures")
+    private val dir = File("../functions-mcp/sitedraft/fixtures")
     private fun load(name: String) = appJson.decodeFromString(CanvasState.serializer(), File(dir, name).readText())
     private val expect = Json.parseToJsonElement(File(dir, "connector-expect.json").readText()).jsonObject
 

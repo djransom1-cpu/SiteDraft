@@ -14,7 +14,6 @@ const { defineSecret, defineString } = require("firebase-functions/params");
 const { logger } = require("firebase-functions");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const { getAuth } = require("firebase-admin/auth");
 const Stripe = require("stripe");
 const { subscriptionDocFrom, uidFrom, HANDLED_EVENTS } = require("./subscription");
 
@@ -146,18 +145,4 @@ exports.stripeWebhook = onRequest({ secrets: [STRIPE_SECRET_KEY, STRIPE_WEBHOOK_
     logger.error("Webhook handling failed", error);
     res.status(500).send("error");
   }
-});
-
-// ---------------------------------------------------------------------------------------------
-// Site Draft MCP connector (functions/sitedraft): lets Claude read and draw in the owner's
-// projects. Connector URL = this function's Cloud Run URL; the access key typed on the consent
-// page is the SITEDRAFT_MCP_KEY secret. See functions/sitedraft/README.md.
-// ---------------------------------------------------------------------------------------------
-const SITEDRAFT_MCP_KEY = defineSecret("SITEDRAFT_MCP_KEY");
-const mcpApps = new Map(); // built lazily per address: secrets are only readable inside a request
-exports.sitedraftMcp = onRequest({ secrets: [SITEDRAFT_MCP_KEY], invoker: "public", timeoutSeconds: 300, memory: "1GiB" }, (req, res) => {
-  const { buildApp, baseUrlOf } = require("./sitedraft/mcp");
-  const base = baseUrlOf(req);
-  if (!mcpApps.has(base)) mcpApps.set(base, buildApp(getFirestore(), { legacySecret: SITEDRAFT_MCP_KEY.value(), base, auth: getAuth() }));
-  mcpApps.get(base)(req, res);
 });

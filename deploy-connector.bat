@@ -11,11 +11,11 @@ exit /b
 
 :main
 echo ==== %date% %time%  Site Draft MCP connector deploy
-cd functions
+cd functions-mcp
 echo ---- npm install
 call npm install --no-audit --no-fund || exit /b 1
 echo ---- connector tests
-call npm run test:mcp || exit /b 1
+call npm test || exit /b 1
 cd ..
 echo ---- access key secret
 call firebase.cmd functions:secrets:get SITEDRAFT_MCP_KEY --project sitedraft-djransom
@@ -24,6 +24,6 @@ if errorlevel 1 (
   call firebase.cmd functions:secrets:set SITEDRAFT_MCP_KEY --data-file "..\Firebase keys\sitedraft-mcp-key.txt" --project sitedraft-djransom --force || exit /b 1
 )
 echo ---- deploy
-call firebase.cmd deploy --only functions:sitedraftMcp,firestore:rules --project sitedraft-djransom --force || exit /b 1
+call firebase.cmd deploy --only functions:mcp,firestore:rules --project sitedraft-djransom --force || exit /b 1
 echo ==== deployed
 exit /b 0
