@@ -213,6 +213,10 @@ function buildServer(ctx) {
       block_courses: z.number().int().optional(), course_height: Len.optional(), crawl_clearance: Len.optional(),
       footing_thickness: Len.optional(), footing_width: Len.optional(),
       upper_floors: z.array(z.object({ name: z.string(), top_of_subfloor: Len })).optional(),
+      build_from_floor_plan: z.boolean().optional().describe(
+        "true: Site Draft builds the foundation (block walls and footings under the exterior 2x6 walls), the first-floor framing " +
+        "(joists the short way at 16\" o.c., beams so no span is over 14', posts on pad footings) and a ladder under every wall " +
+        "that runs with the joists, from the first-floor plan; it rebuilds when the plan changes, the app does the building when the project is next opened"),
     },
     change("set_building_inputs", L.setBuildingInputs));
 

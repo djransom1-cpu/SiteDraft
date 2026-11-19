@@ -99,7 +99,7 @@ object FloorPlan {
      * vertical line) on each of its four sides, or null if a side is open.
      */
     fun areaAt(p: Offset, state: CanvasState): Rect? {
-        val boxes = state.elements.mapNotNull { e ->
+        val boxes = Layers.onActiveLevel(state).mapNotNull { e ->
             when {
                 e is DrawingElement.Symbol && e.category == PlanSymbols.WALLS -> bounds(e)
                 e is DrawingElement.Line && e.rotation == 0f && (e.start.x == e.end.x || e.start.y == e.end.y) ->
@@ -244,7 +244,7 @@ object FloorPlan {
         val w = if (room.outside) room.width * ratio - 2f * t else room.width * ratio
         val d = if (room.outside) room.depth * ratio - 2f * t else room.depth * ratio
         val insideCorner = if (room.outside) point + Offset(t, t) else point
-        val corner = magnetRoomCorner(insideCorner, w, d, state.elements.filterIsInstance<DrawingElement.Symbol>(), state.inchesToPx(ROOM_MAGNET_IN))
+        val corner = magnetRoomCorner(insideCorner, w, d, Layers.onActiveLevel(state).filterIsInstance<DrawingElement.Symbol>(), state.inchesToPx(ROOM_MAGNET_IN))
         return Rect(corner, Size(max(w, 1f), max(d, 1f)))
     }
 
@@ -262,7 +262,7 @@ object FloorPlan {
         val (wIn, _) = PlanSymbols.footprintInches[name] ?: return null
         val w = state.inchesToPx(wIn)
         val reach = state.inchesToPx(12f)
-        val wall = state.elements.filterIsInstance<DrawingElement.Symbol>()
+        val wall = Layers.onActiveLevel(state).filterIsInstance<DrawingElement.Symbol>()
             .filter { it.category == PlanSymbols.WALLS && it.rotation == 0f }
             .map { bounds(it) }
             .filter { it.inflate(reach).contains(raw) }

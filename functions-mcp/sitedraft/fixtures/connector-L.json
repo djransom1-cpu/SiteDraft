@@ -3,7 +3,7 @@
     "elements": [
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "96c32715-5ff2-415a-b7cc-8afc739d2424",
+            "id": "8526f6f6-f2b5-4eeb-ab7d-69e2225b8690",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "500.0,9.375",
@@ -16,7 +16,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "de51b43e-a187-4068-8537-73476fb87937",
+            "id": "7bdf9f00-bf5e-49ea-8ee7-f78d20b9a4ba",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "990.625,250.0",
@@ -29,7 +29,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "53ad87df-586d-4795-943d-aab1cfb17646",
+            "id": "a98a329f-9a80-47a4-8218-5e34f3aaa6b7",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "790.625,490.625",
@@ -42,7 +42,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "9e4e4742-a43f-412e-85f7-71faafa76cb7",
+            "id": "a783b2dd-dec9-4e78-8b79-6a2aa97fa1ce",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "590.625,640.625",
@@ -55,7 +55,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "bed0d1da-dacc-43a9-924e-ec23f77fc38d",
+            "id": "b801f4b1-fb5a-4326-bb2a-3700aa7e8d4e",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "300.0,790.625",
@@ -68,7 +68,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "97a5dc06-5d8f-4092-b472-73c2c66de333",
+            "id": "1b9a6d56-d08b-469e-b3c0-10dc946a380e",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "9.375,400.0",
@@ -81,7 +81,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "042395df-af7b-463e-9e7b-5c4fb505a3ea",
+            "id": "ddabe945-f5a9-48b1-8de9-db6169c4adc8",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "203.8833,1490.625",
@@ -94,7 +94,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "ac51fdbb-c0be-4cdd-afe4-a36d17a3381c",
+            "id": "764f6b59-d14b-45b1-aa4d-fc1de065ecc1",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "475.9593,1562.7011",

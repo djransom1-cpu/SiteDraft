@@ -28,6 +28,7 @@ import com.example.sitedraft.ui.canvas.DrawingTool
 import com.example.sitedraft.ui.canvas.isLockedPlan
 import com.example.sitedraft.ui.canvas.selectionHasGroup
 import com.example.sitedraft.ui.canvas.selectionIsOneGroup
+import com.example.sitedraft.ui.canvas.activeLayer
 import androidx.compose.ui.geometry.Offset
 import com.example.sitedraft.ui.components.*
 import com.example.sitedraft.ui.components.SettingsPanel
@@ -146,6 +147,7 @@ fun MainScreen(
             // Left Panel (Symbol Library) - Permanent on tablet
             if (isExpanded && (currentNav == "Symbols")) {
                 SymbolLibraryPanel(
+                    activeTrade = state.activeLayer.trade,
                     onEvent = { event ->
                         viewModel.onEvent(event)
                         // Picking a symbol closes the library so the canvas is free for the placing tap.
@@ -286,6 +288,7 @@ fun MainScreen(
                             modifier = Modifier.align(Alignment.CenterStart)
                         ) {
                             SymbolLibraryPanel(
+                                activeTrade = state.activeLayer.trade,
                                 onEvent = { event ->
                                     viewModel.onEvent(event)
                                     if (event is DrawingEvent.SelectSymbol) currentNav = "Drawing"
@@ -410,6 +413,7 @@ fun MainScreen(
                         state = state,
                         onEvent = viewModel::onEvent,
                         onOpenSheets = { sheetsOnly = true; printDialog = PrintAction.PRINT },
+                        onOpenTools = { currentNav = "Symbols" },
                         modifier = Modifier
                             .width(340.dp)
                             .fillMaxHeight()

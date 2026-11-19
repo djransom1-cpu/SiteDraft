@@ -63,7 +63,7 @@ object CabinetList {
     fun finishedEnds(c: DrawingElement.Symbol, state: CanvasState): Pair<Boolean, Boolean>? {
         if (c.category != PlanSymbols.CABINETS || PlanSymbols.isIsland(c) || PlanSymbols.isFiller(c.symbolName)) return null
         val inch = state.inchesToPx(1f)
-        val others = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { closesSide(c, it) }
+        val others = Layers.onLevelOf(c, state).filterIsInstance<DrawingElement.Symbol>().filter { closesSide(c, it) }
         val hw = c.size.width / 2f
         val hh = c.size.height / 2f
         fun open(sign: Float): Boolean {

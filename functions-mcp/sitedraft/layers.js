@@ -270,6 +270,7 @@ function setBuildingInputs(project, a) {
   if (a.crawl_clearance != null) s.crawlClearanceIn = len(a.crawl_clearance, "Crawl clearance");
   if (a.footing_thickness != null) s.footingThicknessIn = len(a.footing_thickness, "Footing thickness");
   if (a.footing_width != null) s.footingWidthIn = len(a.footing_width, "Footing width");
+  if (a.build_from_floor_plan != null) s.autoLayers = !!a.build_from_floor_plan;
   if (a.upper_floors) s.upperFloors = a.upper_floors.map((f) => ({ name: String(f.name || "").trim(), elevationIn: len(f.top_of_subfloor, f.name || "Floor") }));
   const bad = validate(s);
   if (bad) throw new M.UserError(bad);

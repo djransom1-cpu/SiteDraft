@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Bathtub
 import androidx.compose.material.icons.filled.Shower
 import androidx.compose.material.icons.filled.Stairs
+import androidx.compose.material.icons.filled.ViewWeek
 import androidx.compose.material.icons.filled.Microwave
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Checkroom
@@ -36,11 +37,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.example.sitedraft.ui.canvas.DrawingEvent
 import com.example.sitedraft.ui.canvas.PlanSymbols
+import com.example.sitedraft.ui.canvas.LayerTrade
+import com.example.sitedraft.ui.canvas.Structure
 
 @Composable
 fun SymbolLibraryPanel(
     onEvent: (DrawingEvent) -> Unit,
     modifier: Modifier = Modifier,
+    /** The active layer's trade: its tools come first, opened (foundation parts on Foundation...). */
+    activeTrade: LayerTrade? = null,
     onClose: () -> Unit
 ) {
     Surface(
@@ -69,6 +74,19 @@ fun SymbolLibraryPanel(
                 }
             }
 
+            // The active layer's own tools first, opened, so a foundation or framing layer shows
+            // what can be drawn on it.
+            val onFoundation = activeTrade == LayerTrade.FOUNDATION
+            val onFraming = activeTrade == LayerTrade.FLOOR_STRUCTURAL
+            if (onFoundation) {
+                Text("Drawing on the foundation layer", style = MaterialTheme.typography.labelLarge)
+                SymbolCategory(Structure.FOUNDATION, Icons.Default.Foundation, Structure.foundationLibrary, onEvent, startExpanded = true)
+                SymbolCategory("Foundation walls", Icons.Default.Fence, listOf("8\" Block Wall", "8\" Concrete Wall"), onEvent, startExpanded = true, category = PlanSymbols.WALLS)
+            }
+            if (onFraming) {
+                Text("Drawing on a floor structural layer", style = MaterialTheme.typography.labelLarge)
+                SymbolCategory(Structure.FRAMING, Icons.Default.ViewWeek, Structure.framingLibrary, onEvent, startExpanded = true)
+            }
             SymbolCategory("Electrical", Icons.Default.ElectricBolt, listOf("Outlet", "Switch", "Light Fixture", "Junction Box"), onEvent)
             SymbolCategory("Plumbing", Icons.Default.WaterDrop, listOf("Valve", "Faucet"), onEvent)
             SymbolCategory(PlanSymbols.FIXTURES, Icons.Default.Bathtub, PlanSymbols.fixtures, onEvent)
@@ -82,6 +100,8 @@ fun SymbolLibraryPanel(
             SymbolCategory(PlanSymbols.FURNITURE, Icons.Default.Weekend, PlanSymbols.furniture, onEvent)
             SymbolCategory(PlanSymbols.DOORS_WINDOWS, Icons.Default.DoorFront, PlanSymbols.doorsWindows, onEvent)
             SymbolCategory(PlanSymbols.WALLS, Icons.Default.Fence, PlanSymbols.walls, onEvent)
+            if (!onFoundation) SymbolCategory(Structure.FOUNDATION, Icons.Default.Foundation, Structure.foundationLibrary, onEvent)
+            if (!onFraming) SymbolCategory(Structure.FRAMING, Icons.Default.ViewWeek, Structure.framingLibrary, onEvent)
             SymbolCategory("HVAC", Icons.Default.ElectricBolt, listOf("Vent", "AC Unit", "Thermostat"), onEvent)
             SymbolCategory("Lumber", Icons.Default.Square, listOf("2x4", "2x6", "2x8", "2x10", "2x12", "1x4", "1x6", "1x8"), onEvent)
             SymbolCategory("Plywood", Icons.Default.Layers, listOf("Plywood 7/16\"", "Plywood 1/2\"", "Plywood 5/8\"", "Plywood 3/4\""), onEvent)
@@ -97,9 +117,12 @@ private fun SymbolCategory(
     name: String,
     icon: ImageVector,
     symbols: List<String>,
-    onEvent: (DrawingEvent) -> Unit
+    onEvent: (DrawingEvent) -> Unit,
+    startExpanded: Boolean = false,
+    /** The category the picked symbols belong to, when the heading says something else. */
+    category: String = name
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(startExpanded) { mutableStateOf(startExpanded) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -131,7 +154,7 @@ private fun SymbolCategory(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { symbol ->
                             Box(modifier = Modifier.weight(1f)) {
-                                SymbolItem(symbol) { onEvent(DrawingEvent.SelectSymbol(symbol, name)) }
+                                SymbolItem(symbol) { onEvent(DrawingEvent.SelectSymbol(symbol, category)) }
                             }
                         }
                         if (row.size == 1) Spacer(modifier = Modifier.weight(1f))

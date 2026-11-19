@@ -28,6 +28,7 @@ import com.example.sitedraft.ui.canvas.formatInches
 import com.example.sitedraft.ui.canvas.levels
 import com.example.sitedraft.ui.canvas.parseFeet
 import com.example.sitedraft.ui.canvas.parseInches
+import com.example.sitedraft.ui.canvas.DerivedLayers
 
 /**
  * Levels and layers (Building.kt): which layer new drawing goes on, which layers show, layers of
@@ -41,6 +42,8 @@ fun BuildingPanel(
     onEvent: (DrawingEvent) -> Unit,
     onOpenSheets: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens the symbol library (it shows the active layer's tools first). */
+    onOpenTools: () -> Unit = {},
     onClose: () -> Unit
 ) {
     val layers = state.effectiveLayers
@@ -94,6 +97,53 @@ fun BuildingPanel(
                     }
                 }
             }
+
+            // What can be drawn on the active layer, one tap away.
+            val tools = when (active.trade) {
+                LayerTrade.FOUNDATION -> "Footings, pad footings, piers, slabs and 8\" block or concrete walls"
+                LayerTrade.FLOOR_STRUCTURAL -> "Joist bays, beams, posts, floor openings and ladders"
+                LayerTrade.FLOOR_PLAN -> "Walls, doors, windows, fixtures (Floor Plan tool and Symbols)"
+                else -> null
+            }
+            if (tools != null) {
+                Text("Draw on ${active.name}: $tools", style = MaterialTheme.typography.bodySmall)
+                if (active.trade == LayerTrade.FOUNDATION || active.trade == LayerTrade.FLOOR_STRUCTURAL) {
+                    Button(onClick = onOpenTools, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (active.trade == LayerTrade.FOUNDATION) "Foundation tools" else "Framing tools")
+                    }
+                }
+            }
+
+            // --- Layers built from the floor plan (DerivedLayers) ---
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Build from the floor plan", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (state.building.foundation == FoundationType.SLAB)
+                            "Slab on grade: no foundation or floor framing layer to build yet."
+                        else
+                            "Foundation walls and footings under the exterior walls, joists, beams, posts and pads, and a ladder under every wall that runs with the joists. Parts you edit or delete stay that way.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Switch(checked = state.building.autoLayers, onCheckedChange = { onEvent(DrawingEvent.SetAutoLayers(it)) })
+            }
+            if (state.building.autoLayers) {
+                val built = state.elements.count { DerivedLayers.isGenerated(it) }
+                val edited = state.elements.count { DerivedLayers.isGenerated(it) && !DerivedLayers.isUntouched(it) }
+                Text(
+                    "$built parts built" + (if (edited > 0) ", $edited edited by hand" else "") +
+                        (if (state.suppressedGenIds.isNotEmpty()) ", ${state.suppressedGenIds.size} deleted" else ""),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (edited > 0 || state.suppressedGenIds.isNotEmpty()) {
+                    OutlinedButton(onClick = { onEvent(DrawingEvent.RebuildLayers) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Rebuild (drops hand edits)")
+                    }
+                }
+            }
+            HorizontalDivider()
 
             if (hasSelection) {
                 OutlinedButton(onClick = { onEvent(DrawingEvent.MoveSelectionToLayer(active.id)) }, modifier = Modifier.fillMaxWidth()) {

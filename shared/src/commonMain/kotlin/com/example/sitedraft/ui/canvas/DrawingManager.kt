@@ -318,6 +318,19 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             is DrawingEvent.RenameLayer -> applyLayerEdit(LayerEdits.rename(_state.value, event.layerId, event.name))
             is DrawingEvent.RemoveLayer -> applyLayerEdit(LayerEdits.remove(_state.value, event.layerId))
             is DrawingEvent.SetBuilding -> applyLayerEdit(LayerEdits.setBuilding(_state.value, event.settings))
+            // The layer builder (DerivedLayers): on, off (taking away the parts it made that
+            // nobody touched), or start over.
+            is DrawingEvent.SetAutoLayers -> {
+                pushUndoSnapshot()
+                val s = _state.value.copy(building = _state.value.building.copy(autoLayers = event.on))
+                _state.value = if (event.on) s else DerivedLayers.clearUntouched(s)
+                triggerAutoSave()
+            }
+            is DrawingEvent.RebuildLayers -> {
+                pushUndoSnapshot()
+                _state.value = DerivedLayers.rebuild(_state.value)
+                triggerAutoSave()
+            }
             is DrawingEvent.MoveSelectionToLayer -> {
                 val ids = _state.value.selectedElementIds.ifEmpty { setOfNotNull(_state.value.selectedElementId) }
                 if (ids.isNotEmpty()) {
@@ -480,6 +493,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     private fun projectFileName(name: String) = "project_${name.replace(" ", "_")}.json"
 
     private fun triggerAutoSave() {
+        syncDerivedLayers()
         syncElevationViews()
         registerProjectName()
         pendingSave?.cancel()
@@ -527,6 +541,8 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     private fun newProject() {
         _state.replace(CanvasState(
             projectName = "Project ${nowMillis() / 1000}",
+            // New projects build their foundation and framing from the plan.
+            building = BuildingSettings(autoLayers = true),
             unitSystem = _state.value.unitSystem,
             scale = _state.value.scale,
             backgroundColor = _state.value.backgroundColor,
@@ -2447,7 +2463,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         val outer = Rect(corner, Size(shell.width * s.scale.ratio, shell.depth * s.scale.ratio))
         val walls = FloorPlan.wallsAround(
             outer, wallThicknessPx(shell.wallName), shell.wallName, s.currentColor,
-            s.elements.filterIsInstance<DrawingElement.Symbol>(), s.inchesToPx(1f)
+            Layers.onActiveLevel(s).filterIsInstance<DrawingElement.Symbol>(), s.inchesToPx(1f)
         )
         pushUndoSnapshot()
         _state.value = _state.value.copy(elements = _state.value.elements + walls, selectedElementId = null)
@@ -2466,7 +2482,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         val outer = Rect(inside.left - t, inside.top - t, inside.right + t, inside.bottom + t)
         val walls = FloorPlan.wallsAround(
             outer, t, room.wallName, s.currentColor,
-            s.elements.filterIsInstance<DrawingElement.Symbol>(), s.inchesToPx(1f)
+            Layers.onActiveLevel(s).filterIsInstance<DrawingElement.Symbol>(), s.inchesToPx(1f)
         )
         val label = FloorPlan.roomLabel(room, inside, s)
         pushUndoSnapshot()
@@ -2528,6 +2544,14 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
      * Keeps each elevation view's frame in step with its wall (the wall may have been stretched,
      * trimmed or the heights edited). Runs with every autosave; cheap when nothing changed.
      */
+    /** Foundation and framing built from the first-floor plan, when the builder is on (DerivedLayers). */
+    private fun syncDerivedLayers() {
+        val s = _state.value
+        if (!s.building.autoLayers) return
+        val synced = DerivedLayers.sync(s)
+        if (synced !== s) _state.value = synced
+    }
+
     private fun syncElevationViews() {
         val s = _state.value
         if (s.elements.none { it is DrawingElement.ElevationView }) return
@@ -2573,6 +2597,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 // A shower carries its glass, curb, tile and fixture settings.
                 if (category == PlanSymbols.SHOWERS) properties = properties + Shower.defaults(name)
                 if (category == PlanSymbols.STAIRS) properties = properties + Stairs.defaults(name)
+                if (category in Structure.categories) properties = properties + Structure.defaults(name)
                 if (category == PlanSymbols.DOORS_WINDOWS) {
                     properties = properties + if (PlanSymbols.isWindow(name)) {
                         mapOf(PlanSymbols.PROP_SILL_IN to PlanSymbols.NEW_WINDOW_SILL_IN, PlanSymbols.PROP_HEIGHT_IN to PlanSymbols.NEW_WINDOW_HEIGHT_IN)
@@ -2794,6 +2819,12 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             val island = _state.value.elements.find { it.id == element.spec.wallId } as? DrawingElement.Symbol ?: return@map element
                             val spec = element.spec.copy(islandFace = v)
                             element.copy(spec = spec, size = Elevation.sizePx(island, spec, _state.value))
+                        }
+                        // Foundation and framing settings (Structure.kt) and a wall's bearing flag.
+                        in Structure.keys -> {
+                            val v = parseInches(value) ?: return@map element
+                            if (element !is DrawingElement.Symbol || v < 0f) return@map element
+                            element.copy(properties = element.properties + (property to v))
                         }
                         in Appliances.keys -> {
                             val v = parseInches(value) ?: return@map element
@@ -3183,6 +3214,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             // When loading, preserve the available projects list from current session
             _state.replace(loadedState.copy(availableProjects = _state.value.availableProjects, selectedElementId = null, selectedElementIds = emptySet()))
             storage.write(LAST_PROJECT_FILE, name)
+            // Walls the connector (or another device) drew since: build the layers under them now.
+            if (loadedState.building.autoLayers) {
+                val synced = DerivedLayers.sync(_state.value)
+                if (synced !== _state.value) { _state.value = synced; triggerAutoSave() }
+            }
         } catch (e: Exception) {
             platform.log("SiteDraft", "load failed: ${e.message}")
         }
@@ -3364,6 +3400,10 @@ sealed class DrawingEvent {
     data class RemoveLayer(val layerId: String) : DrawingEvent()
     /** New building inputs (datum, subfloor, joists, sill, block, footing, floors). */
     data class SetBuilding(val settings: BuildingSettings) : DrawingEvent()
+    /** Build the foundation and first-floor framing from the first-floor plan, or stop. */
+    data class SetAutoLayers(val on: Boolean) : DrawingEvent()
+    /** Throw away the built layers (edits and deletions included) and build them again. */
+    object RebuildLayers : DrawingEvent()
     /** The selected objects onto another layer (undoable; nothing moves). */
     data class MoveSelectionToLayer(val layerId: String) : DrawingEvent()
     /** Cabinet codes (W2430, BD18...) on the plan, on or off. */

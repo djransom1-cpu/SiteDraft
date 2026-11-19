@@ -49,7 +49,12 @@ data class BuildingSettings(
     val footingWidthIn: Float = 18f,
     val upperFloors: List<UpperFloor> = emptyList(),
     /** Top of the wall plate the roof bears on, inches; null until the roof is set up. */
-    val roofPlateIn: Float? = null
+    val roofPlateIn: Float? = null,
+    /**
+     * Build the foundation and first-floor framing from the first-floor plan ([DerivedLayers]).
+     * Off for projects saved before 1.0.31, so a kitchen layout doesn't sprout footings.
+     */
+    val autoLayers: Boolean = false
 )
 
 /** What a level is. */
@@ -226,6 +231,28 @@ object Layers {
     }
 
     fun isVisible(e: DrawingElement, state: CanvasState): Boolean = layerOf(e, state).visible
+
+    /**
+     * The elements on [levelId]'s level (building-wide layers count everywhere): what a wall
+     * search for something on that level should see, so the first-floor plan never finds the
+     * foundation walls under it. With no level (a building-wide layer) it is everything.
+     * An old project's untagged elements are all on the first floor, so for it nothing changes.
+     */
+    fun onLevel(levelId: String?, state: CanvasState): List<DrawingElement> {
+        if (levelId == null) return state.elements
+        val byId = state.effectiveLayers.associateBy { it.id }
+        return state.elements.filter { e ->
+            val layer = e.layerId?.let { byId[it] } ?: byId[defaultLayerId(e)]
+            val lv = layer?.levelId
+            lv == null || lv == levelId
+        }
+    }
+
+    /** The elements on the active layer's level. */
+    fun onActiveLevel(state: CanvasState): List<DrawingElement> = onLevel(state.activeLayer.levelId, state)
+
+    /** The elements on [e]'s level. */
+    fun onLevelOf(e: DrawingElement, state: CanvasState): List<DrawingElement> = onLevel(layerOf(e, state).levelId, state)
 
     /** The elements on visible layers: what is drawn, picked and snapped to. */
     fun visibleElements(state: CanvasState): List<DrawingElement> {

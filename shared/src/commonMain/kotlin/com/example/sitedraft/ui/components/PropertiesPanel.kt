@@ -583,6 +583,25 @@ fun PropertiesPanel(
                             if (selectedElement.category == PlanSymbols.STAIRS) {
                                 StairSection(selectedElement, onEvent)
                             }
+                            if (selectedElement.category in Structure.categories) {
+                                StructureSection(selectedElement, state, onEvent)
+                            }
+                            // A wall on a floor plan can be marked bearing: the layer builder carries it down to a footing.
+                            if (selectedElement.category == PlanSymbols.WALLS && Layers.layerOf(selectedElement, state).trade == LayerTrade.FLOOR_PLAN) {
+                                val bearing = (selectedElement.properties[Structure.BEARING] ?: 0f) >= 0.5f
+                                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Bearing wall", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            "Running with the joists: a ladder (doubled joists, R502.2). Across them: carried by a beam, or a beam of its own on posts and pads.",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                    Switch(checked = bearing, onCheckedChange = {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, Structure.BEARING, if (it) "1" else "0"))
+                                    })
+                                }
+                            }
                             if (selectedElement.category == PlanSymbols.HOODS) {
                                 Text(text = "Hood", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
                                 EditableProperty("Bottom of hood (in)", formatInches(Appliances.prop(selectedElement, Appliances.HOOD_BOTTOM))) {
@@ -1410,6 +1429,55 @@ private fun StairSection(stair: DrawingElement.Symbol, onEvent: (DrawingEvent) -
                 val spec = ElevationSpec(wallId = stair.id, side = ViewerSide.BELOW, stairSide = side)
                 onEvent(DrawingEvent.StartPlacement(Placement.Elevation(spec, "stair elevation")))
             }) { Text(if (type == Stairs.Type.SPIRAL) "Side elevation" else Stairs.sideLabelsFor(stair)[side]) }
+        }
+    }
+}
+
+/** Foundation and framing settings (Structure.kt): thickness, joist layout, ladder blocks. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StructureSection(s: DrawingElement.Symbol, state: CanvasState, onEvent: (DrawingEvent) -> Unit) {
+    fun set(key: String, v: String) = onEvent(DrawingEvent.UpdateElementProperty(s.id, key, v))
+    @Composable
+    fun inches(label: String, key: String) {
+        EditableProperty("$label (in)", formatInches(Structure.prop(s, key))) { set(key, it) }
+    }
+    @Composable
+    fun chips(title: String, key: String, labels: List<String>) {
+        Text(text = title, style = MaterialTheme.typography.labelLarge)
+        val chosen = Structure.code(s, key)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            labels.forEachIndexed { i, label -> FilterChip(selected = chosen == i, onClick = { set(key, i.toString()) }, label = { Text(label) }) }
+        }
+    }
+    Text(text = s.symbolName, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    val summary = Structure.summary(s, state)
+    if (summary.isNotEmpty()) Text(text = summary, style = MaterialTheme.typography.bodySmall)
+    if (DerivedLayers.isGenerated(s)) {
+        Text(
+            if (DerivedLayers.isUntouched(s)) "Built from the floor plan; it follows the plan until you change it."
+            else "Built from the floor plan, then changed by hand: it no longer follows the plan.",
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+    when (s.symbolName) {
+        Structure.FOOTING, Structure.PAD, Structure.SLAB -> inches("Thickness", Structure.THICK)
+        Structure.JOIST_BAY -> {
+            inches("Joist spacing, on center", Structure.SPACING)
+            chips("Joist", Structure.JOIST, Structure.joistSizes.map { it.first })
+            chips("Joists run", Structure.DIRECTION, Structure.directionLabels)
+            EditableProperty("Beams across the joists", Structure.code(s, Structure.BEAMS).toString()) { set(Structure.BEAMS, it) }
+            Text("Openings: place a Floor Opening over the bay; its joists are cut and the trimmers and headers framed (doubled over 4', hangers over 6').", style = MaterialTheme.typography.bodySmall)
+        }
+        Structure.LADDER -> {
+            inches("Blocks, on center", Structure.BLOCKS)
+            Text(
+                "Laid out from the end of the wall so the blocks land under the studs. Code max 48\" o.c. (R502.2).",
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (Structure.prop(s, Structure.BLOCKS) > Structure.MAX_LADDER_BLOCKS_IN) {
+                Text("Over the 48\" code maximum.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }

@@ -406,6 +406,10 @@ data class CanvasState(
     val building: BuildingSettings = BuildingSettings(),
     val layers: List<Layer> = emptyList(),
     val activeLayerId: String? = null,
+    // Parts the layer builder made (DerivedLayers) as of the last sync, and generated parts the
+    // user deleted, which it must not put back. New in 1.0.31.
+    val generatedIds: Set<String> = emptySet(),
+    val suppressedGenIds: Set<String> = emptySet(),
     val zoom: Float = 1f,
     @Serializable(with = OffsetSerializer::class)
     val pan: Offset = Offset.Zero,

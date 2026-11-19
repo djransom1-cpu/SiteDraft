@@ -39,7 +39,8 @@ object PlanSymbols {
     /** Ranges, cooktops, ovens, refrigerators and the like: see [Appliances]. */
     const val APPLIANCES = "Appliances"
     const val HOODS = "Hoods"
-    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS, STAIRS, APPLIANCES, HOODS)
+    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS, STAIRS, APPLIANCES, HOODS,
+        Structure.FOUNDATION, Structure.FRAMING)
 
     /**
      * Closet parts, set against a closet wall with their backs at the top (like cabinets).
@@ -238,7 +239,7 @@ object PlanSymbols {
         // deep overall with the front 1 3/4" overhanging the island face; island cutout 35" x 22",
         // 10 1/8" deep; front panel 11" below the counter; hood 14 7/8" above it closed, 23 1/2" open.
         LYNX_36_GRILL to Pair(36f, LYNX_36_DEPTH)
-    ) + Shower.footprints + Stairs.footprints + Appliances.footprints
+    ) + Shower.footprints + Stairs.footprints + Appliances.footprints + Structure.footprints
 
     const val LYNX_36_DEPTH = 26.375f
     const val LYNX_36_FRONT_LIP = 1.75f
@@ -456,7 +457,9 @@ fun DrawScope.drawPlanSymbol(
         // counter under it must still show through its dashed outline.
         // Round and shaped fixtures blank only their own shape, so a floor hatch shows right
         // up to a toilet bowl or a tub's corners rather than stopping in a rectangle around it.
-        if (!PlanSymbols.isDoor(name) && !PlanSymbols.isOverlay(element)) {
+        // Foundation and framing parts are drawn over each other and over the faint layers below
+        // (a joist bay over its footings, a ladder over the bay), so they blank nothing.
+        if (!PlanSymbols.isDoor(name) && !PlanSymbols.isOverlay(element) && element.category !in Structure.categories) {
             val shape = blankShape(element, w, h, inch)
             if (shape != null) drawPath(shape, color = state.backgroundColor)
             else drawRect(color = state.backgroundColor, topLeft = Offset(-hw, -hh), size = Size(w, h))
@@ -468,6 +471,8 @@ fun DrawScope.drawPlanSymbol(
                 if (h > w) rotate(90f, pivot = Offset.Zero) { drawWallSection(name, h, w, inch, lineColor, accentColor, line, thin) }
                 else drawWallSection(name, w, h, inch, lineColor, accentColor, line, thin)
             }
+            element.category in Structure.categories ->
+                with(Structure) { drawStructurePlan(element, state, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.SHOWERS -> with(Shower) { drawShowerPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.STAIRS -> with(Stairs) { drawStairPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.APPLIANCES || element.category == PlanSymbols.HOODS ->
@@ -1114,7 +1119,7 @@ private fun DrawScope.label(text: String, color: Color, sizePx: Float, center: O
 private fun doorWallCut(door: DrawingElement.Symbol, state: CanvasState, inch: Float): Pair<Float, Float> {
     val hh = door.size.height / 2f
     val threshold = rotateAbout(door.center + Offset(0f, hh), door.center, door.rotation)
-    val wall = state.elements.asSequence()
+    val wall = Layers.onLevelOf(door, state).asSequence()
         .filterIsInstance<DrawingElement.Symbol>()
         .filter { it.category == PlanSymbols.WALLS }
         .map { FloorPlan.bounds(it) }

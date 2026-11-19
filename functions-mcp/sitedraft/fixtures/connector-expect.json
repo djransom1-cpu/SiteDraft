@@ -1,24 +1,24 @@
 {
   "note": "Written by functions-mcp/test/sitedraft-mcp.test.js; ConnectorCheckTest checks it with the app's code.",
   "codes": {
-    "21a9ca50-2c2b-4360-893e-5374fa8c632b": "B18",
-    "d97e04d6-6256-4bc1-83c6-927e177d6743": "B15",
-    "103cbdb4-d873-43b8-bbc9-2bfec3707e6f": "SB36",
-    "3b5bd6ff-58fb-4f81-a9bd-47cf689ef429": "BD18",
-    "a6c6189a-a7fa-43b6-a00d-cd03722037a3": "B15",
-    "d6452abe-ba25-4d67-b734-ad2699326616": "W1830",
-    "e6a40458-b449-4eea-8ac9-21a0ec9a0635": "W1830",
-    "28dc2d48-287b-4fc5-aa6f-6568a5349a5f": "W1830",
-    "8b1d26e2-143a-4c9c-a530-3e21bd5be067": "W2430",
-    "0368c106-abbc-487e-b550-2efeae5e44cb": "B24",
-    "86549e83-e0b9-4a4b-b502-fc00ffb5360e": "W3018"
+    "9ade7fb7-125a-47cd-b827-1c8d28d038f3": "B18",
+    "d3e3d32f-1061-490f-b7ba-c7513553f347": "B15",
+    "767ad1ce-50bf-4afe-9297-41d17c0b44d7": "SB36",
+    "6011fe09-9d30-40cb-af72-a79569d2042f": "BD18",
+    "7df92217-5890-4eed-b2a9-5c4e11e386b9": "B15",
+    "52c8d719-ab52-4b8e-861c-74e1b321e3ed": "W1830",
+    "55fbd952-b406-48bb-b423-ccf4c0212f5e": "W1830",
+    "f3e5ddea-11b1-4dcd-a9c3-47b3333db0c8": "W1830",
+    "6bbe84eb-07d7-48cd-97e3-f601aa0cca58": "W2430",
+    "686d7509-0e73-4e45-ad31-21230da6fd81": "B24",
+    "c9f9bd13-666d-4591-96ce-6d4aa23400af": "W3018"
   },
   "window": {
-    "id": "62ac3ef3-302a-4fc9-bd31-f0f5658aaf73",
+    "id": "d263de8b-eaf0-4e3d-bc23-c2d02d3aacf5",
     "fromLeftInsideCornerToCenterIn": 72
   },
   "door": {
-    "id": "8cf4659c-4ad2-48ef-bdd0-6de6ec54a3d8",
+    "id": "b2386a87-f16f-44dd-a67c-bbe69266ba4f",
     "fromBottomInsideCornerToEdgeIn": 4,
     "hingeRight": true
   },

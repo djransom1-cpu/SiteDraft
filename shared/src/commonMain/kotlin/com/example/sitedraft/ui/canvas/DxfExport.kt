@@ -380,6 +380,18 @@ object DxfExport {
                     is Shower.Part.Label -> pen.label(part.text, part.c, part.size)
                 }
             }
+            s.category in Structure.categories -> {
+                val openings = if (s.symbolName == Structure.JOIST_BAY) Structure.openingsOver(s, state) else emptyList()
+                for (part in Structure.planParts(s, w, h, inch, openings)) {
+                    val pen = if (part.inkIsDashed()) p.dashed() else p
+                    when (part) {
+                        is Shower.Part.Seg -> pen.line(part.a, part.b)
+                        is Shower.Part.Poly -> pen.poly(part.points, part.closed)
+                        is Shower.Part.Ring -> pen.circle(part.c, part.r)
+                        is Shower.Part.Label -> pen.label(part.text, part.c, part.size)
+                    }
+                }
+            }
             s.category == PlanSymbols.STAIRS -> for (part in Stairs.planParts(s, w, h, inch)) {
                 val pen = if (part.inkIsDashed()) p.dashed() else p
                 when (part) {

@@ -30,7 +30,7 @@ object OpeningPosition {
     fun hostWall(opening: DrawingElement.Symbol, state: CanvasState): DrawingElement.Symbol? {
         val inch = state.inchesToPx(1f)
         val a = Elevation.openingAnchor(opening)
-        return state.elements.filterIsInstance<DrawingElement.Symbol>()
+        return Layers.onLevelOf(opening, state).filterIsInstance<DrawingElement.Symbol>()
             .filter { it.category == PlanSymbols.WALLS && FloorPlan.bounds(it).inflate(2f * inch).contains(a) }
             .minByOrNull { (FloorPlan.bounds(it).center - a).getDistanceSquared() }
     }
@@ -63,7 +63,7 @@ object OpeningPosition {
         val insidePlus = side == null || side == ViewerSide.BELOW || side == ViewerSide.RIGHT
         // A line just past the chosen face of the wall: in the room, or outside the building.
         val probe = if (outside == insidePlus) ax.n1(wb) - 0.5f * inch else ax.n2(wb) + 0.5f * inch
-        val crossing = state.elements.filterIsInstance<DrawingElement.Symbol>()
+        val crossing = Layers.onLevelOf(wall, state).filterIsInstance<DrawingElement.Symbol>()
             .filter { it.category == PlanSymbols.WALLS && it.id != wall.id }
             .map { FloorPlan.bounds(it) }
             .filter { ax.n1(it) < probe && ax.n2(it) > probe }

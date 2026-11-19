@@ -26,7 +26,14 @@
         "overhangIn": "overhangIn",
         "posFromEnd": "posFromEnd",
         "posToCenter": "posToCenter",
-        "posOutside": "posOutside"
+        "posOutside": "posOutside",
+        "thickIn": "stThick",
+        "joistSpacingIn": "jSpacing",
+        "joistSize": "jSize",
+        "joistDirection": "jDir",
+        "beams": "jBeams",
+        "ladderBlocksIn": "ldBlocks",
+        "bearing": "bearing"
     },
     "labels": {
         "front": [
@@ -225,6 +232,19 @@
             "Bookcase 36\"",
             "TV Stand 60\"",
             "TV 65\""
+        ],
+        "Foundation": [
+            "Continuous Footing",
+            "Pad Footing",
+            "Pier (round)",
+            "Slab"
+        ],
+        "Framing": [
+            "Joist Bay",
+            "Beam",
+            "Post 6x6",
+            "Floor Opening",
+            "Ladder"
         ]
     },
     "footprints": {
@@ -815,6 +835,42 @@
         "Wood Hood 48\"": [
             48.0,
             24.0
+        ],
+        "Continuous Footing": [
+            96.0,
+            18.0
+        ],
+        "Pad Footing": [
+            24.0,
+            24.0
+        ],
+        "Pier (round)": [
+            12.0,
+            12.0
+        ],
+        "Slab": [
+            120.0,
+            120.0
+        ],
+        "Joist Bay": [
+            192.0,
+            144.0
+        ],
+        "Beam": [
+            96.0,
+            4.5
+        ],
+        "Post 6x6": [
+            5.5,
+            5.5
+        ],
+        "Floor Opening": [
+            36.0,
+            120.0
+        ],
+        "Ladder": [
+            96.0,
+            16.0
         ]
     },
     "building": {
@@ -830,7 +886,8 @@
             "footingThicknessIn": 8.0,
             "footingWidthIn": 18.0,
             "upperFloors": [],
-            "roofPlateIn": null
+            "roofPlateIn": null,
+            "autoLayers": false
         },
         "floor1Plan": "floor1-plan",
         "floor1Cabinets": "floor1-cabinets",
@@ -849,7 +906,8 @@
                     "footingThicknessIn": 8.0,
                     "footingWidthIn": 18.0,
                     "upperFloors": [],
-                    "roofPlateIn": null
+                    "roofPlateIn": null,
+                    "autoLayers": false
                 },
                 "levels": [
                     {
@@ -965,7 +1023,8 @@
                             "elevationIn": 1310.0
                         }
                     ],
-                    "roofPlateIn": null
+                    "roofPlateIn": null,
+                    "autoLayers": false
                 },
                 "levels": [
                     {
@@ -1118,7 +1177,8 @@
                     "footingThicknessIn": 8.0,
                     "footingWidthIn": 18.0,
                     "upperFloors": [],
-                    "roofPlateIn": null
+                    "roofPlateIn": null,
+                    "autoLayers": false
                 },
                 "levels": [
                     {
@@ -1236,7 +1296,8 @@
                     "footingThicknessIn": 8.0,
                     "footingWidthIn": 18.0,
                     "upperFloors": [],
-                    "roofPlateIn": null
+                    "roofPlateIn": null,
+                    "autoLayers": false
                 },
                 "levels": [
                     {

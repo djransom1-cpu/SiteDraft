@@ -231,6 +231,11 @@ async function main() {
   const two = await call(client, "set_building_inputs", { project: "House", upper_floors: [{ name: "Second floor", top_of_subfloor: "109'-1 1/8\"" }] });
   assert(two.layers.some((x) => x.id === "floor2-plan"));
   assert((await call(client, "set_building_inputs", { project: "House", upper_floors: [{ name: "Low", top_of_subfloor: "90'" }] })).error.includes("higher"));
+  // The layer builder switch: saved on the building, the app does the building.
+  await call(client, "set_building_inputs", { project: "House", build_from_floor_plan: true });
+  assert.strictEqual((await S.readProject(db, uid, "House")).state.building.autoLayers, true);
+  await call(client, "set_building_inputs", { project: "House", build_from_floor_plan: false });
+  assert.notStrictEqual((await S.readProject(db, uid, "House")).state.building.autoLayers, true);
   await call(client, "set_active_layer", { project: "House", layer: "floor2-plan" });
   const cab = await call(client, "place_symbol", { project: "House", name: "Base 24\"", x: 100, y: 100 });
   house = (await S.readProject(db, uid, "House")).state;

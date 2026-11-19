@@ -64,7 +64,7 @@ object AutoDimension {
     // ---------------------------------------------------------------- plan
 
     fun plan(state: CanvasState, opts: PlanOptions = PlanOptions()): List<DrawingElement.Dimension> {
-        val walls = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS }.map { FloorPlan.bounds(it) }
+        val walls = Layers.onActiveLevel(state).filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS }.map { FloorPlan.bounds(it) }
         if (walls.isEmpty()) return emptyList()
         val outer = Rect(walls.minOf { it.left }, walls.minOf { it.top }, walls.maxOf { it.right }, walls.maxOf { it.bottom })
         val out = mutableListOf<DrawingElement.Dimension>()
@@ -215,7 +215,7 @@ object AutoDimension {
      */
     fun roomDims(room: Rect, state: CanvasState, owner: String?): List<DrawingElement.Dimension> {
         val inch = state.inchesToPx(1f)
-        val walls = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS }.map { FloorPlan.bounds(it) }
+        val walls = Layers.onActiveLevel(state).filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS }.map { FloorPlan.bounds(it) }
         val topWall = walls.filter { abs(it.bottom - room.top) <= inch && it.right > room.left + inch && it.left < room.right - inch }.maxOfOrNull { it.height }
         val leftWall = walls.filter { abs(it.right - room.left) <= inch && it.bottom > room.top + inch && it.top < room.bottom - inch }.maxOfOrNull { it.width }
         val up = (topWall?.let { it + 9f * inch }) ?: (12f * inch)
@@ -349,7 +349,7 @@ object AutoDimension {
         return when (pick.category) {
             PlanSymbols.WALLS -> {
                 val b = FloorPlan.bounds(pick)
-                val walls = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS }.map { FloorPlan.bounds(it) }
+                val walls = Layers.onActiveLevel(state).filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS }.map { FloorPlan.bounds(it) }
                 val middle = Offset(walls.map { it.center.x }.average().toFloat(), walls.map { it.center.y }.average().toFloat())
                 if (b.width >= b.height) {
                     val outside = if (b.center.y <= middle.y) Offset(0f, -1f) else Offset(0f, 1f)

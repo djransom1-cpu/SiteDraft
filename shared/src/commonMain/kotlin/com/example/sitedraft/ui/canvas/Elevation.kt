@@ -108,7 +108,7 @@ object Elevation {
 
     /** The side of [wall] that faces the middle of the plan's other walls, or null with no other walls. */
     fun interiorSide(wall: DrawingElement.Symbol, state: CanvasState): ViewerSide? {
-        val others = state.elements.filterIsInstance<DrawingElement.Symbol>()
+        val others = Layers.onLevelOf(wall, state).filterIsInstance<DrawingElement.Symbol>()
             .filter { it.category == PlanSymbols.WALLS && it.id != wall.id }
             .map { FloorPlan.bounds(it).center }
         if (others.isEmpty()) return null
