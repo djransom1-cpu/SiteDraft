@@ -50,6 +50,18 @@ object DerivedLayers {
 
     fun isGenerated(e: DrawingElement) = e.id.startsWith(GEN_PREFIX)
 
+    /**
+     * Anchor bolt positions along a sill [lengthIn] long, inches from one end: [endIn] in from
+     * each end, then evenly spaced between no more than [spacingIn] apart.
+     */
+    fun anchorBolts(lengthIn: Float, endIn: Float, spacingIn: Float): List<Float> {
+        if (lengthIn <= 0f || spacingIn <= 0f) return emptyList()
+        if (lengthIn <= 2f * endIn) return listOf(lengthIn / 2f)
+        val run = lengthIn - 2f * endIn
+        val gaps = ceil(run / spacingIn - 1e-4f).toInt().coerceIn(1, 1000)
+        return (0..gaps).map { endIn + run * it / gaps }
+    }
+
     private fun hashOf(s: DrawingElement.Symbol): Float {
         fun r(v: Float) = (v * 100f).roundToInt()
         val props = s.properties.filterKeys { it != GEN_HASH }.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${r(it.value)}" }
@@ -175,6 +187,14 @@ object DerivedLayers {
                     footSize = Size(f, r.height + 2f * p)
                 }
                 out += symbol("fw:${ew.id}", FOUNDATION_WALL, PlanSymbols.WALLS, center, wallSize, foundationLayer)
+                // Anchor bolts down the middle of the wall: [anchorBoltEndIn] from each end, then
+                // evenly spaced no more than [anchorBoltSpacingIn] apart (Dan: 12", 32").
+                val len = if (vertical) wallSize.height else wallSize.width
+                for ((i, a) in anchorBolts(len / inch, s.anchorBoltEndIn, s.anchorBoltSpacingIn).withIndex()) {
+                    val along = a * inch - len / 2f
+                    val at = if (vertical) Offset(center.x, center.y + along) else Offset(center.x + along, center.y)
+                    out += symbol("ab:${ew.id}:$i", Structure.ANCHOR_BOLT, Structure.FOUNDATION, at, Size(3f * inch, 3f * inch), foundationLayer)
+                }
                 out += symbol("ftg:${ew.id}", Structure.FOOTING, Structure.FOUNDATION, footCenter, footSize, foundationLayer,
                     mapOf(Structure.THICK to s.footingThicknessIn))
             }

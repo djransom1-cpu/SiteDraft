@@ -49,6 +49,12 @@ data class BuildingSettings(
     val footingWidthIn: Float = 18f,
     /** How far the footing runs past the outside face of the foundation wall, all the way round (Dan: 6"). */
     val footingProjectionIn: Float = 6f,
+    /** Anchor bolts (Dan): 1/2" bolts this far in from each corner or end of the sill, inches. */
+    val anchorBoltEndIn: Float = 12f,
+    /** ...and this far apart between (Dan: 32" o.c., never more than 4'). */
+    val anchorBoltSpacingIn: Float = 32f,
+    /** Rigid foam on the outside of the foundation wall, inches (Dan: 2"); 0 = none. */
+    val foundationFoamIn: Float = 2f,
     val upperFloors: List<UpperFloor> = emptyList(),
     /** Top of the wall plate the roof bears on, inches; null until the roof is set up. */
     val roofPlateIn: Float? = null,

@@ -19,7 +19,9 @@ import kotlin.math.roundToInt
  * the project; printing or exporting one goes through the same page path as a plain print.
  */
 @Serializable
-enum class SheetViewKind { PLAN, ELEVATION }
+enum class SheetViewKind { PLAN, ELEVATION,
+    /** The typical wall section (WallSection), drawn from the building inputs and the plan. */
+    SECTION }
 
 /** One view on a sheet. [xIn], [yIn]: the view's centre on the paper, inches from the sheet's top-left corner. */
 @Serializable
@@ -80,6 +82,7 @@ object Sheets {
             }
         }
         SheetViewKind.ELEVATION -> state.elements.filter { it.id == view.elementId || it.isOwnedBy(view.elementId) }
+        SheetViewKind.SECTION -> emptyList()
     }
 
     /** The view's extent in world px (null when it shows nothing, e.g. its elevation was deleted). */
@@ -97,6 +100,10 @@ object Sheets {
 
     /** The view's drawing on the paper (inches), centred on its position. */
     fun viewRect(view: SheetView, state: CanvasState): Rect? {
+        if (view.kind == SheetViewKind.SECTION) {
+            val (w, h) = WallSection.paperSizeIn(state, view.scale.denominator ?: 16)
+            return Rect(view.xIn - w / 2f, view.yIn - h / 2f, view.xIn + w / 2f, view.yIn + h / 2f)
+        }
         val b = worldBounds(view, state) ?: return null
         val k = inchesPerWorldPx(view, state)
         val w = b.width * k
@@ -190,6 +197,21 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
     drawRect(Color.White, size = Size(wIn * dpi, hIn * dpi))
     val metric = state.unitSystem == UnitSystem.METRIC
     for (view in sheet.views) {
+        if (view.kind == SheetViewKind.SECTION) {
+            // Drawn straight from the building inputs, at its scale, with its title under it.
+            val rIn = Sheets.viewRect(view, state) ?: continue
+            with(WallSection) { drawSection(state, Offset(view.xIn * dpi, view.yIn * dpi), dpi, view.scale.denominator ?: 16) }
+            val titleTop = rIn.bottom * dpi + 0.12f * dpi
+            val titleSize = 0.2f * dpi
+            drawPageText(view.title.uppercase(), Offset(rIn.left * dpi, titleTop), titleSize, Color.Black, bold = true, maxWidth = max(rIn.width * dpi, 3f * dpi))
+            drawLine(Color.Black, Offset(rIn.left * dpi, titleTop + titleSize * 1.3f), Offset((rIn.left + minOf(max(rIn.width, 2f), 6f)) * dpi, titleTop + titleSize * 1.3f), strokeWidth = lineW * 1.5f)
+            drawPageText("SCALE: ${PrintPage.scaleText(view.scale, metric)}", Offset(rIn.left * dpi, titleTop + titleSize * 1.5f), 0.12f * dpi, Color.Black, bold = false, maxWidth = 6f * dpi)
+            if (view.id == highlightId) {
+                val fp = Sheets.footprint(view, state)!!
+                drawRect(Color(0xFFFF8F00), topLeft = Offset(fp.left * dpi, fp.top * dpi), size = Size(fp.width * dpi, fp.height * dpi), style = Stroke(lineW * 2f))
+            }
+            continue
+        }
         val bounds = Sheets.worldBounds(view, state) ?: continue
         val rIn = Sheets.viewRect(view, state) ?: continue
         val zoom = dpi * Sheets.inchesPerWorldPx(view, state)

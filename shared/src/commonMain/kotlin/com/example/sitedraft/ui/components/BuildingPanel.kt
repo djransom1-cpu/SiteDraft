@@ -204,6 +204,9 @@ private fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSetting
     var footT by remember(settings) { mutableStateOf(inch(settings.footingThicknessIn)) }
     var footW by remember(settings) { mutableStateOf(inch(settings.footingWidthIn)) }
     var footP by remember(settings) { mutableStateOf(inch(settings.footingProjectionIn)) }
+    var boltEnd by remember(settings) { mutableStateOf(inch(settings.anchorBoltEndIn)) }
+    var boltOc by remember(settings) { mutableStateOf(inch(settings.anchorBoltSpacingIn)) }
+    var foam by remember(settings) { mutableStateOf(inch(settings.foundationFoamIn)) }
     var floorName by remember(settings) { mutableStateOf("${Building.ordinal(settings.upperFloors.size + 2)} floor") }
     var floorElev by remember(settings) { mutableStateOf("") }
 
@@ -230,6 +233,11 @@ private fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSetting
         field("Footing wide", footW, Modifier.weight(1f)) { footW = it }
         field("Past the wall", footP, Modifier.weight(1f)) { footP = it }
     }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        field("Bolts from corner", boltEnd, Modifier.weight(1f)) { boltEnd = it }
+        field("Bolts o.c.", boltOc, Modifier.weight(1f)) { boltOc = it }
+        field("Foam outside", foam, Modifier.weight(1f)) { foam = it }
+    }
 
     val parsed: BuildingSettings? = run {
         val d = parseFeet(datum) ?: return@run null
@@ -244,7 +252,10 @@ private fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSetting
             crawlClearanceIn = parseInches(crawl) ?: return@run null,
             footingThicknessIn = parseInches(footT) ?: return@run null,
             footingWidthIn = parseInches(footW) ?: return@run null,
-            footingProjectionIn = parseInches(footP) ?: return@run null
+            footingProjectionIn = parseInches(footP) ?: return@run null,
+            anchorBoltEndIn = parseInches(boltEnd) ?: return@run null,
+            anchorBoltSpacingIn = parseInches(boltOc)?.takeIf { it > 0f } ?: return@run null,
+            foundationFoamIn = parseInches(foam) ?: return@run null
         )
     }
     Button(onClick = { parsed?.let(onApply) }, enabled = parsed != null && parsed != settings, modifier = Modifier.fillMaxWidth()) {

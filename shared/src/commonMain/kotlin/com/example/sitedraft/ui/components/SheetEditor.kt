@@ -150,6 +150,13 @@ fun SheetEditor(
                 save(sheet.copy(views = sheet.views + Sheets.placed(sheet, SheetView(kind = SheetViewKind.PLAN, title = title, layerIds = layerIds), state)))
             }) { Text(label) }
         }
+        // The typical wall section, built from the building inputs and the plan.
+        if (sheet.views.none { it.kind == SheetViewKind.SECTION }) {
+            OutlinedButton(onClick = {
+                val add = SheetView(kind = SheetViewKind.SECTION, title = "Typical Wall Section", scale = PrintScale.THREE_QUARTER)
+                save(sheet.copy(views = sheet.views + Sheets.placed(sheet, add, state)))
+            }) { Text("Typical wall section") }
+        }
         Sheets.elevationChoices(state).forEach { (view, label) ->
             if (sheet.views.none { it.elementId == view.id }) {
                 OutlinedButton(onClick = {

@@ -37,7 +37,8 @@ object Structure {
     const val PAD = "Pad Footing"
     const val PIER = "Pier (round)"
     const val SLAB = "Slab"
-    val foundationLibrary = listOf(FOOTING, PAD, PIER, SLAB)
+    const val ANCHOR_BOLT = "Anchor Bolt"
+    val foundationLibrary = listOf(FOOTING, PAD, PIER, SLAB, ANCHOR_BOLT)
 
     const val JOIST_BAY = "Joist Bay"
     const val BEAM = "Beam"
@@ -52,6 +53,7 @@ object Structure {
         PAD to Pair(24f, 24f),
         PIER to Pair(12f, 12f),
         SLAB to Pair(120f, 120f),
+        ANCHOR_BOLT to Pair(3f, 3f),
         JOIST_BAY to Pair(192f, 144f),
         BEAM to Pair(96f, 4.5f),
         POST to Pair(5.5f, 5.5f),
@@ -217,6 +219,13 @@ object Structure {
                 rect(box, Shower.Ink.DASHED)
                 if (w >= h) seg(Offset(-hw, 0f), Offset(hw, 0f), Shower.Ink.FAINT_DASHED) else seg(Offset(0f, -hh), Offset(0f, hh), Shower.Ink.FAINT_DASHED)
                 label("BEAM", if (w >= h) Offset(0f, -hh - labelSize) else Offset(hw + labelSize * 2f, 0f), size = labelSize * 0.8f)
+            }
+            ANCHOR_BOLT -> {
+                // A 1/2" bolt drawn big enough to see at 1/4" = 1': ring with a cross.
+                val r = minOf(hw, hh)
+                out.add(Shower.Part.Ring(Offset.Zero, r, Shower.Ink.ACCENT))
+                seg(Offset(-r, 0f), Offset(r, 0f), Shower.Ink.ACCENT)
+                seg(Offset(0f, -r), Offset(0f, r), Shower.Ink.ACCENT)
             }
             POST -> {
                 rect(box, Shower.Ink.LINE)
