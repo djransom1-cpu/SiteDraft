@@ -1,0 +1,90 @@
+{
+    "elements": [
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "wall-1",
+            "symbolName": "2x4 Wall",
+            "category": "Walls",
+            "center": "100.0,9.375",
+            "size": "200.0,18.75",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48.0,
+                "depthInches": 4.5
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "door-1",
+            "symbolName": "Door 3'-0\"",
+            "category": "Doors & Windows",
+            "center": "60.0,-65.625",
+            "size": "150.0,150.0",
+            "color": -4294967296,
+            "rotation": 90.0,
+            "properties": {
+                "widthInches": 36.0,
+                "depthInches": 36.0,
+                "openingHeightIn": 80.0,
+                "hingeRight": 1.0
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "cab-1",
+            "symbolName": "Base 24\"",
+            "category": "Cabinets",
+            "center": "50.0,68.75",
+            "size": "100.0,100.0",
+            "color": -4294967296,
+            "rotation": 180.0,
+            "properties": {
+                "widthInches": 24.0,
+                "depthInches": 24.0,
+                "front": 2.0
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Text",
+            "id": "text-1",
+            "text": "Kitchen\n12' x 10'",
+            "topLeft": "10.0,20.0",
+            "fontSize": 25.0,
+            "color": -4294967296
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Dimension",
+            "id": "dim-1",
+            "start": "0.0,0.0",
+            "end": "100.0,0.0",
+            "value": 2.0,
+            "unit": "IMPERIAL",
+            "color": -4294967296,
+            "offset": -30.0,
+            "ownerId": "plan"
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.ElevationView",
+            "id": "elev-1",
+            "spec": {
+                "wallId": "wall-1",
+                "side": "BELOW"
+            },
+            "origin": "0.0,600.0",
+            "size": "200.0,400.0",
+            "color": -72057594037927936
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Pdf",
+            "id": "pdf-1",
+            "pages": [
+                "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAAXNSR0IArs4c6QAAAARzQklUCAgI\r\nCHwIZIgAAAALSURBVAjXY2BABwAAEgAB74lUpAAAAABJRU5ErkJggg=="
+            ],
+            "topLeft": "0.0,0.0",
+            "size": "2.0,2.0",
+            "locked": true,
+            "opacity": 0.6
+        }
+    ],
+    "projectName": "Sample"
+}

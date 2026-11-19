@@ -275,6 +275,11 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
             batch.commit()
         }
 
+        override suspend fun projectStamp(uid: String, name: String): Long? = store("Checking '$name'") {
+            val snap = db.collection("users").document(uid).collection("projectStamps").document(CloudDocs.encodeDocId(name)).get()
+            if (snap.exists) snap.field<Long>("updatedAt") else null
+        }
+
         override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? = store("Reading the sharing of '$name'") {
             val snap = db.collection("users").document(ownerUid).collection("projects").document(CloudDocs.encodeDocId(name)).get()
             if (!snap.exists) null else ProjectSharing(

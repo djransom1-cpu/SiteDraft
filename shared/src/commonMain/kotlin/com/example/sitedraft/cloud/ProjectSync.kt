@@ -8,8 +8,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -92,6 +94,10 @@ interface ProjectSyncListener {
     fun onProjectPulled(name: String)
     /** The list of local projects changed (new ones arrived from the cloud). */
     fun onProjectListChanged()
+    /** The project open on screen, watched for changes the Site Draft connector (Claude) makes. */
+    fun openProjectName(): String? = null
+    /** True while the open project has edits not yet written to disk (an autosave is pending). */
+    fun hasUnsavedEdits(): Boolean = false
 }
 
 /**
@@ -110,6 +116,7 @@ class ProjectSync(
     private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val lock = Mutex()
     private var pullJob: Job? = null
+    private var watchJob: Job? = null
 
     private val storage: ProjectStorage? get() = platform.storage
     private val uid: String? get() = cloud.user.value?.uid
@@ -117,6 +124,8 @@ class ProjectSync(
     companion object {
         const val PROJECT_LIST_FILE = "project_list.txt"
         const val SHARED_FILE = "shared_projects.json"
+        /** How often the open project is checked for a change Claude made through the connector. */
+        const val WATCH_INTERVAL_MS = 5_000L
         fun projectFileName(name: String) = "project_${name.replace(" ", "_")}.json"
         fun metaFileName(name: String) = "sync_${name.replace(" ", "_")}.json"
     }
@@ -171,7 +180,12 @@ class ProjectSync(
         val user = uid ?: return
         if (!willPush) return // view-only: the change stays on this device
         scope.launch {
-            if (ref == null) push(user, name, json, savedAt, localName = name)
+            if (ref == null) {
+                // Claude changed this project in the cloud since this device last saw it: these
+                // edits are kept as a copy and Claude's version is taken, so neither is lost.
+                if (connectorChangedSince(user, name, previous?.remoteUpdatedAt)) pullConnectorChange(user, name, keepLocal = true)
+                else push(user, name, json, savedAt, localName = name)
+            }
             else push(ref.ownerUid, ref.cloudName, renameProjectJson(json, ref.cloudName), savedAt, localName = name)
         }
     }
@@ -183,6 +197,78 @@ class ProjectSync(
             writeMeta(localName, SyncMeta(updatedAt = updatedAt, remoteUpdatedAt = updatedAt, pendingPush = false))
         } catch (e: Exception) {
             platform.log("SiteDraftSync", "push of '$cloudName' failed: ${e.message}")
+        }
+    }
+
+    // ------------------------------------------------------------------ changes made by Claude
+
+    /**
+     * Checks the open project every [WATCH_INTERVAL_MS] for a change the Site Draft connector
+     * made in the cloud, and reloads it (see [checkOpenProject]). Safe to call again.
+     */
+    fun startWatching() {
+        if (watchJob?.isActive == true) return
+        watchJob = scope.launch {
+            while (isActive) {
+                delay(WATCH_INTERVAL_MS)
+                try {
+                    checkOpenProject()
+                } catch (e: Exception) {
+                    platform.log("SiteDraftSync", "watch failed: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * One check of the open project: when the connector's stamp is newer than the cloud copy this
+     * device last saw, the cloud copy is pulled and the drawing reloads. Local edits that were not
+     * in the cloud yet are first kept as "<name> (<device> edits)". Waits while an autosave is
+     * pending (that save notices the change itself, in [onLocalSaved]). True when it pulled.
+     */
+    suspend fun checkOpenProject(): Boolean {
+        val user = uid ?: return false
+        val name = listener?.openProjectName() ?: return false
+        if (sharedRef(name) != null) return false
+        if (listener?.hasUnsavedEdits() == true) return false
+        val meta = readMeta(name)
+        if (!connectorChangedSince(user, name, meta?.remoteUpdatedAt)) return false
+        val dirty = meta == null || meta.pendingPush || meta.updatedAt > (meta.remoteUpdatedAt ?: 0L)
+        pullConnectorChange(user, name, keepLocal = dirty)
+        return true
+    }
+
+    private suspend fun connectorChangedSince(uid: String, name: String, seen: Long?): Boolean {
+        val stamp = try {
+            cloud.store.projectStamp(uid, name)
+        } catch (e: Exception) {
+            null
+        } ?: return false
+        return stamp > (seen ?: 0L)
+    }
+
+    private suspend fun pullConnectorChange(uid: String, name: String, keepLocal: Boolean) {
+        val st = storage ?: return
+        val doc = try {
+            cloud.store.readProject(uid, name)
+        } catch (e: Exception) {
+            platform.log("SiteDraftSync", "read of '$name' failed: ${e.message}")
+            null
+        } ?: return
+        var kept: Pair<String, String>? = null
+        lock.withLock {
+            if (keepLocal) kept = keepLocalCopy(name, doc.json, "${platform.name} edits")
+            st.write(projectFileName(name), doc.json)
+            writeMeta(name, SyncMeta(updatedAt = doc.updatedAt, remoteUpdatedAt = doc.updatedAt, pendingPush = false))
+            val list = readList()
+            val extra = listOfNotNull(name, kept?.first)
+            if (!list.containsAll(extra)) writeList(list + extra)
+        }
+        kept?.let { (copyName, copyJson) -> push(uid, copyName, copyJson, readMeta(copyName)?.updatedAt ?: nowMillis(), localName = copyName) }
+        platform.log("SiteDraftSync", "reloaded '$name' after a change by ${doc.device ?: "the connector"}")
+        withContext(Dispatchers.Main) {
+            listener?.onProjectPulled(name)
+            if (kept != null) listener?.onProjectListChanged()
         }
     }
 
@@ -418,11 +504,19 @@ class ProjectSync(
      * Called under [lock].
      */
     private fun keepNeverSyncedLocalCopy(name: String, incomingJson: String): Pair<String, String>? {
-        val st = storage ?: return null
         if (readMeta(name) != null) return null
+        return keepLocalCopy(name, incomingJson, platform.name)
+    }
+
+    /**
+     * Saves the local [name] as a new project "<name> (<label>)" (renamed inside too) before it is
+     * replaced by [incomingJson]; null when there is no local file or it is the same. Under [lock].
+     */
+    private fun keepLocalCopy(name: String, incomingJson: String, label: String): Pair<String, String>? {
+        val st = storage ?: return null
         val localJson = st.read(projectFileName(name)) ?: return null
         if (localJson == incomingJson) return null
-        val base = "$name (${platform.name})"
+        val base = "$name ($label)"
         var copyName = base
         var n = 2
         while (st.exists(projectFileName(copyName))) copyName = "$base ${n++}"
@@ -443,5 +537,6 @@ class ProjectSync(
 
     fun dispose() {
         pullJob?.cancel()
+        watchJob?.cancel()
     }
 }

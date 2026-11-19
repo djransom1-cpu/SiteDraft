@@ -3125,6 +3125,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
 
     override fun onProjectListChanged() = refreshProjectList()
 
+    override fun openProjectName(): String? = _state.value.projectName
+
+    override fun hasUnsavedEdits(): Boolean = pendingSave?.isActive == true
+
     private fun refreshProjectList() {
         val storage = platform.storage ?: return
         val list = storage.read("project_list.txt")?.lines()?.filter { it.isNotBlank() }?.sorted() ?: emptyList()

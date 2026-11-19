@@ -81,6 +81,12 @@ interface CloudStore {
     suspend fun readProject(uid: String, name: String): ProjectDoc?
     suspend fun writeProject(uid: String, name: String, json: String, updatedAt: Long, device: String)
     suspend fun deleteProject(uid: String, name: String)
+    /**
+     * When the Site Draft connector (Claude, functions/sitedraft) last changed [name]:
+     * `users/{uid}/projectStamps/{name}.updatedAt`, or null when it never has. The open project is
+     * watched with this so a change Claude makes shows up without reopening it.
+     */
+    suspend fun projectStamp(uid: String, name: String): Long? = null
 
     /** The sharing fields of `users/{ownerUid}/projects/{name}`, or null when there is no such project. */
     suspend fun readSharing(ownerUid: String, name: String): ProjectSharing?

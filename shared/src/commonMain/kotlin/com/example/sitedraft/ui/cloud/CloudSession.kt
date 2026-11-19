@@ -99,7 +99,7 @@ class CloudSession(
         if (access?.allowed == true) {
             if (sync == null || checkedUid != user.uid) {
                 sync?.dispose()
-                sync = ProjectSync(platform, cloud, manager).also { manager.sync = it }
+                sync = ProjectSync(platform, cloud, manager).also { manager.sync = it; it.startWatching() }
                 checkedUid = user.uid
             }
             sync?.syncAll()

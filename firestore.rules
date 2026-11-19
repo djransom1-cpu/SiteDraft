@@ -109,6 +109,14 @@ service cloud.firestore {
           allow write: if isOwner(uid) || isEditorOf(projectData(uid, projectName));
         }
       }
+
+      // When the Site Draft connector (Claude) last changed a project: written only by the
+      // sitedraftMcp Cloud Function (Admin SDK); the app reads it to reload the open project.
+      // The connector's own collections (mcp_*, users/{uid}/mcpHistory) have no rule: denied.
+      match /projectStamps/{projectName} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
     }
 
     // "Shared with me": a collection-group query on projects filtered by

@@ -445,6 +445,10 @@ class RestCloudService(
             commit(writes)
         }
 
+        override suspend fun projectStamp(uid: String, name: String): Long? =
+            getDocument("users/$uid/projectStamps/${CloudDocs.encodeDocId(name)}", onlyFields = listOf("updatedAt"))
+                ?.get("updatedAt")?.jsonPrimitive?.longOrNull
+
         override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? =
             getDocument(CloudDocs.projectPath(ownerUid, name), onlyFields = listOf("ownerUid", "ownerEmail", "memberEmails", "editorEmails"))
                 ?.let { CloudDocs.sharingFrom(ownerUid, it) }
