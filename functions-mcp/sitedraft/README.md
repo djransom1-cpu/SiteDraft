@@ -34,8 +34,10 @@ built the same way as Crewsync's `crewsyncMcp`.
 
 Double-click `deploy-connector.bat` in the SiteDraft folder. The first run sets the `SITEDRAFT_MCP_KEY`
 secret from `AndroidStudioProjects\Firebase keys\sitedraft-mcp-key.txt` (the access key typed on the
-consent page). Then in Claude: Settings > Connectors > Add custom connector, URL = the Cloud Run URL the
-deploy prints (`https://sitedraftmcp-....run.app`), and type the key when asked.
+consent page). Then in Claude: Settings > Connectors > Add custom connector, URL =
+`https://sitedraftmcp-ufaob6wjnq-uc.a.run.app`, and type the key when asked. Use this Cloud Run address, not
+the `cloudfunctions.net` "Function URL" the deploy prints: through that one the OAuth endpoints come out
+without the `/sitedraftMcp` prefix and sign-in fails.
 
 ## Test
 

@@ -5,7 +5,8 @@ cd /d "%~dp0"
 call :main > deploy-connector.log 2>&1
 type deploy-connector.log
 echo.
-echo Done. The connector URL is the "Function URL (sitedraftMcp...)" line above.
+echo Done. Connector URL for Claude: https://sitedraftmcp-ufaob6wjnq-uc.a.run.app
+echo (not the cloudfunctions.net "Function URL" above: sign-in only works at the run.app address)
 pause
 exit /b
 
