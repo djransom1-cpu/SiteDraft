@@ -94,6 +94,10 @@ function readDrawing(state) {
         const rot = (((Number(s.rotation || 0)) % 360) + 360) % 360;
         o.swingsInto = ({ 0: "north", 90: "east", 180: "south", 270: "west" })[Math.round(rot / 90) * 90 % 360] || `${rot} deg`;
         o.heightIn = p[M.props.heightIn] ?? M.catalog.defaults.doorHeightIn;
+      } else if (s.symbolName.startsWith("Pocket")) {
+        const right = p[M.props.hingeRight] >= 0.5;
+        o.pocket = G.isHorizontal(s) ? (right ? "right" : "left") : (right ? "bottom" : "top");
+        o.heightIn = p[M.props.heightIn] ?? M.catalog.defaults.doorHeightIn;
       } else if (G.isWindow(s.symbolName)) {
         o.sillIn = p[M.props.sillIn] ?? M.catalog.defaults.windowSillIn;
         o.heightIn = p[M.props.heightIn] ?? M.catalog.defaults.windowHeightIn;
@@ -328,12 +332,13 @@ function openingName(a) {
   if (a.type && M.categories[G.DOORS_WINDOWS].includes(a.type)) return a.type;
   const kindWord = String(a.kind || a.type || "").toLowerCase();
   const list = M.categories[G.DOORS_WINDOWS];
-  const pool = kindWord.includes("slid") ? list.filter((n) => n.startsWith("Sliding"))
+  const pool = kindWord.includes("pocket") ? list.filter((n) => n.startsWith("Pocket"))
+    : kindWord.includes("slid") ? list.filter((n) => n.startsWith("Sliding"))
     : kindWord.includes("open") ? list.filter((n) => n.startsWith("Opening"))
     : kindWord.includes("window") ? list.filter((n) => n.startsWith("Window"))
     : kindWord.includes("door") ? list.filter((n) => n.startsWith("Door"))
     : null;
-  if (!pool) fail(`type: give one of ${list.join(", ")}, or kind door / window / opening / sliding door with a width.`);
+  if (!pool) fail(`type: give one of ${list.join(", ")}, or kind door / window / opening / sliding door / pocket door with a width.`);
   const w = a.width ? len(a.width, "width") : M.footprints[pool[0]][0];
   return pool.reduce((best, nm) => Math.abs(M.footprints[nm][0] - w) < Math.abs(M.footprints[best][0] - w) ? nm : best, pool[0]);
 }
@@ -381,6 +386,13 @@ function placeOpening(state, a) {
       props[M.props.sillIn] = a.sill ? len(a.sill, "sill") : M.catalog.defaults.windowSillIn;
       props[M.props.heightIn] = a.height ? len(a.height, "height") : M.catalog.defaults.windowHeightIn;
     } else if (a.height) props[M.props.heightIn] = len(a.height, "height");
+    if (name.startsWith("Pocket")) {
+      // Pocket side as drawn: left/right on an east-west wall, top/bottom on a north-south wall (bottom/right = 1).
+      const side = String(a.pocket || "left").toLowerCase();
+      if (!["left", "right", "top", "bottom"].includes(side)) fail('pocket: the side the door slides into, "left"/"right" (or "top"/"bottom" on a north-south wall).');
+      props[M.props.hingeRight] = side === "right" || side === "bottom" ? 1 : 0;
+      if (!a.height) props[M.props.heightIn] = M.catalog.defaults.doorHeightIn;
+    }
     sym = M.makeSymbol({ name, category: G.DOORS_WINDOWS, center: { x: midX, y: midY }, widthPx: horizontal ? w : t, depthPx: horizontal ? t : w,
       color: ink(state), properties: { widthInches: widthIn, depthInches: M.footprints[name][1], ...props } });
   }

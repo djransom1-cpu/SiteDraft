@@ -2707,7 +2707,8 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                         }
                         // Cabinet fronts, door count and island overhang: small codes (see PlanSymbols).
                         PlanSymbols.PROP_FRONT, PlanSymbols.PROP_DOORS, PlanSymbols.PROP_OVERHANG, PlanSymbols.PROP_OVERHANG_IN,
-                        PlanSymbols.PROP_SINKS, PlanSymbols.PROP_TOP_IN, PlanSymbols.PROP_STYLE, PlanSymbols.PROP_HARDWARE -> {
+                        PlanSymbols.PROP_SINKS, PlanSymbols.PROP_TOP_IN, PlanSymbols.PROP_STYLE, PlanSymbols.PROP_HARDWARE,
+                        PlanSymbols.PROP_HINGE_RIGHT -> {
                             val v = parseInches(value) ?: return@map element
                             if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
                         }

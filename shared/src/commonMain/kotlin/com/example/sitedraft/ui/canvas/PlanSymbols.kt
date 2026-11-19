@@ -104,13 +104,14 @@ object PlanSymbols {
     val counterSinks = setOf(VESSEL_SINK, UNDERMOUNT_SINK, DROP_IN_SINK, "Kitchen Sink", SINGLE_KITCHEN_SINK, FARMHOUSE_SINK, BAR_SINK)
 
     val fixtures = listOf(
-        "Bathtub", "Shower Stall", "Toilet", "Bathroom Sink",
+        "Bathtub", CLAWFOOT_TUB, "Shower Stall", "Toilet", "Bathroom Sink",
         PEDESTAL_SINK, WALL_HUNG_SINK, CORNER_SINK, VESSEL_SINK, UNDERMOUNT_SINK, DROP_IN_SINK,
         "Kitchen Sink", SINGLE_KITCHEN_SINK, FARMHOUSE_SINK, BAR_SINK, UTILITY_SINK, "Water Heater",
         "Washer", "Dryer", "Refrigerator", "Range", "Dishwasher"
     )
     val doorsWindows = listOf(
         "Door 2'-6\"", "Door 2'-8\"", "Door 3'-0\"", "Sliding Door 6'-0\"",
+        "Pocket Door 2'-6\"", "Pocket Door 2'-8\"", "Pocket Door 3'-0\"",
         "Opening 2'-6\"", "Opening 3'-0\"", "Opening 4'-0\"", "Opening 6'-0\"",
         "Window 3'-0\"", "Window 4'-0\"", "Window 6'-0\""
     )
@@ -118,12 +119,16 @@ object PlanSymbols {
         "2x4 Wall", "2x6 Wall", "2x4 Framing", "2x6 Framing", "8\" Block Wall", "8\" Concrete Wall"
     )
 
+    /** A freestanding rolled-rim tub on four feet; floor tile runs under it. */
+    const val CLAWFOOT_TUB = "Clawfoot Tub"
+
     const val DEFAULT_WALL_LENGTH_IN = 48f
     const val WINDOW_DEPTH_IN = 6f
 
     /** Footprint (width, depth) in inches at rotation 0. */
     val footprintInches: Map<String, Pair<Float, Float>> = mapOf(
         "Bathtub" to Pair(60f, 30f),
+        CLAWFOOT_TUB to Pair(60f, 30f),
         "Shower Stall" to Pair(36f, 36f),
         "Toilet" to Pair(20f, 28f),
         "Bathroom Sink" to Pair(24f, 21f),
@@ -150,6 +155,10 @@ object PlanSymbols {
         "Door 2'-8\"" to Pair(32f, 32f),
         "Door 3'-0\"" to Pair(36f, 36f),
         "Sliding Door 6'-0\"" to Pair(72f, WINDOW_DEPTH_IN),
+        // A pocket door: the footprint is the opening; the pocket (as long again) is drawn inside the wall beside it.
+        "Pocket Door 2'-6\"" to Pair(30f, WINDOW_DEPTH_IN),
+        "Pocket Door 2'-8\"" to Pair(32f, WINDOW_DEPTH_IN),
+        "Pocket Door 3'-0\"" to Pair(36f, WINDOW_DEPTH_IN),
         // A cased opening: a doorway with no door. Sits in the wall like a window does.
         "Opening 2'-6\"" to Pair(30f, WINDOW_DEPTH_IN),
         "Opening 3'-0\"" to Pair(36f, WINDOW_DEPTH_IN),
@@ -252,6 +261,9 @@ object PlanSymbols {
     const val PROP_HINGE_RIGHT = "hingeRight"
     fun hingeRight(symbol: DrawingElement.Symbol) = (symbol.properties[PROP_HINGE_RIGHT] ?: 0f) >= 0.5f
     fun isSlidingDoor(name: String) = name.startsWith("Sliding Door")
+    /** A door that slides into a pocket in the wall; [PROP_HINGE_RIGHT] on = the pocket is on the right (as drawn). */
+    fun isPocketDoor(name: String) = name.startsWith("Pocket Door")
+    fun pocketRight(symbol: DrawingElement.Symbol) = hingeRight(symbol)
     fun isWindow(name: String) = name.startsWith("Window ")
     /** A cased opening (doorway without a door). */
     fun isOpening(name: String) = name.startsWith("Opening ")
@@ -402,7 +414,8 @@ object PlanSymbols {
      * rotation, so they stay axis-aligned for snapping and hit-testing.
      */
     fun turnsBySwappingSize(symbol: DrawingElement.Symbol) =
-        symbol.category == WALLS || isWindow(symbol.symbolName) || isSlidingDoor(symbol.symbolName) || isOpening(symbol.symbolName)
+        symbol.category == WALLS || isWindow(symbol.symbolName) || isSlidingDoor(symbol.symbolName) || isOpening(symbol.symbolName) ||
+            isPocketDoor(symbol.symbolName)
 }
 
 /** World units for a length in inches at this document's scale, in either unit system. */
@@ -481,10 +494,25 @@ fun DrawScope.drawPlanSymbol(
                     )
                 }
             }
-            PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) -> {
+            PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) || PlanSymbols.isPocketDoor(name) -> {
                 // Taller than wide = sitting in a vertical wall: draw it turned, like walls.
-                if (h > w) rotate(90f, pivot = Offset.Zero) { drawOpening(name, h, w, inch, state.backgroundColor, lineColor, accentColor, faint, line, thin) }
-                else drawOpening(name, w, h, inch, state.backgroundColor, lineColor, accentColor, faint, line, thin)
+                val pocketRight = PlanSymbols.pocketRight(element)
+                if (h > w) rotate(90f, pivot = Offset.Zero) { drawOpening(name, h, w, inch, state.backgroundColor, lineColor, accentColor, faint, line, thin, pocketRight) }
+                else drawOpening(name, w, h, inch, state.backgroundColor, lineColor, accentColor, faint, line, thin, pocketRight)
+            }
+            name == PlanSymbols.CLAWFOOT_TUB -> {
+                // Rolled rim: rounded ends, the bowl inside, four feet, drain and wall-mount filler at the left end.
+                drawRoundRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), cornerRadius = CornerRadius(hh, hh), style = line)
+                val rim = inch * 2.5f
+                drawRoundRect(
+                    color = accentColor, topLeft = Offset(-hw + rim, -hh + rim), size = Size(w - 2 * rim, h - 2 * rim),
+                    cornerRadius = CornerRadius(hh - rim, hh - rim), style = thin
+                )
+                for (fx in listOf(-hw + w * 0.18f, hw - w * 0.18f)) for (fy in listOf(-hh, hh)) {
+                    drawCircle(color = faint, radius = inch * 1.5f, center = Offset(fx, fy * 0.92f), style = thin)
+                }
+                drawCircle(color = accentColor, radius = inch * 1.5f, center = Offset(-hw + inch * 9f, 0f), style = thin)
+                drawRect(color = lineColor, topLeft = Offset(-hw - inch * 1f, -inch * 3f), size = Size(inch * 2.5f, inch * 6f), style = thin)
             }
             name == "Bathtub" -> {
                 val r = min(w, h) * 0.15f
@@ -698,7 +726,7 @@ fun DrawScope.drawPlanSymbol(
 /** A window or sliding door of width [w] in a wall [h] thick, centred on the origin, running left to right. */
 private fun DrawScope.drawOpening(
     name: String, w: Float, h: Float, inch: Float, background: Color,
-    lineColor: Color, accentColor: Color, faint: Color, line: Stroke, thin: Stroke
+    lineColor: Color, accentColor: Color, faint: Color, line: Stroke, thin: Stroke, pocketRight: Boolean = false
 ) {
     val hw = w / 2f
     val hh = h / 2f
@@ -711,6 +739,24 @@ private fun DrawScope.drawOpening(
         drawLine(color = lineColor, start = Offset(hw, -blank / 2f), end = Offset(hw, blank / 2f), strokeWidth = line.width)
         val dashed = Stroke(width = thin.width, pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 2f, inch * 1.5f)))
         drawPath(Path().apply { moveTo(-hw, 0f); lineTo(hw, 0f) }, color = faint, style = dashed)
+    } else if (PlanSymbols.isPocketDoor(name)) {
+        // The opening with a jamb each side; the pocket runs inside the wall beside it (dashed), the
+        // door slab mostly in the pocket with a few inches showing, so the pull is visible.
+        drawLine(color = lineColor, start = Offset(-hw, -blank / 2f), end = Offset(-hw, blank / 2f), strokeWidth = line.width)
+        drawLine(color = lineColor, start = Offset(hw, -blank / 2f), end = Offset(hw, blank / 2f), strokeWidth = line.width)
+        val s = if (pocketRight) 1f else -1f
+        val cavity = inch * 1f
+        val dashed = Stroke(width = thin.width, pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 2f, inch * 1.5f)))
+        val pocketNear = s * hw
+        val pocketFar = s * (hw + w)
+        drawPath(Path().apply {
+            moveTo(pocketNear, -cavity); lineTo(pocketFar, -cavity); lineTo(pocketFar, cavity); lineTo(pocketNear, cavity)
+        }, color = faint, style = dashed)
+        val slab = inch * 1.375f
+        val showing = inch * 4f
+        val a = pocketNear - s * showing
+        val b = pocketNear + s * (w - showing)
+        drawRect(color = lineColor, topLeft = Offset(min(a, b), -slab / 2f), size = Size(kotlin.math.abs(b - a), slab), style = line)
     } else if (PlanSymbols.isSlidingDoor(name)) {
         val panel = inch * 1.5f
         val overlap = inch * 2f
@@ -1099,6 +1145,7 @@ private fun blankShape(element: DrawingElement.Symbol, w: Float, h: Float, inch:
             val r = min(w, h) * 0.15f
             Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(-hw, -hh, hw, hh, CornerRadius(r, r))) }
         }
+        name == PlanSymbols.CLAWFOOT_TUB -> Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(-hw, -hh, hw, hh, CornerRadius(hh, hh))) }
         name == "Water Heater" || name == PlanSymbols.VESSEL_SINK || name.startsWith("Round Table") -> {
             val r = min(hw, hh)
             oval(androidx.compose.ui.geometry.Rect(-r, -r, r, r))

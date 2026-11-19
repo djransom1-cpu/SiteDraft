@@ -332,7 +332,7 @@ object DxfExport {
                 val local = Offset(0f, h / 2f)
                 Blank(rotateAbout(s.center + local, s.center, s.rotation), w / 2f, inch * 4f, s.rotation)
             }
-            PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) -> {
+            PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) || PlanSymbols.isPocketDoor(name) -> {
                 val vertical = h > w
                 val length = if (vertical) h else w
                 val depth = max(if (vertical) w else h, inch * 8f)
@@ -385,8 +385,15 @@ object DxfExport {
                     p.arc(Offset(-hw, hh), w, -90f, 90f)
                 }
             }
-            PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) ->
-                if (h > w) opening(p.turned(90f), name, h, w, inch) else opening(p, name, w, h, inch)
+            PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) || PlanSymbols.isPocketDoor(name) ->
+                if (h > w) opening(p.turned(90f), name, h, w, inch, PlanSymbols.pocketRight(s)) else opening(p, name, w, h, inch, PlanSymbols.pocketRight(s))
+            name == PlanSymbols.CLAWFOOT_TUB -> {
+                p.roundRect(Offset(-hw, -hh), Size(w, h), hh)
+                val rim = inch * 2.5f
+                p.roundRect(Offset(-hw + rim, -hh + rim), Size(w - 2 * rim, h - 2 * rim), hh - rim)
+                for (fx in listOf(-hw + w * 0.18f, hw - w * 0.18f)) for (fy in listOf(-hh, hh)) p.circle(Offset(fx, fy * 0.92f), inch * 1.5f)
+                p.circle(Offset(-hw + inch * 9f, 0f), inch * 1.5f)
+            }
             name == "Bathtub" -> {
                 val r = min(w, h) * 0.15f
                 val ins = inch * 2.5f
@@ -488,7 +495,7 @@ object DxfExport {
     }
 
     /** A window, sliding door or cased opening [w] long in a wall [h] thick, running left to right. */
-    private fun opening(p: Pen, name: String, w: Float, h: Float, inch: Float) {
+    private fun opening(p: Pen, name: String, w: Float, h: Float, inch: Float, pocketRight: Boolean = false) {
         val hw = w / 2f
         val hh = h / 2f
         val blank = max(h, inch * 8f)
@@ -497,6 +504,19 @@ object DxfExport {
                 p.line(Offset(-hw, -blank / 2f), Offset(-hw, blank / 2f))
                 p.line(Offset(hw, -blank / 2f), Offset(hw, blank / 2f))
                 p.dashed().line(Offset(-hw, 0f), Offset(hw, 0f))
+            }
+            PlanSymbols.isPocketDoor(name) -> {
+                p.line(Offset(-hw, -blank / 2f), Offset(-hw, blank / 2f))
+                p.line(Offset(hw, -blank / 2f), Offset(hw, blank / 2f))
+                val s = if (pocketRight) 1f else -1f
+                val near = s * hw
+                val far = s * (hw + w)
+                val cavity = inch * 1f
+                p.dashed().rect(Offset(min(near, far), -cavity), Size(w, 2f * cavity))
+                val slab = inch * 1.375f
+                val a = near - s * inch * 4f
+                val b = near + s * (w - inch * 4f)
+                p.rect(Offset(min(a, b), -slab / 2f), Size(kotlin.math.abs(b - a), slab))
             }
             PlanSymbols.isSlidingDoor(name) -> {
                 val panel = inch * 1.5f

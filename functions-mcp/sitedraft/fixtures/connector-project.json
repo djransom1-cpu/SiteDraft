@@ -3,7 +3,7 @@
     "elements": [
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "40b5aea5-c00b-45db-92bd-c285ea86fbe7",
+            "id": "a1833cd3-e8ab-4cb4-a098-0aecece48b2e",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "300.0,-9.375",
@@ -16,7 +16,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "795cabea-d5c0-433d-9620-2c90054e4ec7",
+            "id": "92044d31-022b-46ac-93c2-0cb41f7cafde",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "609.375,250.0",
@@ -29,7 +29,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "816a341b-9a7f-4513-8c0f-b63c103612ea",
+            "id": "1723208d-f7ca-46fa-ab07-3434a4f318f9",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "300.0,509.375",
@@ -42,7 +42,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "b7f75271-4cfc-45f8-8d92-79e1e743f24d",
+            "id": "727d416c-8780-4055-9b10-46721255a0c1",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "-9.375,250.0",
@@ -55,7 +55,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Text",
-            "id": "9406c660-3298-4ec5-b878-e30be4404a4f",
+            "id": "5b696618-2a81-4786-8785-506b583d843f",
             "text": "Kitchen\n12' x 10'",
             "topLeft": "238.125,220.0",
             "fontSize": 25,
@@ -63,7 +63,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "76cb0d92-2719-4d6d-a52a-4254c8798d55",
+            "id": "7482b268-cfad-4789-82f0-90c26382b46a",
             "symbolName": "Window 3'-0\"",
             "category": "Doors & Windows",
             "center": "300.0,-9.375",
@@ -81,7 +81,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "b5d2eafe-5b19-4d69-9dba-4fb6aa1d668d",
+            "id": "b5c43cdc-83aa-41de-9d7d-22144c189fdd",
             "symbolName": "Door 2'-8\"",
             "category": "Doors & Windows",
             "center": "57.2917,416.6667",
@@ -100,7 +100,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "d3f38562-d35b-4eeb-b8e9-c7e40c260ab3",
+            "id": "5a5f384f-4134-46d3-8f95-b8675eb71cde",
             "symbolName": "Base 18\"",
             "category": "Cabinets",
             "center": "37.5,50.0",
@@ -114,7 +114,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "7a7fbc74-69c6-4474-81d0-ce8768fab6e4",
+            "id": "13d8e80e-b92f-4b90-93cb-312d6da0868f",
             "symbolName": "Base 12\"",
             "category": "Cabinets",
             "center": "106.25,50.0",
@@ -128,7 +128,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "311b371a-cf4e-4433-bb9a-30f2b52f771f",
+            "id": "03328adc-1688-46a8-ba10-c8241dbb6d77",
             "symbolName": "Base 36\"",
             "category": "Cabinets",
             "center": "212.5,50.0",
@@ -142,7 +142,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "c163e155-d7c2-4bf1-8112-8fae4b496b8b",
+            "id": "b743f8ef-8fee-44c8-98f1-ca694db1519a",
             "symbolName": "Kitchen Sink",
             "category": "Fixtures",
             "center": "212.5,52.0833",
@@ -155,7 +155,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "2eb4b8cf-7ae2-4d39-a75b-2ecf2912a7f7",
+            "id": "64e73383-75b3-4206-90f5-d1b409928b4b",
             "symbolName": "Dishwasher",
             "category": "Fixtures",
             "center": "337.5,50.0",
@@ -168,7 +168,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "e8b1a72b-a963-481b-b92b-a1d0703bddb2",
+            "id": "f67e8af9-fea5-4865-b03b-bfb5d291ecea",
             "symbolName": "Base 18\"",
             "category": "Cabinets",
             "center": "425.0,50.0",
@@ -183,7 +183,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "0a4b3990-7aee-4c98-a0b6-abccd0fa2936",
+            "id": "e40b739f-6ec8-497b-a560-da17dd6f40b9",
             "symbolName": "Base 12\"",
             "category": "Cabinets",
             "center": "493.75,50.0",
@@ -197,7 +197,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "d30ddace-3030-49fc-a011-5956a901327f",
+            "id": "ccb59314-5a2c-4350-adc9-24e2ce2f14f8",
             "symbolName": "Upper 18\"",
             "category": "Cabinets",
             "center": "37.5,25.0",
@@ -210,7 +210,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "d3e3a606-b470-4ca7-aadd-4d52e73a71e2",
+            "id": "c60590b3-7b7a-491a-a93a-3f097d31bb9d",
             "symbolName": "Upper 18\"",
             "category": "Cabinets",
             "center": "112.5,25.0",
@@ -223,7 +223,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "2eb09457-60f5-4393-8369-dafc385724b9",
+            "id": "07fa18e0-cf68-4715-ba40-18022a78ae75",
             "symbolName": "Upper 18\"",
             "category": "Cabinets",
             "center": "187.5,25.0",
@@ -236,7 +236,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "55a4b99e-0dc9-41bf-a52f-eb5ed5718d3d",
+            "id": "f978bf17-7290-45af-8375-272bcc819094",
             "symbolName": "Upper 24\"",
             "category": "Cabinets",
             "center": "425.0,25.0",
@@ -249,7 +249,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "caca5942-e454-4caa-957f-a420fa5918f8",
+            "id": "3573ecd9-509b-49d5-a10f-fac6b22e3e89",
             "symbolName": "Refrigerator 36\" French Door",
             "category": "Appliances",
             "center": "537.5,75.0",
@@ -263,7 +263,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "a433134c-cd70-4c25-9308-0fc035b5e596",
+            "id": "0fb7b465-d0fa-4c4a-add3-9a35733432ed",
             "symbolName": "Base 24\"",
             "category": "Cabinets",
             "center": "550.0,200.0",
@@ -277,7 +277,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "38a25d52-8889-4d76-9874-d0a57438a37f",
+            "id": "aaaecf93-1fb4-482c-b7bd-e705cf20714a",
             "symbolName": "Upper 30\"",
             "category": "Cabinets",
             "center": "575.0,312.5",
@@ -292,7 +292,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "3269ac62-84d3-4c77-9e1e-c9b0a4abb0d1",
+            "id": "a5fb64d7-479f-42f7-a0c1-65547ac4e4f6",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "818.75,-9.375",
@@ -305,7 +305,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "649b6e2c-66b9-4bdf-9114-284456e0e630",
+            "id": "4bdb908e-af16-4deb-91da-cc98d2f542f7",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "1028.125,250.0",
@@ -318,7 +318,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "5c1e6644-d027-4be4-99d2-4ee04cf370e7",
+            "id": "4e838905-d690-4401-9986-d025ea4ec4fc",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "818.75,509.375",
@@ -331,7 +331,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Text",
-            "id": "9e40b0a9-5f99-478b-a361-b51d6c614055",
+            "id": "dfeae0d8-b4f7-4a99-898f-e81dd7fdc7e3",
             "text": "Pantry\n8' x 10'",
             "topLeft": "763.75,220.0",
             "fontSize": 25,

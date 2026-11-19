@@ -129,13 +129,14 @@ function buildServer(ctx) {
   reg("place_opening",
     "Puts a door, window, sliding door or cased opening in a wall, positioned like the app's Position on the wall: measured from the " +
     "left/right end (top/bottom on a north-south wall), to the near edge or the centre, from the room's inside corner or the building's outside corner. " +
-    "Doors need swing_into (the side the door swings to) and hinge (left/right).",
+    "Doors need swing_into (the side the door swings to) and hinge (left/right); a pocket door needs pocket (the side it slides into).",
     {
       project: Project, wall_id: z.string(),
-      kind: z.enum(["door", "window", "opening", "sliding door"]).optional(), type: z.string().optional().describe("Exact catalog name instead of kind, e.g. Door 2'-8\""),
+      kind: z.enum(["door", "window", "opening", "sliding door", "pocket door"]).optional(), type: z.string().optional().describe("Exact catalog name instead of kind, e.g. Door 2'-8\""),
       width: Len.optional(), from: z.enum(["left", "right", "top", "bottom"]).optional(), to: z.enum(["edge", "center"]).optional(),
       corner: z.enum(["inside", "outside"]).optional(), distance: Len.optional(),
       hinge: z.enum(["left", "right"]).optional(), swing_into: Compass.optional(),
+      pocket: z.enum(["left", "right", "top", "bottom"]).optional().describe("Pocket door: the side it slides into (top/bottom on a north-south wall)"),
       height: Len.optional().describe("Door or opening height (door default 6'-8\"), or window height (default 4')"), sill: Len.optional().describe("Window sill height from the floor (default 36\")"),
     },
     change("place_opening", T.placeOpening));

@@ -549,6 +549,21 @@ object Elevation {
                         rect(from, to, 0f, doorH, medium)
                         if (!spec.trimOn) rect(from - 2f * inch, to + 2f * inch, 0f, doorH + 2f, light)
                     }
+                    PlanSymbols.isPocketDoor(name) -> {
+                        // One slab filling the opening, a recessed pull at the edge away from the pocket.
+                        val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
+                        rect(from, to, 0f, doorH, medium)
+                        val d = item.symbol
+                        // The latch edge in the symbol's own frame (vertical walls draw it turned), then along this view.
+                        val vertical = d.size.height > d.size.width
+                        val half = (if (vertical) d.size.height else d.size.width) / 2f
+                        val edge = if (PlanSymbols.pocketRight(d)) -half else half
+                        val latch = d.center + if (vertical) Offset(0f, edge) else Offset(edge, 0f)
+                        val wb = FloorPlan.bounds(wall)
+                        val latchAtTo = alongOf(wb, spec.side, latch) > alongOf(wb, spec.side, d.center)
+                        val px = if (latchAtTo) to - 2.5f * inch else from + 2.5f * inch
+                        rect(px - 0.75f * inch, px + 0.75f * inch, 34f, 40f, light)
+                    }
                     PlanSymbols.isSlidingDoor(name) -> {
                         val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
                         rect(from, to, 0f, doorH, medium)
@@ -742,6 +757,19 @@ object Elevation {
                         rect(from, to, 0f, 18f)
                         line(from + 6f * inch, 18f, from + 6f * inch, 30f, medium)
                         line(from + 6f * inch, 30f, from + 10f * inch, 28f, medium)
+                    }
+                    name == PlanSymbols.CLAWFOOT_TUB -> {
+                        // The tub on four feet: rolled rim at 25", the body curving in to its bottom at 8".
+                        val i = inch
+                        line(from, 25f, to, 25f, medium)
+                        line(from, 25f, from + 2f * i, 14f, medium); line(from + 2f * i, 14f, from + 7f * i, 8f, medium)
+                        line(to, 25f, to - 2f * i, 14f, medium); line(to - 2f * i, 14f, to - 7f * i, 8f, medium)
+                        line(from + 7f * i, 8f, to - 7f * i, 8f, medium)
+                        line(from, 23.5f, to, 23.5f)
+                        for (fx in listOf(from + 9f * i, to - 9f * i)) {
+                            line(fx - 1.5f * i, 8f, fx - 2.5f * i, 0f); line(fx + 1.5f * i, 8f, fx + 2.5f * i, 0f)
+                            line(fx - 3.5f * i, 0f, fx + 3.5f * i, 0f)
+                        }
                     }
                     name == "Shower Stall" -> {
                         rect(from, to, 0f, 78f)

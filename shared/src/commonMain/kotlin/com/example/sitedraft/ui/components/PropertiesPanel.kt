@@ -635,6 +635,18 @@ fun PropertiesPanel(
                                     OutlinedButton(onClick = { onEvent(DrawingEvent.SwingDoorOtherSide(selectedElement.id)) }) { Text("Swing to other side") }
                                 }
                             }
+                            if (PlanSymbols.isPocketDoor(selectedElement.symbolName)) {
+                                Text(text = "Pocket", style = MaterialTheme.typography.labelLarge)
+                                val right = PlanSymbols.pocketRight(selectedElement)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    FilterChip(selected = !right, onClick = {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_HINGE_RIGHT, "0"))
+                                    }, label = { Text("Pocket left") })
+                                    FilterChip(selected = right, onClick = {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_HINGE_RIGHT, "1"))
+                                    }, label = { Text("Pocket right") })
+                                }
+                            }
                             if (selectedElement.category == PlanSymbols.DOORS_WINDOWS) {
                                 // Where it sits along its wall, measured the way it is laid out on site.
                                 val host = OpeningPosition.hostWall(selectedElement, state)

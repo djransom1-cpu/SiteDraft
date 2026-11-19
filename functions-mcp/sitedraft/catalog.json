@@ -69,6 +69,9 @@
             "Door 2'-8\"",
             "Door 3'-0\"",
             "Sliding Door 6'-0\"",
+            "Pocket Door 2'-6\"",
+            "Pocket Door 2'-8\"",
+            "Pocket Door 3'-0\"",
             "Opening 2'-6\"",
             "Opening 3'-0\"",
             "Opening 4'-0\"",
@@ -144,6 +147,7 @@
         ],
         "Fixtures": [
             "Bathtub",
+            "Clawfoot Tub",
             "Shower Stall",
             "Toilet",
             "Bathroom Sink",
@@ -224,6 +228,10 @@
     },
     "footprints": {
         "Bathtub": [
+            60.0,
+            30.0
+        ],
+        "Clawfoot Tub": [
             60.0,
             30.0
         ],
@@ -321,6 +329,18 @@
         ],
         "Sliding Door 6'-0\"": [
             72.0,
+            6.0
+        ],
+        "Pocket Door 2'-6\"": [
+            30.0,
+            6.0
+        ],
+        "Pocket Door 2'-8\"": [
+            32.0,
+            6.0
+        ],
+        "Pocket Door 3'-0\"": [
+            36.0,
             6.0
         ],
         "Opening 2'-6\"": [
