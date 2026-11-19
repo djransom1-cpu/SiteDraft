@@ -99,10 +99,39 @@ class ConnectorExportTest {
             putJsonObject("footprints") {
                 for ((name, wd) in PlanSymbols.footprintInches) put(name, JsonArray(listOf(JsonPrimitive(wd.first), JsonPrimitive(wd.second))))
             }
+            // Levels and layers (Building.kt): the defaults, and samples the connector's layers.js is checked against.
+            put("building", buildBuilding())
         }
         val f = File(outDir, "catalog.json")
         f.writeText(Json { prettyPrint = true }.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), catalog) + "\n")
         assertTrue(f.length() > 1000)
+    }
+
+    /** Defaults and samples of the levels and layers, for layers.js to be checked against. */
+    private fun buildBuilding(): kotlinx.serialization.json.JsonObject {
+        val all = Json { encodeDefaults = true }
+        val two = com.example.sitedraft.ui.canvas.BuildingSettings(upperFloors = listOf(com.example.sitedraft.ui.canvas.UpperFloor("Second floor", 1310f)))
+        val crawl = com.example.sitedraft.ui.canvas.BuildingSettings(foundation = com.example.sitedraft.ui.canvas.FoundationType.CRAWL)
+        val slab = com.example.sitedraft.ui.canvas.BuildingSettings(foundation = com.example.sitedraft.ui.canvas.FoundationType.SLAB)
+        fun levels(s: com.example.sitedraft.ui.canvas.BuildingSettings) = JsonArray(com.example.sitedraft.ui.canvas.Building.levels(s).map { l ->
+            buildJsonObject { put("id", l.id); put("name", l.name); put("kind", l.kind.name); put("elevationIn", l.elevationIn); put("note", l.note) }
+        })
+        fun layers(s: com.example.sitedraft.ui.canvas.BuildingSettings) =
+            all.encodeToJsonElement(ListSerializer(com.example.sitedraft.ui.canvas.Layer.serializer()), com.example.sitedraft.ui.canvas.Building.defaultLayers(s))
+        val samples = listOf("default" to com.example.sitedraft.ui.canvas.BuildingSettings(), "twoFloors" to two, "crawl" to crawl, "slab" to slab)
+        return buildJsonObject {
+            put("defaults", all.encodeToJsonElement(com.example.sitedraft.ui.canvas.BuildingSettings.serializer(), com.example.sitedraft.ui.canvas.BuildingSettings()))
+            put("floor1Plan", com.example.sitedraft.ui.canvas.Building.FLOOR1_PLAN)
+            put("floor1Cabinets", com.example.sitedraft.ui.canvas.Building.FLOOR1_CABINETS)
+            put("floor1Furniture", com.example.sitedraft.ui.canvas.Building.FLOOR1_FURNITURE)
+            putJsonObject("samples") {
+                for ((name, s) in samples) putJsonObject(name) {
+                    put("settings", all.encodeToJsonElement(com.example.sitedraft.ui.canvas.BuildingSettings.serializer(), s))
+                    put("levels", levels(s))
+                    put("layers", layers(s))
+                }
+            }
+        }
     }
 
     @Test

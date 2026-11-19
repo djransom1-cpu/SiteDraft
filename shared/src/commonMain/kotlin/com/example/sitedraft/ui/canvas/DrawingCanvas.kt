@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
@@ -425,11 +426,29 @@ fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String
     // Upper cabinets are an overlay layer: they sit above the cut plane, so they draw after
     // everything else, dashed over the base cabinets and counters they hang above, whatever
     // order things were placed in.
-    val (uppers, rest) = state.elements.partition { it is DrawingElement.Symbol && PlanSymbols.isOverlay(it) }
+    // Layers (Building.kt): hidden ones aren't drawn; on screen, layers on a level below the
+    // active one draw faint underneath, so the work below can be traced over. A printed page
+    // (layerDisplay off) has already picked its elements and fades nothing.
+    val shown = if (state.layerDisplay) Layers.visibleElements(state) else state.elements
+    val faintLayers = if (state.layerDisplay) state.effectiveLayers.filter { it.visible && Layers.isFaint(it, state) }.mapTo(HashSet()) { it.id } else emptySet()
+    val (faint, full) = if (faintLayers.isEmpty()) emptyList<DrawingElement>() to shown
+        else shown.partition { Layers.layerOf(it, state).id in faintLayers }
+    if (faint.isNotEmpty()) {
+        val b = faint.map { it.boundingRect() }.reduce { a, r -> Rect(minOf(a.left, r.left), minOf(a.top, r.top), maxOf(a.right, r.right), maxOf(a.bottom, r.bottom)) }
+            .inflate(200f)
+        drawIntoCanvas { c -> c.saveLayer(b, androidx.compose.ui.graphics.Paint().apply { alpha = FAINT_ALPHA }) }
+        val (fu, fr) = faint.partition { it is DrawingElement.Symbol && PlanSymbols.isOverlay(it) }
+        (fr + fu).forEach { drawElement(it, isSelected = false, state = state) }
+        drawIntoCanvas { c -> c.restore() }
+    }
+    val (uppers, rest) = full.partition { it is DrawingElement.Symbol && PlanSymbols.isOverlay(it) }
     (rest + uppers).forEach { element ->
         drawElement(element, isSelected = element.id == selectedElementId, state = state)
     }
 }
+
+/** How strongly a layer below the active one shows (0..1). */
+const val FAINT_ALPHA = 0.3f
 
 private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean = false, state: CanvasState) {
     val zoom = state.zoom

@@ -31,7 +31,9 @@ data class SheetView(
     val title: String,
     val scale: PrintScale = PrintScale.QUARTER,
     val xIn: Float = 0f,
-    val yIn: Float = 0f
+    val yIn: Float = 0f,
+    /** A plan view's layers (Building.kt): null shows every layer, as views did before layers. */
+    val layerIds: List<String>? = null
 )
 
 @Serializable
@@ -71,8 +73,10 @@ object Sheets {
     fun viewElements(view: SheetView, state: CanvasState): List<DrawingElement> = when (view.kind) {
         SheetViewKind.PLAN -> {
             val elevations = elevationIds(state)
+            val layers = view.layerIds?.toSet()
             state.elements.filter { e ->
-                e !is DrawingElement.ElevationView && !(e is DrawingElement.Dimension && e.ownerId != null && e.ownerId in elevations)
+                e !is DrawingElement.ElevationView && !(e is DrawingElement.Dimension && e.ownerId != null && e.ownerId in elevations) &&
+                    (layers == null || Layers.layerOf(e, state).id in layers)
             }
         }
         SheetViewKind.ELEVATION -> state.elements.filter { it.id == view.elementId || it.isOwnedBy(view.elementId) }
@@ -103,6 +107,30 @@ object Sheets {
     /** The view with its title under it (inches): what has to fit on the sheet. */
     fun footprint(view: SheetView, state: CanvasState): Rect? =
         viewRect(view, state)?.let { Rect(it.left, it.top, it.right, it.bottom + TITLE_ROOM_IN) }
+
+    /**
+     * Plan views that can be put on a sheet, by layer: the whole model, then a plan for each level
+     * that has layers (the foundation plan, each floor's framing plan, each floor plan with its
+     * cabinets and furniture, the roof framing plan), then the site plan.
+     */
+    fun planChoices(state: CanvasState): List<Pair<String, List<String>?>> {
+        val layers = state.effectiveLayers
+        val out = mutableListOf<Pair<String, List<String>?>>("Floor plan (all layers)" to null)
+        for (level in state.levels) {
+            val on = layers.filter { it.levelId == level.id }
+            if (on.isEmpty()) continue
+            val title = when (level.kind) {
+                LevelKind.FOUNDATION -> "Foundation plan"
+                LevelKind.FLOOR_FRAMING -> "${level.name} plan"
+                LevelKind.FLOOR -> "${level.name} plan"
+                LevelKind.ROOF -> "Roof framing plan"
+                else -> "${level.name} plan"
+            }
+            out += title to on.map { it.id }
+        }
+        layers.filter { it.levelId == null && it.trade != LayerTrade.EXTERIOR_ELEVATION }.forEach { out += "${it.name}" to listOf(it.id) }
+        return out
+    }
 
     /** The elevations in the drawing, numbered in placement order, as views could be made of them. */
     fun elevationChoices(state: CanvasState): List<Pair<DrawingElement.ElevationView, String>> =

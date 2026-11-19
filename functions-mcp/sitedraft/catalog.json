@@ -815,5 +815,489 @@
             48.0,
             24.0
         ]
+    },
+    "building": {
+        "defaults": {
+            "datumIn": 1200.0,
+            "foundation": "BASEMENT",
+            "subfloorIn": 0.75,
+            "joistDepthIn": 9.25,
+            "sillIn": 1.5,
+            "blockCourses": 11,
+            "courseIn": 8.0,
+            "crawlClearanceIn": 24.0,
+            "footingThicknessIn": 8.0,
+            "footingWidthIn": 18.0,
+            "upperFloors": [],
+            "roofPlateIn": null
+        },
+        "floor1Plan": "floor1-plan",
+        "floor1Cabinets": "floor1-cabinets",
+        "floor1Furniture": "floor1-furniture",
+        "samples": {
+            "default": {
+                "settings": {
+                    "datumIn": 1200.0,
+                    "foundation": "BASEMENT",
+                    "subfloorIn": 0.75,
+                    "joistDepthIn": 9.25,
+                    "sillIn": 1.5,
+                    "blockCourses": 11,
+                    "courseIn": 8.0,
+                    "crawlClearanceIn": 24.0,
+                    "footingThicknessIn": 8.0,
+                    "footingWidthIn": 18.0,
+                    "upperFloors": [],
+                    "roofPlateIn": null
+                },
+                "levels": [
+                    {
+                        "id": "footing",
+                        "name": "Footing",
+                        "kind": "FOOTING",
+                        "elevationIn": 1100.5,
+                        "note": "Top of footing; bottom at 91'-0 1/2\""
+                    },
+                    {
+                        "id": "foundation",
+                        "name": "Foundation (basement)",
+                        "kind": "FOUNDATION",
+                        "elevationIn": 1188.5,
+                        "note": "Top of foundation wall"
+                    },
+                    {
+                        "id": "floor1-framing",
+                        "name": "First floor framing",
+                        "kind": "FLOOR_FRAMING",
+                        "elevationIn": 1190.0,
+                        "note": "Top of sill, under the joists"
+                    },
+                    {
+                        "id": "floor1",
+                        "name": "First floor",
+                        "kind": "FLOOR",
+                        "elevationIn": 1200.0,
+                        "note": "Top of subfloor"
+                    },
+                    {
+                        "id": "roof",
+                        "name": "Roof",
+                        "kind": "ROOF",
+                        "elevationIn": null,
+                        "note": "Set when the roof is set up"
+                    }
+                ],
+                "layers": [
+                    {
+                        "id": "foundation",
+                        "name": "Foundation and foundation walls",
+                        "trade": "FOUNDATION",
+                        "levelId": "foundation",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-structural",
+                        "name": "First floor structural",
+                        "trade": "FLOOR_STRUCTURAL",
+                        "levelId": "floor1-framing",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-plan",
+                        "name": "First floor plan",
+                        "trade": "FLOOR_PLAN",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-cabinets",
+                        "name": "First floor cabinets",
+                        "trade": "CABINETS",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-furniture",
+                        "name": "First floor furniture",
+                        "trade": "FURNITURE",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "roof-structural",
+                        "name": "Roof structural",
+                        "trade": "ROOF_STRUCTURAL",
+                        "levelId": "roof",
+                        "visible": true
+                    },
+                    {
+                        "id": "exterior",
+                        "name": "Exterior elevation",
+                        "trade": "EXTERIOR_ELEVATION",
+                        "levelId": null,
+                        "visible": true
+                    },
+                    {
+                        "id": "site",
+                        "name": "Site plan",
+                        "trade": "SITE_PLAN",
+                        "levelId": null,
+                        "visible": true
+                    }
+                ]
+            },
+            "twoFloors": {
+                "settings": {
+                    "datumIn": 1200.0,
+                    "foundation": "BASEMENT",
+                    "subfloorIn": 0.75,
+                    "joistDepthIn": 9.25,
+                    "sillIn": 1.5,
+                    "blockCourses": 11,
+                    "courseIn": 8.0,
+                    "crawlClearanceIn": 24.0,
+                    "footingThicknessIn": 8.0,
+                    "footingWidthIn": 18.0,
+                    "upperFloors": [
+                        {
+                            "name": "Second floor",
+                            "elevationIn": 1310.0
+                        }
+                    ],
+                    "roofPlateIn": null
+                },
+                "levels": [
+                    {
+                        "id": "footing",
+                        "name": "Footing",
+                        "kind": "FOOTING",
+                        "elevationIn": 1100.5,
+                        "note": "Top of footing; bottom at 91'-0 1/2\""
+                    },
+                    {
+                        "id": "foundation",
+                        "name": "Foundation (basement)",
+                        "kind": "FOUNDATION",
+                        "elevationIn": 1188.5,
+                        "note": "Top of foundation wall"
+                    },
+                    {
+                        "id": "floor1-framing",
+                        "name": "First floor framing",
+                        "kind": "FLOOR_FRAMING",
+                        "elevationIn": 1190.0,
+                        "note": "Top of sill, under the joists"
+                    },
+                    {
+                        "id": "floor1",
+                        "name": "First floor",
+                        "kind": "FLOOR",
+                        "elevationIn": 1200.0,
+                        "note": "Top of subfloor"
+                    },
+                    {
+                        "id": "floor2-framing",
+                        "name": "Second floor framing",
+                        "kind": "FLOOR_FRAMING",
+                        "elevationIn": 1300.0,
+                        "note": "Top of plate, under the joists"
+                    },
+                    {
+                        "id": "floor2",
+                        "name": "Second floor",
+                        "kind": "FLOOR",
+                        "elevationIn": 1310.0,
+                        "note": "Top of subfloor"
+                    },
+                    {
+                        "id": "roof",
+                        "name": "Roof",
+                        "kind": "ROOF",
+                        "elevationIn": null,
+                        "note": "Set when the roof is set up"
+                    }
+                ],
+                "layers": [
+                    {
+                        "id": "foundation",
+                        "name": "Foundation and foundation walls",
+                        "trade": "FOUNDATION",
+                        "levelId": "foundation",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-structural",
+                        "name": "First floor structural",
+                        "trade": "FLOOR_STRUCTURAL",
+                        "levelId": "floor1-framing",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-plan",
+                        "name": "First floor plan",
+                        "trade": "FLOOR_PLAN",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-cabinets",
+                        "name": "First floor cabinets",
+                        "trade": "CABINETS",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-furniture",
+                        "name": "First floor furniture",
+                        "trade": "FURNITURE",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor2-structural",
+                        "name": "Second floor structural",
+                        "trade": "FLOOR_STRUCTURAL",
+                        "levelId": "floor2-framing",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor2-plan",
+                        "name": "Second floor plan",
+                        "trade": "FLOOR_PLAN",
+                        "levelId": "floor2",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor2-cabinets",
+                        "name": "Second floor cabinets",
+                        "trade": "CABINETS",
+                        "levelId": "floor2",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor2-furniture",
+                        "name": "Second floor furniture",
+                        "trade": "FURNITURE",
+                        "levelId": "floor2",
+                        "visible": true
+                    },
+                    {
+                        "id": "roof-structural",
+                        "name": "Roof structural",
+                        "trade": "ROOF_STRUCTURAL",
+                        "levelId": "roof",
+                        "visible": true
+                    },
+                    {
+                        "id": "exterior",
+                        "name": "Exterior elevation",
+                        "trade": "EXTERIOR_ELEVATION",
+                        "levelId": null,
+                        "visible": true
+                    },
+                    {
+                        "id": "site",
+                        "name": "Site plan",
+                        "trade": "SITE_PLAN",
+                        "levelId": null,
+                        "visible": true
+                    }
+                ]
+            },
+            "crawl": {
+                "settings": {
+                    "datumIn": 1200.0,
+                    "foundation": "CRAWL",
+                    "subfloorIn": 0.75,
+                    "joistDepthIn": 9.25,
+                    "sillIn": 1.5,
+                    "blockCourses": 11,
+                    "courseIn": 8.0,
+                    "crawlClearanceIn": 24.0,
+                    "footingThicknessIn": 8.0,
+                    "footingWidthIn": 18.0,
+                    "upperFloors": [],
+                    "roofPlateIn": null
+                },
+                "levels": [
+                    {
+                        "id": "footing",
+                        "name": "Footing",
+                        "kind": "FOOTING",
+                        "elevationIn": 1100.5,
+                        "note": "Top of footing; bottom at 91'-0 1/2\""
+                    },
+                    {
+                        "id": "crawl-floor",
+                        "name": "Crawl space floor",
+                        "kind": "CRAWL_FLOOR",
+                        "elevationIn": 1166.0,
+                        "note": "24\" below the bottom of the joists"
+                    },
+                    {
+                        "id": "foundation",
+                        "name": "Foundation (crawl space)",
+                        "kind": "FOUNDATION",
+                        "elevationIn": 1188.5,
+                        "note": "Top of foundation wall"
+                    },
+                    {
+                        "id": "floor1-framing",
+                        "name": "First floor framing",
+                        "kind": "FLOOR_FRAMING",
+                        "elevationIn": 1190.0,
+                        "note": "Top of sill, under the joists"
+                    },
+                    {
+                        "id": "floor1",
+                        "name": "First floor",
+                        "kind": "FLOOR",
+                        "elevationIn": 1200.0,
+                        "note": "Top of subfloor"
+                    },
+                    {
+                        "id": "roof",
+                        "name": "Roof",
+                        "kind": "ROOF",
+                        "elevationIn": null,
+                        "note": "Set when the roof is set up"
+                    }
+                ],
+                "layers": [
+                    {
+                        "id": "foundation",
+                        "name": "Foundation and foundation walls",
+                        "trade": "FOUNDATION",
+                        "levelId": "foundation",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-structural",
+                        "name": "First floor structural",
+                        "trade": "FLOOR_STRUCTURAL",
+                        "levelId": "floor1-framing",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-plan",
+                        "name": "First floor plan",
+                        "trade": "FLOOR_PLAN",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-cabinets",
+                        "name": "First floor cabinets",
+                        "trade": "CABINETS",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-furniture",
+                        "name": "First floor furniture",
+                        "trade": "FURNITURE",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "roof-structural",
+                        "name": "Roof structural",
+                        "trade": "ROOF_STRUCTURAL",
+                        "levelId": "roof",
+                        "visible": true
+                    },
+                    {
+                        "id": "exterior",
+                        "name": "Exterior elevation",
+                        "trade": "EXTERIOR_ELEVATION",
+                        "levelId": null,
+                        "visible": true
+                    },
+                    {
+                        "id": "site",
+                        "name": "Site plan",
+                        "trade": "SITE_PLAN",
+                        "levelId": null,
+                        "visible": true
+                    }
+                ]
+            },
+            "slab": {
+                "settings": {
+                    "datumIn": 1200.0,
+                    "foundation": "SLAB",
+                    "subfloorIn": 0.75,
+                    "joistDepthIn": 9.25,
+                    "sillIn": 1.5,
+                    "blockCourses": 11,
+                    "courseIn": 8.0,
+                    "crawlClearanceIn": 24.0,
+                    "footingThicknessIn": 8.0,
+                    "footingWidthIn": 18.0,
+                    "upperFloors": [],
+                    "roofPlateIn": null
+                },
+                "levels": [
+                    {
+                        "id": "floor1",
+                        "name": "First floor",
+                        "kind": "FLOOR",
+                        "elevationIn": 1200.0,
+                        "note": "Top of slab"
+                    },
+                    {
+                        "id": "roof",
+                        "name": "Roof",
+                        "kind": "ROOF",
+                        "elevationIn": null,
+                        "note": "Set when the roof is set up"
+                    }
+                ],
+                "layers": [
+                    {
+                        "id": "floor1-plan",
+                        "name": "First floor plan",
+                        "trade": "FLOOR_PLAN",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-cabinets",
+                        "name": "First floor cabinets",
+                        "trade": "CABINETS",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-furniture",
+                        "name": "First floor furniture",
+                        "trade": "FURNITURE",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "roof-structural",
+                        "name": "Roof structural",
+                        "trade": "ROOF_STRUCTURAL",
+                        "levelId": "roof",
+                        "visible": true
+                    },
+                    {
+                        "id": "exterior",
+                        "name": "Exterior elevation",
+                        "trade": "EXTERIOR_ELEVATION",
+                        "levelId": null,
+                        "visible": true
+                    },
+                    {
+                        "id": "site",
+                        "name": "Site plan",
+                        "trade": "SITE_PLAN",
+                        "levelId": null,
+                        "visible": true
+                    }
+                ]
+            }
+        }
     }
 }

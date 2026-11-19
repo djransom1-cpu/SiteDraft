@@ -197,6 +197,68 @@ async function main() {
     kitchenInsideIn: [144, 120],
     walls: seen.walls.length,
   }, null, 2) + "\n");
+  // ---- levels and layers (phase 1 of foundation to roof) ----
+  const L = require("../sitedraft/layers.js");
+  // layers.js works out the same levels and layers as the app (samples the app exported into catalog.json).
+  const r4 = (v) => (v == null ? null : Math.round(v * 10000) / 10000);
+  for (const [name, sample] of Object.entries(M.catalog.building.samples)) {
+    const s = { ...M.catalog.building.defaults, ...sample.settings };
+    assert.deepStrictEqual(L.levels(s).map((l) => ({ ...l, elevationIn: r4(l.elevationIn) })), sample.levels.map((l) => ({ ...l, elevationIn: r4(l.elevationIn) })), `levels ${name}`);
+    assert.deepStrictEqual(L.defaultLayers(s), sample.layers, `layers ${name}`);
+  }
+  for (const t of ["list_levels_and_layers", "set_active_layer", "show_hide_layers", "add_layer", "set_building_inputs", "move_to_layer"]) assert(tools.includes(t), `tool ${t}`);
+  await call(client, "create_project", { name: "House" });
+  let ll = await call(client, "list_levels_and_layers", { project: "House" });
+  const lev = Object.fromEntries(ll.levels.map((x) => [x.id, x.elevation]));
+  assert.strictEqual(lev.floor1, "100'-0\"");
+  assert.strictEqual(lev.foundation, "99'-0 1/2\"");
+  assert.strictEqual(lev.footing, "91'-8 1/2\"");
+  assert(ll.levels.find((x) => x.id === "footing").note.includes("91'-0 1/2\""));
+  assert.strictEqual(ll.activeLayer, "floor1-plan");
+  // Drawn on the foundation layer once it is active.
+  assert.strictEqual((await call(client, "set_active_layer", { project: "House", layer: "Foundation and foundation walls" })).activeLayer, "foundation");
+  await call(client, "draw_walls", { project: "House", measured: "outside", close: true, wall_type: "8\" Block Wall",
+    segments: [{ length: "30'" }, { length: "24'", turn: "right" }, { length: "30'", turn: "right" }, { length: "24'", turn: "right" }] });
+  let house = (await S.readProject(db, uid, "House")).state;
+  assert(house.elements.length >= 4 && house.elements.every((e) => e.layerId === "foundation"), "foundation walls tagged");
+  // A second floor, then a cabinet drawn on its plan lands on its cabinets layer.
+  const two = await call(client, "set_building_inputs", { project: "House", upper_floors: [{ name: "Second floor", top_of_subfloor: "109'-1 1/8\"" }] });
+  assert(two.layers.some((x) => x.id === "floor2-plan"));
+  assert((await call(client, "set_building_inputs", { project: "House", upper_floors: [{ name: "Low", top_of_subfloor: "90'" }] })).error.includes("higher"));
+  await call(client, "set_active_layer", { project: "House", layer: "floor2-plan" });
+  const cab = await call(client, "place_symbol", { project: "House", name: "Base 24\"", x: 100, y: 100 });
+  house = (await S.readProject(db, uid, "House")).state;
+  const cabEl = house.elements[house.elements.length - 1];
+  assert.strictEqual(cabEl.layerId, "floor2-cabinets", JSON.stringify(cab));
+  // The active layer can't be hidden; others can.
+  assert((await call(client, "show_hide_layers", { project: "House", layers: ["floor2-plan"], visible: false })).error.includes("active"));
+  assert.deepStrictEqual((await call(client, "show_hide_layers", { project: "House", layers: ["Site plan"], visible: false })).hidden, ["Site plan"]);
+  const elec = await call(client, "add_layer", { project: "House", name: "Electrical", level: "First floor" });
+  assert.strictEqual(elec.active, true);
+  assert((await call(client, "add_layer", { project: "House", name: "electrical" })).error.includes("already"));
+  // Back on the first-floor plan, a wall stays untagged (its default), as the app writes it.
+  await call(client, "set_active_layer", { project: "House", layer: "First floor plan" });
+  await call(client, "place_symbol", { project: "House", name: "2x4 Wall", x: 500, y: 500 });
+  house = (await S.readProject(db, uid, "House")).state;
+  const plainWall = house.elements[house.elements.length - 1];
+  assert.strictEqual(plainWall.layerId, undefined);
+  const mv = await call(client, "move_to_layer", { project: "House", ids: [plainWall.id], layer: "Electrical" });
+  assert.strictEqual(mv.moved, 1);
+  ll = await call(client, "list_levels_and_layers", { project: "House" });
+  assert.strictEqual(ll.layers.find((x) => x.name === "Electrical").elements, 1);
+  assert.strictEqual(ll.layers.find((x) => x.id === "site").visible, false);
+  house = (await S.readProject(db, uid, "House")).state;
+  assert.strictEqual(house.building.upperFloors[0].elevationIn, 1309.125);
+  assert.strictEqual(house.building.datumIn, undefined, "defaults left out, as the app writes them");
+  fs.writeFileSync(path.join(fx, "connector-layers.json"), M.stringifyProject(house) + "\n");
+  fs.writeFileSync(path.join(fx, "connector-layers-expect.json"), JSON.stringify({
+    note: "Written by functions-mcp/test/sitedraft-mcp.test.js; ConnectorCheckTest checks it with the app's code.",
+    layerOf: Object.fromEntries(house.elements.map((e) => [e.id, L.layerOf(e, house).id])),
+    activeLayer: L.activeLayer(house).id,
+    hidden: L.effectiveLayers(house).filter((x) => !x.visible).map((x) => x.id),
+    levels: Object.fromEntries(L.levels(L.settingsOf(house)).map((x) => [x.id, x.elevationIn])),
+  }, null, 2) + "\n");
+
   const forceChunks = { ...big.state, projectName: "Big", elements: [...big.state.elements, M.makeText({ text: "x".repeat(700000), topLeft: { x: 0, y: 0 } })] };
   await S.changeProject(db, uid, "Big", "test", () => ({ state: forceChunks, result: {} }), { create: { projectName: "Big" } });
   assert.strictEqual(db._store.get(`users/${uid}/projects/Big`).chunkCount, Math.ceil(M.stringifyProject(forceChunks).length / 300000));

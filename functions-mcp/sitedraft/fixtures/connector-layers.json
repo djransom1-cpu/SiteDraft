@@ -1,0 +1,177 @@
+{
+    "projectName": "House",
+    "activeLayerId": "floor1-plan",
+    "elements": [
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "2985b59d-17e4-44f7-afd8-b919458fe156",
+            "symbolName": "8\" Block Wall",
+            "category": "Walls",
+            "center": "750.0,15.8854",
+            "size": "1500.0,31.7708",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 7.625
+            },
+            "layerId": "foundation"
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "58821ed0-f96e-4815-b2db-f883dbf8df62",
+            "symbolName": "8\" Block Wall",
+            "category": "Walls",
+            "center": "1484.1146,600.0",
+            "size": "31.7708,1136.4583",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 7.625
+            },
+            "layerId": "foundation"
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "96b6f547-cf63-48d4-9d59-9d1b0270f4e3",
+            "symbolName": "8\" Block Wall",
+            "category": "Walls",
+            "center": "750.0,1184.1146",
+            "size": "1500.0,31.7708",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 7.625
+            },
+            "layerId": "foundation"
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "a03e219f-f0b5-467b-bcd2-02fa975d7aa1",
+            "symbolName": "8\" Block Wall",
+            "category": "Walls",
+            "center": "15.8854,600.0",
+            "size": "31.7708,1136.4583",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 7.625
+            },
+            "layerId": "foundation"
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "8b569801-67c6-4171-8b6c-99f8b0dcd205",
+            "symbolName": "Base 24\"",
+            "category": "Cabinets",
+            "center": "416.6667,416.6667",
+            "size": "100.0,100.0",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 24,
+                "depthInches": 24
+            },
+            "layerId": "floor2-cabinets"
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "b2418249-c8b2-4c4e-8f81-57865ed1117b",
+            "symbolName": "2x4 Wall",
+            "category": "Walls",
+            "center": "2083.3333,2083.3333",
+            "size": "200.0,18.75",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 4.5
+            },
+            "layerId": "custom-b3d0a4a3"
+        }
+    ],
+    "layers": [
+        {
+            "id": "foundation",
+            "name": "Foundation and foundation walls",
+            "trade": "FOUNDATION",
+            "levelId": "foundation"
+        },
+        {
+            "id": "floor1-structural",
+            "name": "First floor structural",
+            "trade": "FLOOR_STRUCTURAL",
+            "levelId": "floor1-framing"
+        },
+        {
+            "id": "floor1-plan",
+            "name": "First floor plan",
+            "trade": "FLOOR_PLAN",
+            "levelId": "floor1"
+        },
+        {
+            "id": "floor1-cabinets",
+            "name": "First floor cabinets",
+            "trade": "CABINETS",
+            "levelId": "floor1"
+        },
+        {
+            "id": "floor1-furniture",
+            "name": "First floor furniture",
+            "trade": "FURNITURE",
+            "levelId": "floor1"
+        },
+        {
+            "id": "floor2-structural",
+            "name": "Second floor structural",
+            "trade": "FLOOR_STRUCTURAL",
+            "levelId": "floor2-framing"
+        },
+        {
+            "id": "floor2-plan",
+            "name": "Second floor plan",
+            "trade": "FLOOR_PLAN",
+            "levelId": "floor2"
+        },
+        {
+            "id": "floor2-cabinets",
+            "name": "Second floor cabinets",
+            "trade": "CABINETS",
+            "levelId": "floor2"
+        },
+        {
+            "id": "floor2-furniture",
+            "name": "Second floor furniture",
+            "trade": "FURNITURE",
+            "levelId": "floor2"
+        },
+        {
+            "id": "roof-structural",
+            "name": "Roof structural",
+            "trade": "ROOF_STRUCTURAL",
+            "levelId": "roof"
+        },
+        {
+            "id": "exterior",
+            "name": "Exterior elevation",
+            "trade": "EXTERIOR_ELEVATION"
+        },
+        {
+            "id": "site",
+            "name": "Site plan",
+            "trade": "SITE_PLAN",
+            "visible": false
+        },
+        {
+            "id": "custom-b3d0a4a3",
+            "name": "Electrical",
+            "trade": "CUSTOM",
+            "levelId": "floor1"
+        }
+    ],
+    "building": {
+        "upperFloors": [
+            {
+                "name": "Second floor",
+                "elevationIn": 1309.125
+            }
+        ]
+    }
+}

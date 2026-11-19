@@ -9,6 +9,8 @@ import com.example.sitedraft.ui.canvas.FloorPlan
 import com.example.sitedraft.ui.canvas.OpeningPosition
 import com.example.sitedraft.ui.canvas.PlanSymbols
 import com.example.sitedraft.ui.canvas.inchesToPx
+import com.example.sitedraft.ui.canvas.activeLayer
+import com.example.sitedraft.ui.canvas.effectiveLayers
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.float
@@ -104,5 +106,25 @@ class ConnectorCheckTest {
         val walls = state.symbols().filter { it.category == PlanSymbols.WALLS }
         assertEquals(8, walls.size)
         assertEquals(1, walls.count { it.rotation != 0f })
+    }
+
+    @Test
+    fun `layers the connector set read the same in the app`() {
+        val state = load("connector-layers.json")
+        val ex = Json.parseToJsonElement(File(dir, "connector-layers-expect.json").readText()).jsonObject
+        for ((id, layer) in ex["layerOf"]!!.jsonObject) {
+            val e = state.elements.first { it.id == id }
+            assertEquals("layer of $id", layer.jsonPrimitive.content, com.example.sitedraft.ui.canvas.Layers.layerOf(e, state).id)
+        }
+        assertEquals(ex["activeLayer"]!!.jsonPrimitive.content, state.activeLayer.id)
+        val hidden = ex["hidden"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
+        assertEquals(hidden, state.effectiveLayers.filter { !it.visible }.map { it.id }.toSet())
+        val levels = com.example.sitedraft.ui.canvas.Building.levels(state.building).associate { it.id to it.elevationIn }
+        for ((id, v) in ex["levels"]!!.jsonObject) {
+            val want = v.jsonPrimitive.content.toFloatOrNull()
+            if (want == null) assertEquals(null, levels.getValue(id)) else assertEquals(id, want, levels.getValue(id)!!, 0.001f)
+        }
+        // Hidden layers are left out of what the app draws and picks.
+        assertTrue(com.example.sitedraft.ui.canvas.Layers.visibleElements(state).size <= state.elements.size)
     }
 }

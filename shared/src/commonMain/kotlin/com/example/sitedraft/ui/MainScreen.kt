@@ -60,6 +60,9 @@ fun MainScreen(
     // Laser stays up even with a selection: applying a reading to the selected element is the point.
     val isLaserVisible = isExpanded && currentNav == "Laser"
     val isPlanVisible = isExpanded && currentNav == "Plan"
+    val isLayersVisible = isExpanded && currentNav == "Layers"
+    // Paper space: the Print dialog opened straight on the sheets.
+    var sheetsOnly by remember { mutableStateOf(false) }
 
 
 
@@ -114,6 +117,13 @@ fun MainScreen(
                 onClick = { currentNav = if (currentNav == "Plan") "Drawing" else "Plan" },
                 icon = { Icon(Icons.Default.Architecture, contentDescription = "Floor plan") },
                 label = { Text("Plan") },
+            )
+            NavigationRailItem(
+                colors = railColors,
+                selected = currentNav == "Layers",
+                onClick = { currentNav = if (currentNav == "Layers") "Drawing" else "Layers" },
+                icon = { Icon(Icons.Default.Layers, contentDescription = "Layers") },
+                label = { Text("Layers") },
             )
             if (platform.supportsLaser) NavigationRailItem(
                 colors = railColors,
@@ -395,7 +405,19 @@ fun MainScreen(
 
             // Right Panel (Properties/Settings) - Permanent on tablet
             if (isExpanded) {
-                if (isPlanVisible) {
+                if (isLayersVisible) {
+                    BuildingPanel(
+                        state = state,
+                        onEvent = viewModel::onEvent,
+                        onOpenSheets = { sheetsOnly = true; printDialog = PrintAction.PRINT },
+                        modifier = Modifier
+                            .width(340.dp)
+                            .fillMaxHeight()
+                            .safeDrawingPadding()
+                            .padding(8.dp),
+                        onClose = { currentNav = "Drawing" }
+                    )
+                } else                 if (isPlanVisible) {
                     FloorPlanPanel(
                         state = state,
                         onEvent = viewModel::onEvent,
@@ -469,7 +491,8 @@ fun MainScreen(
             onPrint = { viewModel.onEvent(DrawingEvent.Print(it, density)) },
             onExportPdf = { viewModel.onEvent(DrawingEvent.ExportPdf(it, density)) },
             onSheetsChange = { viewModel.onEvent(DrawingEvent.UpdateSheets(it)) },
-            onDismiss = { printDialog = null }
+            startOnSheets = sheetsOnly,
+            onDismiss = { printDialog = null; sheetsOnly = false }
         )
     }
 }

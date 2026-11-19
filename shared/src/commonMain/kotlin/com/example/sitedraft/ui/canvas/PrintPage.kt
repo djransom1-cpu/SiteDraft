@@ -188,15 +188,16 @@ object PrintPage {
     /** The elements the subject prints, or null when there is nothing to print (no elevation selected). */
     fun subjectElements(state: CanvasState, subject: PrintSubject): List<DrawingElement>? = when (subject) {
         PrintSubject.SELECTED_ELEVATION -> selectedElevation(state)?.let { listOf(it) }
-        else -> state.elements
+        // What is on screen: hidden layers do not print.
+        else -> Layers.visibleElements(state)
     }
 
     /** The subject's extent in world px, or null for an empty drawing. */
     fun subjectBounds(state: CanvasState, subject: PrintSubject): Rect? = when (subject) {
-        PrintSubject.WHOLE_DRAWING, PrintSubject.SHEET -> union(state.elements.map { it.boundingRect() })
+        PrintSubject.WHOLE_DRAWING, PrintSubject.SHEET -> union(Layers.visibleElements(state).map { it.boundingRect() })
         PrintSubject.CURRENT_VIEW -> {
             val v = state.viewportSize
-            if (v == Size.Zero) union(state.elements.map { it.boundingRect() })
+            if (v == Size.Zero) union(Layers.visibleElements(state).map { it.boundingRect() })
             else Rect(
                 -state.pan.x / state.zoom, -state.pan.y / state.zoom,
                 (v.width - state.pan.x) / state.zoom, (v.height - state.pan.y) / state.zoom
@@ -241,7 +242,9 @@ object PrintPage {
         boxSelectStart = null,
         boxSelectEnd = null,
         preciseMoveFromPoint = null,
-        placementPreview = null
+        placementPreview = null,
+        // The page has picked its elements already (hidden layers left out): nothing is faded.
+        layerDisplay = false
     )
 
     /** Colours at least this bright are white-ish pen strokes meant for a dark canvas. */

@@ -43,7 +43,7 @@ private const val LAST_PROJECT_FILE = "last_project.txt"
  * the host goes away.
  */
 class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyncListener {
-    private val _state = mutableStateOf(CanvasState())
+    private val _state = LayerTaggingState(CanvasState())
     val state: State<CanvasState> = _state
 
     /**
@@ -308,6 +308,24 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 _state.value = _state.value.copy(sheets = event.sheets)
                 triggerAutoSave()
             }
+            is DrawingEvent.SetActiveLayer -> applyLayerEdit(LayerEdits.setActive(_state.value, event.layerId))
+            is DrawingEvent.SetLayerVisible -> applyLayerEdit(LayerEdits.setVisible(_state.value, event.layerId, event.visible))
+            is DrawingEvent.AddLayer -> LayerEdits.add(_state.value, event.name, event.levelId).let { r ->
+                // The new layer becomes the one drawing goes on.
+                val added = r.state.layers.lastOrNull()
+                applyLayerEdit(if (r.refused == null && added != null) LayerEdits.setActive(r.state, added.id) else r)
+            }
+            is DrawingEvent.RenameLayer -> applyLayerEdit(LayerEdits.rename(_state.value, event.layerId, event.name))
+            is DrawingEvent.RemoveLayer -> applyLayerEdit(LayerEdits.remove(_state.value, event.layerId))
+            is DrawingEvent.SetBuilding -> applyLayerEdit(LayerEdits.setBuilding(_state.value, event.settings))
+            is DrawingEvent.MoveSelectionToLayer -> {
+                val ids = _state.value.selectedElementIds.ifEmpty { setOfNotNull(_state.value.selectedElementId) }
+                if (ids.isNotEmpty()) {
+                    if (LayerEdits.moveTo(_state.value, ids, event.layerId).refused == null) pushUndoSnapshot()
+                    // Worked out after the snapshot, so the undo history it carries includes it.
+                    applyLayerEdit(LayerEdits.moveTo(_state.value, ids, event.layerId))
+                }
+            }
             is DrawingEvent.ShowCabinetLabels -> {
                 _state.value = _state.value.copy(showCabinetLabels = event.show)
                 triggerAutoSave()
@@ -451,7 +469,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 val loaded = json.decodeFromString(CanvasState.serializer(), text)
                 val list = storage.read("project_list.txt")?.lines()?.filter { it.isNotBlank() }?.sorted() ?: emptyList()
                 withContext(Dispatchers.Main) {
-                    _state.value = loaded.copy(availableProjects = list, selectedElementId = null, selectedElementIds = emptySet())
+                    _state.replace(loaded.copy(availableProjects = list, selectedElementId = null, selectedElementIds = emptySet()))
                 }
             } catch (e: Exception) {
                 platform.log("SiteDraft", "restore failed: ${e.message}")
@@ -496,15 +514,25 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         pendingSave?.cancel()
     }
 
+    /** What can be picked, box-selected and snapped to: the elements on visible layers. */
+    private fun liveElements(): List<DrawingElement> = Layers.visibleElements(_state.value)
+
+    /** A level/layer edit: applied and saved, or its reason shown. */
+    private fun applyLayerEdit(r: LayerEdits.Result) {
+        if (r.refused != null) { platform.toast(r.refused); return }
+        _state.value = r.state
+        triggerAutoSave()
+    }
+
     private fun newProject() {
-        _state.value = CanvasState(
+        _state.replace(CanvasState(
             projectName = "Project ${nowMillis() / 1000}",
             unitSystem = _state.value.unitSystem,
             scale = _state.value.scale,
             backgroundColor = _state.value.backgroundColor,
             background = _state.value.background,
             availableProjects = _state.value.availableProjects
-        )
+        ))
     }
 
     private fun duplicatedWithOffset(element: DrawingElement, offset: Offset): DrawingElement = when (element) {
@@ -712,7 +740,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     private fun findSnapPoint(offset: Offset, excludeId: String? = null, includeEdges: Boolean = true): Offset {
         val snapThreshold = 20f / _state.value.zoom // Increased from 12f for easier mobile use
         val edgeThreshold = 15f / _state.value.zoom
-        val others = _state.value.elements.filter { it.id != excludeId }
+        val others = liveElements().filter { it.id != excludeId }
 
         // 1. Key points. Vertices take priority over everything else: a corner is a real,
         // named point the user is aiming at, whereas an edge point or grid point is only ever
@@ -797,7 +825,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     // (or second-guess) which corner was actually tapped.
     private fun resolvePreciseMoveDelta(movingElement: DrawingElement, fromPoint: Offset, toPoint: Offset): Offset {
         val naiveDelta = toPoint - fromPoint
-        val targetElement = _state.value.elements.firstOrNull { el ->
+        val targetElement = liveElements().firstOrNull { el ->
             el.id != movingElement.id && getElementKeyPoints(el).any { (it - toPoint).getDistance() < 0.5f }
         } ?: return naiveDelta
 
@@ -860,7 +888,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     // already the right tie-breaker for the exploded-rectangle case this replaced (4 short edges
     // close together: the one the pen is actually nearest to wins).
     private fun findHitElement(offset: Offset, threshold: Float): DrawingElement? {
-        val scored = _state.value.elements.filter { !it.isLockedPlan && it.contains(offset, threshold) }.map { it to pickDistance(it, offset) }
+        val scored = liveElements().filter { !it.isLockedPlan && it.contains(offset, threshold) }.map { it to pickDistance(it, offset) }
         val best = scored.minOfOrNull { it.second } ?: return null
         // Outlines within a fingertip's wobble (8 screen px) of the nearest one count as a tie -
         // an upper cabinet's back edge sits on the base cabinet's back edge, give or take a px -
@@ -1129,7 +1157,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         var snapPoint: Offset = Offset.Zero
 
         val sourcePoints = if (basePoint != null) listOf(basePoint) else getElementKeyPoints(selectedElement)
-        val otherElements = _state.value.elements.filter { it.id != selectedElement.id }
+        val otherElements = liveElements().filter { it.id != selectedElement.id }
         
         // 1. Point-to-Point Snapping
         sourcePoints.forEach { srcPt ->
@@ -2049,7 +2077,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 // A plan is only taken when the box covers all of it: a box drawn ON a plan
                 // means "the things on it", not the sheet underneath. Whole groups come along.
                 val hitIds = expandGroups(
-                    _state.value.elements
+                    liveElements()
                         .filter { el ->
                             if (el.isLockedPlan) false
                             else if (el is DrawingElement.Pdf) el.boundingRect().let { r -> selectionRect.contains(r.topLeft) && selectionRect.contains(r.bottomRight) }
@@ -3153,7 +3181,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             val projectData = storage.read(projectFileName(name)) ?: return
             val loadedState = json.decodeFromString(CanvasState.serializer(), projectData)
             // When loading, preserve the available projects list from current session
-            _state.value = loadedState.copy(availableProjects = _state.value.availableProjects, selectedElementId = null, selectedElementIds = emptySet())
+            _state.replace(loadedState.copy(availableProjects = _state.value.availableProjects, selectedElementId = null, selectedElementIds = emptySet()))
             storage.write(LAST_PROJECT_FILE, name)
         } catch (e: Exception) {
             platform.log("SiteDraft", "load failed: ${e.message}")
@@ -3328,6 +3356,16 @@ sealed class DrawingEvent {
     data class PositionOpening(val id: String, val fromEnd: Boolean, val toCenter: Boolean, val outside: Boolean, val distance: String? = null) : DrawingEvent()
     /** The project's print sheets, as edited in the Print dialog. */
     data class UpdateSheets(val sheets: List<SheetLayout>) : DrawingEvent()
+    /** Levels and layers (Building.kt): the layer new drawing goes on, shown or hidden, the user's own layers. */
+    data class SetActiveLayer(val layerId: String) : DrawingEvent()
+    data class SetLayerVisible(val layerId: String, val visible: Boolean) : DrawingEvent()
+    data class AddLayer(val name: String, val levelId: String? = null) : DrawingEvent()
+    data class RenameLayer(val layerId: String, val name: String) : DrawingEvent()
+    data class RemoveLayer(val layerId: String) : DrawingEvent()
+    /** New building inputs (datum, subfloor, joists, sill, block, footing, floors). */
+    data class SetBuilding(val settings: BuildingSettings) : DrawingEvent()
+    /** The selected objects onto another layer (undoable; nothing moves). */
+    data class MoveSelectionToLayer(val layerId: String) : DrawingEvent()
     /** Cabinet codes (W2430, BD18...) on the plan, on or off. */
     data class ShowCabinetLabels(val show: Boolean) : DrawingEvent()
     object DeleteSelectedElement : DrawingEvent()

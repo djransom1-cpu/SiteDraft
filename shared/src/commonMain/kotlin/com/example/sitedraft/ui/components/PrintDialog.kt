@@ -55,6 +55,8 @@ fun PrintDialog(
     onPrint: (PrintSettings) -> Unit,
     onExportPdf: (PrintSettings) -> Unit,
     onSheetsChange: (List<SheetLayout>) -> Unit = {},
+    /** Paper space: open on the sheets (the Layers panel's Paper button). */
+    startOnSheets: Boolean = false,
     onDismiss: () -> Unit
 ) {
     val prefs = LocalPlatform.current.prefs
@@ -62,7 +64,7 @@ fun PrintDialog(
     var settings by remember {
         mutableStateOf(
             PrintSettings(
-                subject = if (hasElevation) PrintSubject.SELECTED_ELEVATION else PrintSubject.WHOLE_DRAWING,
+                subject = if (startOnSheets) PrintSubject.SHEET else if (hasElevation) PrintSubject.SELECTED_ELEVATION else PrintSubject.WHOLE_DRAWING,
                 paper = prefs.getString(PREF_PAPER)?.let { v -> PaperSize.entries.firstOrNull { it.name == v } } ?: PaperSize.LETTER,
                 orientation = prefs.getString(PREF_ORIENTATION)?.let { v -> PageOrientation.entries.firstOrNull { it.name == v } } ?: PageOrientation.LANDSCAPE,
                 scale = prefs.getString(PREF_SCALE)?.let { v -> PrintScale.entries.firstOrNull { it.name == v } } ?: PrintScale.FIT

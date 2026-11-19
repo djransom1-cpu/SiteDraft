@@ -38,6 +38,7 @@ import com.example.sitedraft.ui.canvas.SheetViewKind
 import com.example.sitedraft.ui.canvas.Sheets
 import com.example.sitedraft.ui.canvas.UnitSystem
 import com.example.sitedraft.ui.canvas.drawSheet
+import com.example.sitedraft.ui.canvas.effectiveLayers
 
 /**
  * Builds a large-format sheet: its number, title, paper and drawn-by; the views on it (the floor
@@ -117,6 +118,21 @@ fun SheetEditor(
                     }, label = { Text(if (metric) "1:${sc.denominator}" else sc.label) })
                 }
             }
+            if (v.kind == SheetViewKind.PLAN) {
+                // The layers this viewport shows; all of them when none is picked.
+                val all = state.effectiveLayers
+                val on = v.layerIds?.toSet()
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    all.filter { it.trade != com.example.sitedraft.ui.canvas.LayerTrade.EXTERIOR_ELEVATION }.forEach { layer ->
+                        FilterChip(selected = on == null || layer.id in on, onClick = {
+                            val current = on ?: all.map { it.id }.toSet()
+                            val next = if (layer.id in current) current - layer.id else current + layer.id
+                            val ids = if (next.size == all.size) null else all.map { it.id }.filter { it in next }
+                            save(sheet.copy(views = sheet.views.map { if (it.id == v.id) it.copy(layerIds = ids) else it }))
+                        }, label = { Text(layer.name) })
+                    }
+                }
+            }
             val size = Sheets.footprint(v, state)
             Text(
                 if (size == null) "Shows nothing (its elevation was deleted)."
@@ -127,9 +143,13 @@ fun SheetEditor(
     }
     Text("Add a view", style = MaterialTheme.typography.labelLarge)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedButton(onClick = {
-            save(sheet.copy(views = sheet.views + Sheets.placed(sheet, SheetView(kind = SheetViewKind.PLAN, title = "Floor Plan"), state)))
-        }) { Text("Floor plan") }
+        // A plan view of chosen layers: the foundation plan, a framing plan, a floor plan...
+        Sheets.planChoices(state).forEach { (label, layerIds) ->
+            OutlinedButton(onClick = {
+                val title = if (layerIds == null) "Floor Plan" else label
+                save(sheet.copy(views = sheet.views + Sheets.placed(sheet, SheetView(kind = SheetViewKind.PLAN, title = title, layerIds = layerIds), state)))
+            }) { Text(label) }
+        }
         Sheets.elevationChoices(state).forEach { (view, label) ->
             if (sheet.views.none { it.elementId == view.id }) {
                 OutlinedButton(onClick = {

@@ -74,6 +74,16 @@ object DxfExport {
     fun unitsPerPx(state: CanvasState): Double =
         if (state.unitSystem == UnitSystem.METRIC) 1000.0 / state.scale.ratio else 12.0 / state.scale.ratio
 
+    /**
+     * What goes in front of the AutoCAD layer names for an element on Site Draft layer [layer]:
+     * nothing for the first-floor plan, cabinets and furniture (the layers every drawing had
+     * before levels), otherwise the layer's name in capitals, e.g. "FOUNDATION-".
+     */
+    fun dxfLayerPrefix(layer: com.example.sitedraft.ui.canvas.Layer): String =
+        if (layer.id in setOf(Building.FLOOR1_PLAN, Building.FLOOR1_CABINETS, Building.FLOOR1_FURNITURE)) ""
+        else layer.name.uppercase().map { if (it.isLetterOrDigit()) it else '-' }.joinToString("")
+            .replace(Regex("-+"), "-").trim('-').take(40) + "-"
+
     /** The layer a symbol goes on. */
     fun layerFor(symbol: DrawingElement.Symbol): String = when {
         symbol.category == PlanSymbols.WALLS -> WALLS
@@ -93,7 +103,15 @@ object DxfExport {
         val k = unitsPerPx(state)
         val entities = DxfWriter(k)
         val blanks = state.elements.filterIsInstance<DrawingElement.Symbol>().mapNotNull { openingBlank(it, state) }
-        state.elements.forEach { writeElement(entities, it, null, state, blanks) }
+        // Hidden layers are left out. An element on a Site Draft layer other than the first-floor
+        // plan (and its cabinets and furniture) goes on that layer's own copy of the AutoCAD
+        // layers, e.g. FOUNDATION-WALLS, so a whole trade can be frozen in AutoCAD.
+        Layers.visibleElements(state).forEach {
+            entities.prefix = dxfLayerPrefix(Layers.layerOf(it, state))
+            writeElement(entities, it, null, state, blanks)
+        }
+        entities.prefix = ""
+        val allLayers = layers + entities.prefixes.flatMap { p -> layers.filter { it.name != "0" }.map { it.copy(name = p + it.name) } }
 
         // Real-size defaults for an empty drawing: 10' or 3 m square.
         val ext = entities.extents() ?: if (metric) Extents(0.0, 0.0, 3000.0, 3000.0) else Extents(0.0, 0.0, 120.0, 120.0)
@@ -142,8 +160,8 @@ object DxfExport {
                 out.code(0, "LTYPE"); out.code(2, DASHED); out.code(70, "0"); out.code(3, "Dashed __ __ __")
                 out.code(72, "65"); out.code(73, "2"); out.num(40, dash + gap); out.num(49, dash); out.num(49, -gap)
             }
-            out.table("LAYER", layers.size) {
-                layers.forEach { layer ->
+            out.table("LAYER", allLayers.size) {
+                allLayers.forEach { layer ->
                     out.code(0, "LAYER"); out.code(2, layer.name); out.code(70, "0")
                     out.code(62, layer.color.toString()); out.code(6, layer.linetype)
                 }
@@ -862,6 +880,11 @@ object DxfExport {
     /** Group-code writer. Canvas points go in as world px and come out in DXF units, Y flipped. */
     private class DxfWriter(val k: Double) {
         private val sb = StringBuilder()
+        /** Put in front of every layer name while an element on a Site Draft layer other than the first-floor plan is written. */
+        var prefix: String = ""
+        /** The prefixes used, for the layer table. */
+        val prefixes = LinkedHashSet<String>()
+        private fun L(layer: String): String = if (prefix.isEmpty() || layer == "0") layer else { prefixes += prefix; prefix + layer }
         private var minX = Double.POSITIVE_INFINITY
         private var minY = Double.POSITIVE_INFINITY
         private var maxX = Double.NEGATIVE_INFINITY
@@ -891,7 +914,7 @@ object DxfExport {
             point(code, x, y)
         }
         private fun entity(type: String, layer: String, linetype: String?) {
-            code(0, type); code(8, layer)
+            code(0, type); code(8, L(layer))
             if (linetype != null) code(6, linetype)
         }
 
@@ -902,8 +925,8 @@ object DxfExport {
         fun poly(layer: String, linetype: String?, points: List<Offset>, closed: Boolean) {
             entity("POLYLINE", layer, linetype)
             code(66, "1"); point(10, 0.0, 0.0); code(70, if (closed) "1" else "0")
-            points.forEach { p -> code(0, "VERTEX"); code(8, layer); at(10, p) }
-            code(0, "SEQEND"); code(8, layer)
+            points.forEach { p -> code(0, "VERTEX"); code(8, L(layer)); at(10, p) }
+            code(0, "SEQEND"); code(8, L(layer))
         }
 
         fun circle(layer: String, linetype: String?, c: Offset, rPx: Float) {

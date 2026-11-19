@@ -19,6 +19,7 @@ const M = require("./model");
 const T = require("./tools");
 const S = require("./store");
 const P = require("./pdf");
+const L = require("./layers");
 const { buildProvider, OWNER_EMAIL } = require("./oauth");
 
 const UPLOAD_TTL_MS = 60 * 60 * 1000;
@@ -40,7 +41,8 @@ function buildServer(ctx) {
       "you draw them with draw_walls (ask which face he measured - inside finished face, framing, or outside - if he hasn't said), " +
       "then place doors and windows with place_opening and cabinets with place_cabinets. Always read_drawing first to get wall ids. " +
       "Every change is saved to the cloud with a backup, and Site Draft reloads the open project by itself within a few seconds; " +
-      "undo_last_change puts back the drawing as it was before your last change. " + COORDS,
+      "undo_last_change puts back the drawing as it was before your last change. " +
+      "The building has levels (footing to roof, elevations from its inputs; first floor top of subfloor 100'-0\") and layers by trade; whatever you draw goes on the active layer (set_active_layer), e.g. the foundation walls on Foundation. " + COORDS,
   });
 
   const reg = (name, description, schema, handler) => {
@@ -56,8 +58,14 @@ function buildServer(ctx) {
   };
 
   /** Runs a pure tool against a saved project and stores the result. */
+  // Anything a tool draws goes on the active layer (cabinets and furniture on the floor's own), as in the app.
   const change = (tool, fn) => async (a) => {
-    const out = await S.changeProject(ctx.db, ctx.uid, a.project, tool, (state) => fn(state, a));
+    const out = await S.changeProject(ctx.db, ctx.uid, a.project, tool, async (state) => {
+      const before = new Set((state.elements || []).map((e) => e.id));
+      const res = await fn(state, a);
+      if (res && res.state) L.tagNew(before, res.state);
+      return res;
+    });
     return json({ project: a.project, ...out.result, saved: new Date(out.updatedAt).toISOString(), note: "Site Draft reloads the open project within a few seconds." });
   };
 
@@ -82,6 +90,7 @@ function buildServer(ctx) {
       const out = T.readDrawing(p.state);
       out.updated = new Date(p.updatedAt).toISOString();
       out.lastSavedBy = p.device;
+      out.activeLayer = L.activeLayer(p.state).id; // new drawing lands here (list_levels_and_layers for all)
       if (a.raw) out.elements = JSON.parse(M.stringifyProject((p.state.elements || []).map((e) => (M.kind(e) === "Pdf" ? { ...e, pages: `[${e.pages.length} page image(s)]` } : e))));
       return json(out);
     });
@@ -169,6 +178,46 @@ function buildServer(ctx) {
     change("edit_element", T.editElement));
 
   reg("delete_elements", "Deletes elements by id.", { project: Project, ids: z.array(z.string()).min(1) }, change("delete_elements", T.deleteElements));
+
+  // ------------------------------------------------------------------ levels and layers (app: Building.kt)
+
+  reg("list_levels_and_layers",
+    "The building's levels (footing, foundation, framing, floors, roof) with elevations worked out from its inputs (first floor top of subfloor = 100'-0\" by default), " +
+    "and its layers: which is active (where new drawing goes), which are shown, how many elements each holds.",
+    { project: Project },
+    async (a) => {
+      const p = await S.readProject(ctx.db, ctx.uid, a.project);
+      if (!p) throw new M.UserError(`No project named "${a.project}".`);
+      return json(L.describe(p.state));
+    });
+
+  reg("set_active_layer",
+    "Makes a layer (by name or id) the one new drawing goes on, as tapping it in the app's Layers panel does. Everything the connector draws after this lands on it.",
+    { project: Project, layer: z.string() }, change("set_active_layer", L.setActiveLayer));
+
+  reg("show_hide_layers", "Shows or hides layers (by name or id). Hidden layers are not drawn, picked or printed in the app. The active layer can't be hidden.",
+    { project: Project, layers: z.array(z.string()).min(1), visible: z.boolean() }, change("show_hide_layers", L.showHideLayers));
+
+  reg("add_layer", "Adds a layer of Dan's own (e.g. Electrical), on a level or the whole building, and makes it active unless make_active is false.",
+    { project: Project, name: z.string(), level: z.string().optional().describe("Level id or name; omit for the whole building"), make_active: z.boolean().optional() },
+    change("add_layer", L.addLayer));
+
+  reg("set_building_inputs",
+    "Changes the inputs the levels are worked out from; only what is given changes. Dan's defaults: first floor top of subfloor 100'-0\", 3/4\" subfloor, " +
+    "9 1/4\" joists (2x10), 1 1/2\" sill, basement 11 courses of 8\" block, crawl spaces 24\" clear under the joists, footing 8\" x 18\". " +
+    "upper_floors replaces the floors above the first (each with its top of subfloor) and adds their layers. Ask Dan rather than guess any size.",
+    {
+      project: Project,
+      foundation: z.enum(["basement", "crawl", "slab"]).optional(),
+      first_floor_top_of_subfloor: Len.optional(), subfloor: Len.optional(), joist_depth: Len.optional(), sill: Len.optional(),
+      block_courses: z.number().int().optional(), course_height: Len.optional(), crawl_clearance: Len.optional(),
+      footing_thickness: Len.optional(), footing_width: Len.optional(),
+      upper_floors: z.array(z.object({ name: z.string(), top_of_subfloor: Len })).optional(),
+    },
+    change("set_building_inputs", L.setBuildingInputs));
+
+  reg("move_to_layer", "Puts elements (by id, from read_drawing) on a layer. Nothing moves on the drawing.",
+    { project: Project, ids: z.array(z.string()).min(1), layer: z.string() }, change("move_to_layer", L.moveToLayer));
 
   reg("undo_last_change", "Puts the project back the way it was before the connector's last change (repeat to go further back).", { project: Project }, async (a) => {
     const out = await S.undoLast(ctx.db, ctx.uid, a.project);

@@ -106,6 +106,7 @@ sealed class DrawingElement {
     abstract val color: Color
     abstract val strokeWidth: Float
     abstract val rotation: Float
+    abstract val layerId: String?
 
     @Serializable
     data class Freehand(
@@ -116,7 +117,9 @@ sealed class DrawingElement {
         override val strokeWidth: Float,
         override val rotation: Float = 0f,
         val isHighlighter: Boolean = false,
-        val fill: Fill = Fill()
+        val fill: Fill = Fill(),
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement()
 
     @Serializable
@@ -129,7 +132,9 @@ sealed class DrawingElement {
         @Serializable(with = ColorSerializer::class)
         override val color: Color,
         override val strokeWidth: Float,
-        override val rotation: Float = 0f
+        override val rotation: Float = 0f,
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement()
 
     @Serializable
@@ -143,7 +148,9 @@ sealed class DrawingElement {
         override val color: Color,
         override val strokeWidth: Float,
         override val rotation: Float = 0f,
-        val fill: Fill = Fill()
+        val fill: Fill = Fill(),
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement()
 
     @Serializable
@@ -157,7 +164,9 @@ sealed class DrawingElement {
         override val color: Color,
         override val strokeWidth: Float,
         override val rotation: Float = 0f,
-        val fill: Fill = Fill()
+        val fill: Fill = Fill(),
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement()
 
     @Serializable
@@ -172,7 +181,9 @@ sealed class DrawingElement {
         override val strokeWidth: Float,
         override val rotation: Float = 0f,
         val triangleType: String = "Isosceles",
-        val fill: Fill = Fill()
+        val fill: Fill = Fill(),
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement() {
         fun getVertices(): Triple<Offset, Offset, Offset> {
             return if (triangleType == "Right-Angled") {
@@ -201,7 +212,9 @@ sealed class DrawingElement {
         override val color: Color,
         override val strokeWidth: Float,
         override val rotation: Float = 0f,
-        val fill: Fill = Fill()
+        val fill: Fill = Fill(),
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement()
 
     @Serializable
@@ -216,7 +229,9 @@ sealed class DrawingElement {
         @Serializable(with = ColorSerializer::class)
         override val color: Color,
         override val rotation: Float = 0f,
-        val properties: Map<String, Float> = emptyMap()
+        val properties: Map<String, Float> = emptyMap(),
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement() {
         override val strokeWidth: Float = 2f
     }
@@ -244,7 +259,9 @@ sealed class DrawingElement {
         val offset: Float = 0f,
         // Set on dimensions made in one tap for a plan (AutoDimension.PLAN_OWNER) or an elevation
         // (its id): running it again replaces them, and an elevation's move and delete with it.
-        val ownerId: String? = null
+        val ownerId: String? = null,
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement()
 
     @Serializable
@@ -261,7 +278,9 @@ sealed class DrawingElement {
         val isItalic: Boolean = false,
         val textAlign: String = "Left", // Left, Center, Right
         val listType: TextListType = TextListType.NONE,
-        val fontFamily: String = "SansSerif"
+        val fontFamily: String = "SansSerif",
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement() {
         override val strokeWidth: Float = 0f
     }
@@ -275,7 +294,9 @@ sealed class DrawingElement {
         val topLeft: Offset,
         @Serializable(with = SizeSerializer::class)
         val size: Size,
-        override val rotation: Float = 0f
+        override val rotation: Float = 0f,
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement() {
         @Serializable(with = ColorSerializer::class)
         override val color: Color = Color.Transparent
@@ -298,7 +319,9 @@ sealed class DrawingElement {
         // 0.1..1: lower fades the plan so the work drawn over it stands out.
         val opacity: Float = 1f,
         // How the plan was scaled, e.g. "10'-0\" between 2 points"; null until calibrated.
-        val calibration: String? = null
+        val calibration: String? = null,
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement() {
         @Serializable(with = ColorSerializer::class)
         override val color: Color = Color.Transparent
@@ -312,7 +335,9 @@ sealed class DrawingElement {
         @Serializable(with = OffsetSerializer::class)
         val topLeft: Offset,
         val scale: Float = 1f,
-        override val rotation: Float = 0f
+        override val rotation: Float = 0f,
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement() {
         @Serializable(with = ColorSerializer::class)
         override val color: Color = Color.Transparent
@@ -336,7 +361,9 @@ sealed class DrawingElement {
         val size: Size,
         @Serializable(with = ColorSerializer::class)
         override val color: Color,
-        override val rotation: Float = 0f
+        override val rotation: Float = 0f,
+        // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
+        override val layerId: String? = null
     ) : DrawingElement() {
         override val strokeWidth: Float = 2f
         /** The frame: floor line at the bottom, wall height up from it. */
@@ -373,6 +400,12 @@ data class CanvasState(
     val showCabinetLabels: Boolean = true,
     // Large-format print sheets of views (Print > Sheet with views).
     val sheets: List<SheetLayout> = emptyList(),
+    // The building: the inputs its levels are worked out from, its layers (empty = the defaults,
+    // Building.defaultLayers) and the layer new drawing goes on (null = first-floor plan). See Building.kt.
+    // New in 1.0.29; older versions skip these when reading.
+    val building: BuildingSettings = BuildingSettings(),
+    val layers: List<Layer> = emptyList(),
+    val activeLayerId: String? = null,
     val zoom: Float = 1f,
     @Serializable(with = OffsetSerializer::class)
     val pan: Offset = Offset.Zero,
@@ -431,7 +464,11 @@ data class CanvasState(
     // which the renderer divides by zoom). 1 on screen; a printed page sets it so dimension text
     // comes out about 1/8" tall on paper whatever the drawing scale (PrintPage.pageState).
     @kotlinx.serialization.Transient
-    val labelScale: Float = 1f
+    val labelScale: Float = 1f,
+    // On screen: hidden layers left out, layers below the active one faint. A printed page
+    // turns it off (it has already chosen its elements). Session state, never saved.
+    @kotlinx.serialization.Transient
+    val layerDisplay: Boolean = true
 )
 
 fun DrawingElement.contains(point: Offset, threshold: Float = 20f): Boolean {
@@ -806,6 +843,23 @@ fun DrawingElement.withColor(color: Color): DrawingElement = when (this) {
     is DrawingElement.Text -> copy(color = color)
     is DrawingElement.ElevationView -> copy(color = color)
     else -> this
+}
+
+/** The same element on layer [layerId]. */
+fun DrawingElement.withLayer(layerId: String?): DrawingElement = when (this) {
+    is DrawingElement.Freehand -> copy(layerId = layerId)
+    is DrawingElement.Line -> copy(layerId = layerId)
+    is DrawingElement.Rectangle -> copy(layerId = layerId)
+    is DrawingElement.Oval -> copy(layerId = layerId)
+    is DrawingElement.Triangle -> copy(layerId = layerId)
+    is DrawingElement.Circle -> copy(layerId = layerId)
+    is DrawingElement.Symbol -> copy(layerId = layerId)
+    is DrawingElement.Dimension -> copy(layerId = layerId)
+    is DrawingElement.Text -> copy(layerId = layerId)
+    is DrawingElement.Image -> copy(layerId = layerId)
+    is DrawingElement.Pdf -> copy(layerId = layerId)
+    is DrawingElement.Dxf -> copy(layerId = layerId)
+    is DrawingElement.ElevationView -> copy(layerId = layerId)
 }
 
 /** Two points picked on PDF plan [pdfId] for scale calibration, in canvas coordinates. */
