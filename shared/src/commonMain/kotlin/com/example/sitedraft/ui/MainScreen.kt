@@ -224,6 +224,18 @@ fun MainScreen(
                         hasLockedPlans = state.elements.any { it.isLockedPlan }
                     )
 
+                    // Quick layer on/off under the toolbar. Hidden while a symbol waits for its
+                    // spot: the "tap to place" banner sits there.
+                    if (state.pendingPlacement == null) {
+                        LayerQuickBar(
+                            state = state,
+                            onEvent = viewModel::onEvent,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 104.dp, start = 16.dp, end = 16.dp)
+                        )
+                    }
+
                     // "Tap to place" banner while a library symbol is waiting for its spot.
                     state.pendingPlacement?.let { pending ->
                         Surface(

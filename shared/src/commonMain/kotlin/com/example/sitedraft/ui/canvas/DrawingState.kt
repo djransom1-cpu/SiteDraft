@@ -406,6 +406,9 @@ data class CanvasState(
     val building: BuildingSettings = BuildingSettings(),
     val layers: List<Layer> = emptyList(),
     val activeLayerId: String? = null,
+    // Layers turned on to show faint alongside the one being worked on (working-layer mode,
+    // Layers.display). Everything else off the active layer stays hidden. New in 1.0.35.
+    val shownLayerIds: Set<String> = emptySet(),
     // Parts the layer builder made (DerivedLayers) as of the last sync, and generated parts the
     // user deleted, which it must not put back. New in 1.0.31.
     val generatedIds: Set<String> = emptySet(),

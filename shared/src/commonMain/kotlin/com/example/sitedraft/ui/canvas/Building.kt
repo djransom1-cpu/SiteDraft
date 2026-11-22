@@ -262,27 +262,127 @@ object Layers {
     /** The elements on [e]'s level. */
     fun onLevelOf(e: DrawingElement, state: CanvasState): List<DrawingElement> = onLevel(layerOf(e, state).levelId, state)
 
-    /** The elements on visible layers: what is drawn, picked and snapped to. */
+    /**
+     * [layerOf] for many elements at once: the layer list and its lookup are worked out once,
+     * not per element (the canvas calls this for every element it draws).
+     */
+    fun resolver(state: CanvasState): (DrawingElement) -> Layer {
+        val all = state.effectiveLayers
+        val byId = all.associateBy { it.id }
+        val fallback = byId[Building.FLOOR1_PLAN] ?: all.first()
+        return { e -> e.layerId?.let { byId[it] } ?: byId[defaultLayerId(e)] ?: fallback }
+    }
+
+    /**
+     * The elements on visible layers (the eye in the Layers panel): what prints and goes to DXF.
+     * The screen shows fewer: see [shownElements].
+     */
     fun visibleElements(state: CanvasState): List<DrawingElement> {
         val all = state.effectiveLayers
         if (all.all { it.visible }) return state.elements
-        return state.elements.filter { layerOf(it, state).visible }
+        val of = resolver(state)
+        return state.elements.filter { of(it).visible }
     }
 
-    /** A level's elevation for stacking; building-wide layers (no level) count as not below anything. */
-    private fun levelHeight(levelId: String?, state: CanvasState): Float? =
-        levelId?.let { id -> state.levels.firstOrNull { it.id == id }?.let { it.elevationIn ?: Float.MAX_VALUE } }
+    /** How a layer shows on screen. */
+    enum class Display { FULL, FAINT, HIDDEN }
+
+    private val PLAN_GROUP = setOf(LayerTrade.FLOOR_PLAN, LayerTrade.CABINETS, LayerTrade.FURNITURE)
 
     /**
-     * Drawn faint: on a level below the active layer's level, so the work below can be traced
-     * over. Layers on the same level, above it, or building-wide draw normally.
+     * The layers worked on together, at full strength: a floor plan with that floor's cabinets,
+     * furniture and custom layers; any other layer on its own.
      */
-    fun isFaint(layer: Layer, state: CanvasState): Boolean {
+    fun activeGroup(state: CanvasState): Set<String> {
         val active = state.activeLayer
-        if (layer.id == active.id) return false
-        val mine = levelHeight(layer.levelId, state) ?: return false
-        val activeH = levelHeight(active.levelId, state) ?: return false
-        return mine < activeH
+        if (active.trade !in PLAN_GROUP) return setOf(active.id)
+        return state.effectiveLayers
+            .filter { it.levelId == active.levelId && (it.trade in PLAN_GROUP || it.trade == LayerTrade.CUSTOM) }
+            .mapTo(HashSet()) { it.id } + active.id
+    }
+
+    /**
+     * The floor plan shown faint under a layer that isn't a plan (Dan, Nov 22: the floor plan
+     * drives everything): a floor's framing gets that floor's plan, the roof the top floor's,
+     * anything else the first floor's. Null while a floor plan itself is active.
+     */
+    fun referencePlanId(state: CanvasState): String? {
+        val active = state.activeLayer
+        if (active.trade in PLAN_GROUP) return null
+        val plans = state.effectiveLayers.filter { it.trade == LayerTrade.FLOOR_PLAN }
+        if (plans.isEmpty()) return null
+        val framing = active.levelId?.takeIf { it.endsWith("-framing") }
+        val wanted = when {
+            active.trade == LayerTrade.ROOF_STRUCTURAL -> plans.last().id
+            framing != null -> framing.removeSuffix("-framing") + "-plan"
+            else -> Building.FLOOR1_PLAN
+        }
+        return (plans.firstOrNull { it.id == wanted } ?: plans.first()).id
+    }
+
+    /**
+     * Working-layer mode (Dan, Nov 22): the active layer (with its group) at full strength, the
+     * floor plan faint underneath it, and every other layer hidden unless turned on, when it
+     * shows faint. A layer switched off with the eye never shows.
+     */
+    fun displayMap(state: CanvasState): Map<String, Display> {
+        val group = activeGroup(state)
+        val ref = referencePlanId(state)
+        return state.effectiveLayers.associate { l ->
+            l.id to when {
+                !l.visible -> Display.HIDDEN
+                l.id in group -> Display.FULL
+                l.id == ref || l.id in state.shownLayerIds -> Display.FAINT
+                else -> Display.HIDDEN
+            }
+        }
+    }
+
+    fun display(layer: Layer, state: CanvasState): Display = displayMap(state)[layer.id] ?: Display.HIDDEN
+
+    /** Drawn faint on screen: the floor plan under the active layer, or a layer turned on alongside it. */
+    fun isFaint(layer: Layer, state: CanvasState): Boolean = display(layer, state) == Display.FAINT
+
+    /** What the screen shows, full or faint: also what can be picked and snapped to. */
+    fun shownElements(state: CanvasState): List<DrawingElement> {
+        val d = displayMap(state)
+        val of = resolver(state)
+        return state.elements.filter { d[of(it).id] != Display.HIDDEN }
+    }
+
+    /**
+     * Where a layer sits in the real stack, lowest first: by level (footing up to the roof), then
+     * by trade on the level (structural, plan, cabinets, furniture). The site plan is under
+     * everything; exterior and whole-building layers of your own are on top.
+     */
+    private fun stackRank(layer: Layer, levelIndex: Map<String, Int>): Int {
+        val top = levelIndex.size
+        val levelId = layer.levelId
+        val level = when {
+            layer.trade == LayerTrade.SITE_PLAN -> -1
+            levelId == null -> top
+            else -> levelIndex[levelId] ?: top
+        }
+        val trade = when (layer.trade) {
+            LayerTrade.SITE_PLAN, LayerTrade.FOUNDATION -> 0
+            LayerTrade.FLOOR_STRUCTURAL -> 1
+            LayerTrade.FLOOR_PLAN -> 2
+            LayerTrade.CABINETS -> 3
+            LayerTrade.FURNITURE -> 4
+            LayerTrade.ROOF_STRUCTURAL -> 5
+            LayerTrade.CUSTOM -> 6
+            LayerTrade.EXTERIOR_ELEVATION -> 7
+        }
+        return level * 10 + trade
+    }
+
+    /** [elements] in drawing order: lower layers first, so the upper layer is always on top. Order within a layer is kept. */
+    fun inStackOrder(elements: List<DrawingElement>, state: CanvasState): List<DrawingElement> {
+        if (elements.size < 2) return elements
+        val levelIndex = state.levels.withIndex().associate { it.value.id to it.index }
+        val rank = state.effectiveLayers.associate { it.id to stackRank(it, levelIndex) }
+        val of = resolver(state)
+        return elements.sortedBy { rank[of(it).id] ?: 0 } // sortedBy is stable
     }
 
     /**
@@ -363,13 +463,35 @@ object LayerEdits {
     fun setVisible(state: CanvasState, layerId: String, visible: Boolean): Result {
         if (state.effectiveLayers.none { it.id == layerId }) return Result(state, "No layer $layerId")
         if (!visible && state.activeLayer.id == layerId) return Result(state, "The active layer can't be hidden. Make another layer active first.")
-        val out = setVisibleRaw(state, layerId, visible)
-        // Nothing hidden stays selected.
-        val hiddenIds = out.elements.filter { !Layers.isVisible(it, out) }.mapTo(HashSet()) { it.id }
-        return Result(out.copy(
-            selectedElementId = out.selectedElementId?.takeIf { it !in hiddenIds },
-            selectedElementIds = out.selectedElementIds.filterTo(LinkedHashSet()) { it !in hiddenIds }
-        ))
+        return Result(dropHiddenSelection(setVisibleRaw(state, layerId, visible)))
+    }
+
+    /**
+     * The on/off for a layer as the screen shows it now (the eye in the Layers panel and the
+     * quick buttons along the top of the canvas). The active layer's group and the floor plan
+     * under it switch with the eye; any other layer is turned on (faint) or off alongside the
+     * active one.
+     */
+    fun toggleShown(state: CanvasState, layerId: String): Result {
+        val layer = state.effectiveLayers.firstOrNull { it.id == layerId } ?: return Result(state, "No layer $layerId")
+        if (layer.id == state.activeLayer.id) return Result(state, "The active layer can't be hidden. Make another layer active first.")
+        if (layer.id in Layers.activeGroup(state) || layer.id == Layers.referencePlanId(state)) {
+            return setVisible(state, layerId, !layer.visible)
+        }
+        val showing = Layers.display(layer, state) != Layers.Display.HIDDEN
+        val out = if (showing) state.copy(shownLayerIds = state.shownLayerIds - layerId)
+            else setVisibleRaw(state, layerId, true).copy(shownLayerIds = state.shownLayerIds + layerId)
+        return Result(dropHiddenSelection(out))
+    }
+
+    /** Nothing that isn't on screen stays selected. */
+    private fun dropHiddenSelection(out: CanvasState): CanvasState {
+        if (out.selectedElementId == null && out.selectedElementIds.isEmpty()) return out
+        val shownIds = Layers.shownElements(out).mapTo(HashSet()) { it.id }
+        return out.copy(
+            selectedElementId = out.selectedElementId?.takeIf { it in shownIds },
+            selectedElementIds = out.selectedElementIds.filterTo(LinkedHashSet()) { it in shownIds }
+        )
     }
 
     private fun setVisibleRaw(state: CanvasState, layerId: String, visible: Boolean): CanvasState {

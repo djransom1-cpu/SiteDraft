@@ -310,6 +310,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             }
             is DrawingEvent.SetActiveLayer -> applyLayerEdit(LayerEdits.setActive(_state.value, event.layerId))
             is DrawingEvent.SetLayerVisible -> applyLayerEdit(LayerEdits.setVisible(_state.value, event.layerId, event.visible))
+            is DrawingEvent.ToggleLayerShown -> applyLayerEdit(LayerEdits.toggleShown(_state.value, event.layerId))
             is DrawingEvent.AddLayer -> LayerEdits.add(_state.value, event.name, event.levelId).let { r ->
                 // The new layer becomes the one drawing goes on.
                 val added = r.state.layers.lastOrNull()
@@ -547,8 +548,8 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         pendingSave?.cancel()
     }
 
-    /** What can be picked, box-selected and snapped to: the elements on visible layers. */
-    private fun liveElements(): List<DrawingElement> = Layers.visibleElements(_state.value)
+    /** What can be picked, box-selected and snapped to: what the screen shows (working-layer mode). */
+    private fun liveElements(): List<DrawingElement> = Layers.shownElements(_state.value)
 
     /** A level/layer edit: applied and saved, or its reason shown. */
     private fun applyLayerEdit(r: LayerEdits.Result) {
@@ -3414,6 +3415,8 @@ sealed class DrawingEvent {
     /** Levels and layers (Building.kt): the layer new drawing goes on, shown or hidden, the user's own layers. */
     data class SetActiveLayer(val layerId: String) : DrawingEvent()
     data class SetLayerVisible(val layerId: String, val visible: Boolean) : DrawingEvent()
+    /** The quick on/off: the eye for the active layer's group and the plan under it, faint on/off for any other layer. */
+    data class ToggleLayerShown(val layerId: String) : DrawingEvent()
     data class AddLayer(val name: String, val levelId: String? = null) : DrawingEvent()
     data class RenameLayer(val layerId: String, val name: String) : DrawingEvent()
     data class RemoveLayer(val layerId: String) : DrawingEvent()

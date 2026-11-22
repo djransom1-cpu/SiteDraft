@@ -426,13 +426,25 @@ fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String
     // Upper cabinets are an overlay layer: they sit above the cut plane, so they draw after
     // everything else, dashed over the base cabinets and counters they hang above, whatever
     // order things were placed in.
-    // Layers (Building.kt): hidden ones aren't drawn; on screen, layers on a level below the
-    // active one draw faint underneath, so the work below can be traced over. A printed page
-    // (layerDisplay off) has already picked its elements and fades nothing.
-    val shown = if (state.layerDisplay) Layers.visibleElements(state) else state.elements
-    val faintLayers = if (state.layerDisplay) state.effectiveLayers.filter { it.visible && Layers.isFaint(it, state) }.mapTo(HashSet()) { it.id } else emptySet()
-    val (faint, full) = if (faintLayers.isEmpty()) emptyList<DrawingElement>() to shown
-        else shown.partition { Layers.layerOf(it, state).id in faintLayers }
+    // Layers (Building.kt), in working-layer mode on screen: the active layer at full strength,
+    // the floor plan (and any layer turned on) faint underneath, everything else left out. Both
+    // groups draw in the real stacking order (foundation up to the roof, upper layer on top), and
+    // the faint ones go first so the layer being worked on is always on top. A printed page
+    // (layerDisplay off) has already picked its elements: it fades nothing, but keeps the stacking.
+    val (faint, full) = if (state.layerDisplay) {
+        val display = Layers.displayMap(state)
+        val of = Layers.resolver(state)
+        val f = ArrayList<DrawingElement>()
+        val u = ArrayList<DrawingElement>()
+        state.elements.forEach { e ->
+            when (display[of(e).id]) {
+                Layers.Display.FULL -> u += e
+                Layers.Display.FAINT -> f += e
+                else -> {}
+            }
+        }
+        Layers.inStackOrder(f, state) to Layers.inStackOrder(u, state)
+    } else emptyList<DrawingElement>() to Layers.inStackOrder(state.elements, state)
     if (faint.isNotEmpty()) {
         val b = faint.map { it.boundingRect() }.reduce { a, r -> Rect(minOf(a.left, r.left), minOf(a.top, r.top), maxOf(a.right, r.right), maxOf(a.bottom, r.bottom)) }
             .inflate(200f)
@@ -447,7 +459,7 @@ fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String
     }
 }
 
-/** How strongly a layer below the active one shows (0..1). */
+/** How strongly a faint layer (the floor plan under the active layer, or one turned on) shows (0..1). */
 const val FAINT_ALPHA = 0.3f
 
 private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean = false, state: CanvasState) {
@@ -1334,6 +1346,13 @@ private class DocumentLayerCache {
     private var unitSystem: UnitSystem? = null
     private var currentTool: DrawingTool? = null
     private var preciseMoveFromPoint: Offset? = null
+    // Layers: before 1.0.35 these were missing, so hiding a layer or changing the active one
+    // only showed after something else (a zoom, a tap) forced a redraw.
+    private var layers: List<Layer>? = null
+    private var activeLayerId: String? = null
+    private var shownLayerIds: Set<String>? = null
+    private var layerDisplay = true
+    private var building: BuildingSettings? = null
     private var size = Size.Zero
 
     fun matches(state: CanvasState, size: Size): Boolean =
@@ -1341,7 +1360,10 @@ private class DocumentLayerCache {
             background == state.background && backgroundColor == state.backgroundColor &&
             selectedElementId == state.selectedElementId && scale == state.scale &&
             unitSystem == state.unitSystem && currentTool == state.currentTool &&
-            preciseMoveFromPoint == state.preciseMoveFromPoint && this.size == size
+            preciseMoveFromPoint == state.preciseMoveFromPoint && this.size == size &&
+            layers == state.layers && activeLayerId == state.activeLayerId &&
+            shownLayerIds == state.shownLayerIds && layerDisplay == state.layerDisplay &&
+            building == state.building
 
     fun update(state: CanvasState, size: Size) {
         elements = state.elements
@@ -1354,6 +1376,11 @@ private class DocumentLayerCache {
         unitSystem = state.unitSystem
         currentTool = state.currentTool
         preciseMoveFromPoint = state.preciseMoveFromPoint
+        layers = state.layers
+        activeLayerId = state.activeLayerId
+        shownLayerIds = state.shownLayerIds
+        layerDisplay = state.layerDisplay
+        building = state.building
         this.size = size
     }
 }

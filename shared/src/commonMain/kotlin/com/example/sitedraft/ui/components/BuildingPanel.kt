@@ -69,12 +69,14 @@ fun BuildingPanel(
                 FilterChip(selected = false, onClick = onOpenSheets, label = { Text("Paper (sheets)") })
             }
             Text(
-                "Tap a layer to draw on it. Layers on lower levels show faint so you can trace over them. The eye shows or hides a layer.",
+                "Tap a layer to draw on it. It shows at full strength with the floor plan faint underneath; other layers stay hidden. The eye turns a layer on (faint) or off.",
                 style = MaterialTheme.typography.bodySmall
             )
 
+            val display = Layers.displayMap(state)
             layers.forEach { layer ->
                 val isActive = layer.id == active.id
+                val shown = (display[layer.id] ?: Layers.Display.HIDDEN) != Layers.Display.HIDDEN
                 val count = state.elements.count { Layers.layerOf(it, state).id == layer.id }
                 Row(
                     Modifier.fillMaxWidth().clickable { onEvent(DrawingEvent.SetActiveLayer(layer.id)) },
@@ -83,17 +85,17 @@ fun BuildingPanel(
                     RadioButton(selected = isActive, onClick = { onEvent(DrawingEvent.SetActiveLayer(layer.id)) })
                     Column(Modifier.weight(1f)) {
                         Text(layer.name, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
-                        val faint = !isActive && layer.visible && Layers.isFaint(layer, state)
+                        val faint = display[layer.id] == Layers.Display.FAINT
                         Text(
-                            listOfNotNull("$count", if (faint) "faint" else null, if (!layer.visible) "hidden" else null).joinToString(" · "),
+                            listOfNotNull("$count", if (faint) "faint" else null, if (!shown) "hidden" else null).joinToString(" · "),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
                     if (layer.trade == LayerTrade.CUSTOM && count == 0) {
                         TextButton(onClick = { onEvent(DrawingEvent.RemoveLayer(layer.id)) }) { Text("Remove") }
                     }
-                    IconButton(onClick = { onEvent(DrawingEvent.SetLayerVisible(layer.id, !layer.visible)) }, enabled = !isActive) {
-                        Icon(if (layer.visible) Icons.Default.Visibility else Icons.Default.VisibilityOff, contentDescription = if (layer.visible) "Hide" else "Show")
+                    IconButton(onClick = { onEvent(DrawingEvent.ToggleLayerShown(layer.id)) }, enabled = !isActive) {
+                        Icon(if (shown) Icons.Default.Visibility else Icons.Default.VisibilityOff, contentDescription = if (shown) "Hide" else "Show")
                     }
                 }
             }

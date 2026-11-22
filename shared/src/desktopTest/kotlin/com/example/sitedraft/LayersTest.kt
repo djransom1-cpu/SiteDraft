@@ -119,15 +119,61 @@ class LayersTest {
     }
 
     @Test
-    fun `layers on lower levels draw faint, the same level does not`() {
+    fun `working-layer mode - active layer full, floor plan faint under it, the rest hidden until turned on`() {
         val s = CanvasState()
-        val byId = s.effectiveLayers.associateBy { it.id }
-        assertTrue(Layers.isFaint(byId.getValue(Building.FOUNDATION), s))
-        assertTrue(Layers.isFaint(byId.getValue("floor1-structural"), s))
-        assertFalse(Layers.isFaint(byId.getValue(Building.FLOOR1_CABINETS), s))
-        assertFalse(Layers.isFaint(byId.getValue("site"), s))
+        val d = Layers.displayMap(s)
+        // On the first-floor plan: its cabinets and furniture with it, nothing else.
+        assertEquals(Layers.Display.FULL, d[Building.FLOOR1_PLAN])
+        assertEquals(Layers.Display.FULL, d[Building.FLOOR1_CABINETS])
+        assertEquals(Layers.Display.FULL, d[Building.FLOOR1_FURNITURE])
+        assertEquals(Layers.Display.HIDDEN, d[Building.FOUNDATION])
+        assertEquals(Layers.Display.HIDDEN, d["floor1-structural"])
+        assertEquals(Layers.Display.HIDDEN, d["site"])
+
+        // On the foundation: it full, the first-floor plan faint, cabinets hidden.
         val onFoundation = LayerEdits.setActive(s, Building.FOUNDATION).state
-        assertFalse(Layers.isFaint(byId.getValue(Building.FLOOR1_PLAN), onFoundation))
+        val f = Layers.displayMap(onFoundation)
+        assertEquals(Layers.Display.FULL, f[Building.FOUNDATION])
+        assertEquals(Layers.Display.FAINT, f[Building.FLOOR1_PLAN])
+        assertEquals(Layers.Display.HIDDEN, f[Building.FLOOR1_CABINETS])
+
+        // A floor's framing gets that floor's plan underneath.
+        val two = LayerEdits.setBuilding(s, BuildingSettings(upperFloors = listOf(UpperFloor("Second floor", 1310f)))).state
+        assertEquals("floor2-plan", Layers.referencePlanId(LayerEdits.setActive(two, "floor2-structural").state))
+
+        // Turning a layer on shows it faint; turning it off hides it again.
+        val withFraming = LayerEdits.toggleShown(onFoundation, "floor1-structural").state
+        assertEquals(Layers.Display.FAINT, Layers.displayMap(withFraming)["floor1-structural"])
+        assertEquals(Layers.Display.HIDDEN, Layers.displayMap(LayerEdits.toggleShown(withFraming, "floor1-structural").state)["floor1-structural"])
+
+        // The floor plan under the active layer switches off with the eye; the active layer can't.
+        val planOff = LayerEdits.toggleShown(onFoundation, Building.FLOOR1_PLAN).state
+        assertEquals(Layers.Display.HIDDEN, Layers.displayMap(planOff)[Building.FLOOR1_PLAN])
+        assertNotNull(LayerEdits.toggleShown(onFoundation, Building.FOUNDATION).refused)
+    }
+
+    @Test
+    fun `what the screen shows is what can be picked, and a layer turned off drops out of the selection`() {
+        val footing = wall("ft").copy(layerId = Building.FOUNDATION)
+        var s = CanvasState(elements = listOf(wall(), cabinet(), footing), selectedElementIds = setOf("ft", "w1"))
+        // On the plan the foundation is hidden.
+        assertEquals(listOf("w1", "c1"), Layers.shownElements(s).map { it.id })
+        // Printing and DXF still go by the eye: everything is visible.
+        assertEquals(3, Layers.visibleElements(s).size)
+        s = LayerEdits.toggleShown(s, Building.FOUNDATION).state
+        assertEquals(setOf("w1", "c1", "ft"), Layers.shownElements(s).map { it.id }.toSet())
+        s = LayerEdits.toggleShown(s, Building.FOUNDATION).state
+        assertEquals(setOf("w1"), s.selectedElementIds)
+    }
+
+    @Test
+    fun `layers draw in stacking order, foundation first and the upper layer on top`() {
+        val footing = wall("ft").copy(layerId = Building.FOUNDATION)
+        val joist = wall("j").copy(layerId = "floor1-structural")
+        val roof = wall("r").copy(layerId = "roof-structural")
+        // Drawn in the "wrong" order: roof, plan wall, cabinet, footing, joist.
+        val s = CanvasState(elements = listOf(roof, wall(), cabinet(), footing, joist))
+        assertEquals(listOf("ft", "j", "w1", "c1", "r"), Layers.inStackOrder(s.elements, s).map { it.id })
     }
 
     @Test
