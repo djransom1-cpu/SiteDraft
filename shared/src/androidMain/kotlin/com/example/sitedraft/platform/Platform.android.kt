@@ -109,6 +109,24 @@ class AndroidPlatform(private val context: Context) : Platform {
         return "Saved ${file.absolutePath}"
     }
 
+    /** A sheet set as one PDF, a page per sheet, each at its own paper size. */
+    override fun exportPages(fileName: String, pages: List<Pair<PageSpec, DrawScope.() -> Unit>>): String? {
+        if (pages.isEmpty()) return null
+        val pdfDocument = PdfDocument()
+        pages.forEachIndexed { i, (page, draw) ->
+            val info = PdfDocument.PageInfo.Builder(page.widthPt.roundToInt(), page.heightPt.roundToInt(), i + 1).create()
+            val pdfPage = pdfDocument.startPage(info)
+            drawPageOnto(pdfPage.canvas, page, 72f / page.dpi, 0f, 0f, draw)
+            pdfDocument.finishPage(pdfPage)
+        }
+        val dir = app.getExternalFilesDir(null) ?: app.filesDir
+        val file = File(dir, fileName)
+        FileOutputStream(file).use { pdfDocument.writeTo(it) }
+        pdfDocument.close()
+        share(file, "application/pdf")
+        return "Saved ${pages.size} sheets to ${file.absolutePath}"
+    }
+
     /**
      * The Activity the print framework needs (PrintManager.print must be called from one); set by
      * MainActivity while it is on screen.

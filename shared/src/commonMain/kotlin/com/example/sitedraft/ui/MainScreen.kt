@@ -64,6 +64,8 @@ fun MainScreen(
     val isLayersVisible = isExpanded && currentNav == "Layers"
     // Paper space: the Print dialog opened straight on the sheets.
     var sheetsOnly by remember { mutableStateOf(false) }
+    // Paper space: the Sheets screen (SheetsScreen), over the drawing.
+    var showSheets by remember { mutableStateOf(false) }
 
 
 
@@ -424,7 +426,7 @@ fun MainScreen(
                     BuildingPanel(
                         state = state,
                         onEvent = viewModel::onEvent,
-                        onOpenSheets = { sheetsOnly = true; printDialog = PrintAction.PRINT },
+                        onOpenSheets = { showSheets = true },
                         onOpenTools = { currentNav = "Symbols" },
                         modifier = Modifier
                             .width(340.dp)
@@ -508,7 +510,23 @@ fun MainScreen(
             onExportPdf = { viewModel.onEvent(DrawingEvent.ExportPdf(it, density)) },
             onSheetsChange = { viewModel.onEvent(DrawingEvent.UpdateSheets(it)) },
             startOnSheets = sheetsOnly,
+            onOpenSheets = { showSheets = true },
             onDismiss = { printDialog = null; sheetsOnly = false }
         )
+    }
+
+    if (showSheets) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showSheets = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            SheetsScreen(
+                state = state,
+                onEvent = viewModel::onEvent,
+                density = density,
+                onClose = { showSheets = false },
+                modifier = Modifier.fillMaxSize().safeDrawingPadding()
+            )
+        }
     }
 }

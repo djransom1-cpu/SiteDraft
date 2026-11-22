@@ -3,6 +3,7 @@ package com.example.sitedraft.ui.canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -40,6 +41,63 @@ object WallSection {
     private const val WALL_SHOWN_IN = 30f
     /** Notes column, beyond the drawing on each side. */
     private const val NOTE_GAP_IN = 14f
+
+    // --- In model space (Dan, Nov 22): the section is a symbol on the canvas, drawn true size,
+    // so it is edited there (its inputs, notes beside it) and sheets show it from there. ---
+
+    /** The symbol that is the section in model space. */
+    const val SYMBOL_NAME = "Typical Wall Section"
+    const val CATEGORY = "Details"
+    /** The section's own scale denominator (16 = 3/4" = 1'-0"): notes are sized for paper at it. */
+    const val SCALE_KEY = "scaleDenominator"
+    const val DEFAULT_DENOMINATOR = 16
+
+    fun isSection(e: DrawingElement): Boolean = e is DrawingElement.Symbol && e.category == CATEGORY && e.symbolName == SYMBOL_NAME
+
+    fun sectionIn(state: CanvasState): DrawingElement.Symbol? = state.elements.firstOrNull { isSection(it) } as? DrawingElement.Symbol
+
+    fun denominatorOf(e: DrawingElement.Symbol): Int = (e.properties[SCALE_KEY] ?: DEFAULT_DENOMINATOR.toFloat()).toInt().coerceAtLeast(1)
+
+    /** The section's size in world px: its real extent (notes included) at the drawing's scale. */
+    fun worldSize(state: CanvasState): androidx.compose.ui.geometry.Size {
+        val e = geometry(state).extent
+        val k = PrintPage.worldPxPerInch(state)
+        return androidx.compose.ui.geometry.Size(e.width * k, e.height * k)
+    }
+
+    /** A new section symbol centred at [center]. */
+    fun newSymbol(state: CanvasState, center: Offset, denominator: Int = DEFAULT_DENOMINATOR): DrawingElement.Symbol =
+        DrawingElement.Symbol(
+            symbolName = SYMBOL_NAME, category = CATEGORY, center = center, size = worldSize(state),
+            color = Color.White, properties = mapOf(SCALE_KEY to denominator.toFloat())
+        )
+
+    /** Where a new section goes: to the right of everything drawn, a few feet clear. */
+    fun spotFor(state: CanvasState): Offset {
+        val size = worldSize(state)
+        val gap = PrintPage.worldPxPerInch(state) * 60f
+        val rects = state.elements.map { it.boundingRect() }.filter { it.width > 0f || it.height > 0f }
+        if (rects.isEmpty()) return Offset(size.width / 2f, size.height / 2f)
+        val right = rects.maxOf { it.right }
+        val top = rects.minOf { it.top }
+        return Offset(right + gap + size.width / 2f, top + size.height / 2f)
+    }
+
+    /** Elements drawn inside the section's frame (notes, dimensions added beside it): they go with it onto a sheet. */
+    fun ownedBy(section: DrawingElement.Symbol, state: CanvasState): List<DrawingElement> {
+        val frame = Rect(section.center - Offset(section.size.width / 2f, section.size.height / 2f), section.size)
+        return state.elements.filter { it.id != section.id && !isSection(it) && frame.contains(it.boundingRect().center) }
+    }
+
+    /** The section and what belongs to it, for leaving out of plan views. */
+    fun sectionIds(state: CanvasState): Set<String> {
+        val out = HashSet<String>()
+        state.elements.filterIsInstance<DrawingElement.Symbol>().filter { isSection(it) }.forEach { sec ->
+            out += sec.id
+            ownedBy(sec, state).forEach { out += it.id }
+        }
+        return out
+    }
 
     /** Stud depth of the first-floor plan's exterior walls (5 1/2" for 2x6, 3 1/2" for 2x4). */
     fun studDepthIn(state: CanvasState): Float {
@@ -229,7 +287,7 @@ object WallSection {
      * Draws the section with its centre at [centrePx] on the page, at [dpi] page px per paper inch
      * and [denominator] (12 = 1" = 1'). Notes are the same size on paper at any scale.
      */
-    fun DrawScope.drawSection(state: CanvasState, centrePx: Offset, dpi: Float, denominator: Int) {
+    fun DrawScope.drawSection(state: CanvasState, centrePx: Offset, dpi: Float, denominator: Int, ink: Color = Color.Black) {
         val g = geometry(state)
         val k = dpi / denominator
         fun map(o: Offset) = Offset(centrePx.x + (o.x - g.extent.center.x) * k, centrePx.y + (o.y - g.extent.center.y) * k)
@@ -237,9 +295,10 @@ object WallSection {
         val heavy = Stroke(lineW * 1.6f, cap = StrokeCap.Round)
         val thin = Stroke(lineW * 0.8f, cap = StrokeCap.Round)
         val dashed = Stroke(lineW * 0.8f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(lineW * 6f, lineW * 4f)))
-        val black = Color.Black
-        val grey = Color(0xFF888888)
-        val accent = Color(0xFF1565C0)
+        // [ink] is black on paper and on a light canvas, white on the blueprint canvas.
+        val black = ink
+        val grey = if (ink.luminance() > 0.5f) Color(0xFFAAAAAA) else Color(0xFF888888)
+        val accent = if (ink.luminance() > 0.5f) Color(0xFF80E0FF) else Color(0xFF1565C0)
         fun color(ink: Shower.Ink) = when (ink) {
             Shower.Ink.FAINT, Shower.Ink.FAINT_DASHED -> grey
             Shower.Ink.ACCENT -> accent

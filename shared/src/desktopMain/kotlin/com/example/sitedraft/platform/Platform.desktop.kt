@@ -75,6 +75,46 @@ class DesktopPlatform(
         return bitmap
     }
 
+    /** A sheet set as one PDF, a page per sheet, each at its own paper size. */
+    override fun exportPages(fileName: String, pages: List<Pair<PageSpec, DrawScope.() -> Unit>>): String? {
+        if (pages.isEmpty()) return null
+        val images = pages.map { (spec, draw) ->
+            PdfWriter.ImagePage(spec.widthPx, spec.heightPx, compressedRgb(spec, renderPage(spec, draw)), flate = true,
+                pageWidthPt = spec.widthPt, pageHeightPt = spec.heightPt)
+        }
+        val exportDir = File(root, "exports").apply { mkdirs() }
+        val file = File(exportDir, fileName)
+        file.writeBytes(PdfWriter.imagePages(images))
+        runCatching { if (Desktop.isDesktopSupported()) Desktop.getDesktop().open(file) }
+        return "Saved ${pages.size} sheets to ${file.absolutePath}"
+    }
+
+    /** The page's pixels as RGB, Flate-compressed for the PDF. */
+    private fun compressedRgb(page: PageSpec, bitmap: ImageBitmap): ByteArray {
+        val width = page.widthPx
+        val height = page.heightPx
+        val pixels = bitmap.toPixelMap()
+        val rgb = ByteArray(width * height * 3)
+        var k = 0
+        for (y in 0 until height) for (x in 0 until width) {
+            val c = pixels[x, y]
+            rgb[k++] = (c.red * 255f).toInt().toByte()
+            rgb[k++] = (c.green * 255f).toInt().toByte()
+            rgb[k++] = (c.blue * 255f).toInt().toByte()
+        }
+        val deflater = Deflater(Deflater.BEST_SPEED)
+        deflater.setInput(rgb)
+        deflater.finish()
+        val buffer = ByteArray(64 * 1024)
+        val zipped = ByteArrayOutputStream()
+        while (!deflater.finished()) {
+            val n = deflater.deflate(buffer)
+            zipped.write(buffer, 0, n)
+        }
+        deflater.end()
+        return zipped.toByteArray()
+    }
+
     private fun writePdf(fileName: String, page: PageSpec, bitmap: ImageBitmap): File {
         val width = page.widthPx
         val height = page.heightPx

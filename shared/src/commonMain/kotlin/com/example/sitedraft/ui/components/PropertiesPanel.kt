@@ -78,6 +78,16 @@ fun PropertiesPanel(
                 ) {
                     Column(Modifier.padding(12.dp)) {
                         PropertyRow("Type", selectedElement::class.simpleName ?: "Unknown")
+                        // The typical wall section (model space): what it is drawn from, edited right here.
+                        if (com.example.sitedraft.ui.canvas.WallSection.isSection(selectedElement)) {
+                            Text("Typical wall section", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Drawn from the building inputs below and the first-floor exterior walls (${com.example.sitedraft.ui.canvas.WallSection.wallLabel(state)}). " +
+                                    "Change them here: the section, the levels and the foundation all follow. Text and dimensions you add inside its frame print with it on the sheet.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            BuildingInputs(state.building) { onEvent(DrawingEvent.SetBuilding(it)) }
+                        }
                         
                         if (selectedElement !is DrawingElement.Image && selectedElement !is DrawingElement.Pdf) {
                             Text(text = "Stroke Width", style = MaterialTheme.typography.labelSmall)

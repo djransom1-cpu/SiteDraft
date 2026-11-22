@@ -35,8 +35,23 @@ data class SheetView(
     val xIn: Float = 0f,
     val yIn: Float = 0f,
     /** A plan view's layers (Building.kt): null shows every layer, as views did before layers. */
-    val layerIds: List<String>? = null
+    val layerIds: List<String>? = null,
+    /**
+     * A cropped viewport (Dan, Nov 22): only this window of the model (world px) shows, at the
+     * view's own scale, e.g. the kitchen at 1/2" beside the whole plan at 1/4". Null = the whole subject.
+     */
+    val crop: ViewCrop? = null
 )
+
+/** A viewport's window on the model, world px. */
+@Serializable
+data class ViewCrop(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+    val rect: Rect get() = Rect(minOf(left, right), minOf(top, bottom), maxOf(left, right), maxOf(top, bottom))
+
+    companion object {
+        fun of(r: Rect) = ViewCrop(r.left, r.top, r.right, r.bottom)
+    }
+}
 
 @Serializable
 data class SheetLayout(
@@ -71,22 +86,41 @@ object Sheets {
     /** The elevations other elements belong to (their dimensions), so the plan view leaves them out. */
     private fun elevationIds(state: CanvasState) = state.elements.filterIsInstance<DrawingElement.ElevationView>().map { it.id }.toSet()
 
+    /**
+     * The model-space section a section view shows: the one it was made from, or (a view from
+     * before 1.0.36, or one whose section was deleted and placed again) the drawing's section.
+     * Null when the drawing has none: the view then draws the section straight from the inputs.
+     */
+    fun sectionFor(view: SheetView, state: CanvasState): DrawingElement.Symbol? {
+        if (view.kind != SheetViewKind.SECTION) return null
+        return (state.elements.firstOrNull { it.id == view.elementId } as? DrawingElement.Symbol)?.takeIf { WallSection.isSection(it) }
+            ?: WallSection.sectionIn(state)
+    }
+
     /** The elements a view shows. */
     fun viewElements(view: SheetView, state: CanvasState): List<DrawingElement> = when (view.kind) {
         SheetViewKind.PLAN -> {
             val elevations = elevationIds(state)
+            val sections = WallSection.sectionIds(state)
             val layers = view.layerIds?.toSet()
+            val of = Layers.resolver(state)
             state.elements.filter { e ->
                 e !is DrawingElement.ElevationView && !(e is DrawingElement.Dimension && e.ownerId != null && e.ownerId in elevations) &&
-                    (layers == null || Layers.layerOf(e, state).id in layers)
+                    e.id !in sections && (layers == null || of(e).id in layers)
             }
         }
         SheetViewKind.ELEVATION -> state.elements.filter { it.id == view.elementId || it.isOwnedBy(view.elementId) }
-        SheetViewKind.SECTION -> emptyList()
+        SheetViewKind.SECTION -> sectionFor(view, state)?.let { sec -> listOf(sec) + WallSection.ownedBy(sec, state) } ?: emptyList()
     }
 
-    /** The view's extent in world px (null when it shows nothing, e.g. its elevation was deleted). */
+    /** The view's extent in world px (null when it shows nothing, e.g. its elevation was deleted). A cropped view is its window. */
     fun worldBounds(view: SheetView, state: CanvasState): Rect? {
+        view.crop?.rect?.takeIf { it.width > 0f && it.height > 0f }?.let { return it }
+        return fullWorldBounds(view, state)
+    }
+
+    /** The whole subject's extent in world px, ignoring any crop: what the crop window is picked from. */
+    fun fullWorldBounds(view: SheetView, state: CanvasState): Rect? {
         val rects = viewElements(view, state).flatMap { e ->
             if (e is DrawingElement.ElevationView) listOf(e.frame) + Elevation.partsOf(e, state).map { it.boundingRect() }
             else listOf(e.boundingRect())
@@ -100,7 +134,7 @@ object Sheets {
 
     /** The view's drawing on the paper (inches), centred on its position. */
     fun viewRect(view: SheetView, state: CanvasState): Rect? {
-        if (view.kind == SheetViewKind.SECTION) {
+        if (view.kind == SheetViewKind.SECTION && sectionFor(view, state) == null) {
             val (w, h) = WallSection.paperSizeIn(state, view.scale.denominator ?: 16)
             return Rect(view.xIn - w / 2f, view.yIn - h / 2f, view.xIn + w / 2f, view.yIn + h / 2f)
         }
@@ -197,8 +231,8 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
     drawRect(Color.White, size = Size(wIn * dpi, hIn * dpi))
     val metric = state.unitSystem == UnitSystem.METRIC
     for (view in sheet.views) {
-        if (view.kind == SheetViewKind.SECTION) {
-            // Drawn straight from the building inputs, at its scale, with its title under it.
+        if (view.kind == SheetViewKind.SECTION && Sheets.sectionFor(view, state) == null) {
+            // No section in model space yet: drawn straight from the building inputs, at its scale, with its title under it.
             val rIn = Sheets.viewRect(view, state) ?: continue
             with(WallSection) { drawSection(state, Offset(view.xIn * dpi, view.yIn * dpi), dpi, view.scale.denominator ?: 16) }
             val titleTop = rIn.bottom * dpi + 0.12f * dpi
@@ -230,12 +264,16 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
             if (e is DrawingElement.ElevationView) Elevation.partsOf(e, state.copy(backgroundColor = Color.White)) else listOf(e)
         }
         val pageState = PrintPage.pageState(state, shown, page).copy(background = DrawingBackground.PLAIN)
-        val pad = 0.1f * dpi
+        // A cropped viewport is cut exactly at its window; a whole view gets a little room for line ends and labels.
+        val pad = if (view.crop != null) 0f else 0.1f * dpi
         clipRect(rIn.left * dpi - pad, rIn.top * dpi - pad, rIn.right * dpi + pad, rIn.bottom * dpi + pad) {
             withTransform({
                 translate(pan.x, pan.y)
                 scale(zoom, zoom, Offset.Zero)
             }) { drawDocumentContents(pageState) }
+        }
+        if (view.crop != null) {
+            drawRect(Color.Black, topLeft = Offset(rIn.left * dpi, rIn.top * dpi), size = Size(rIn.width * dpi, rIn.height * dpi), style = Stroke(lineW * 0.8f))
         }
         // Title, underlined, and the scale under it.
         val titleTop = rIn.bottom * dpi + 0.12f * dpi
@@ -251,11 +289,15 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
     // Border round the drawing area and the strip.
     val m = Sheets.MARGIN_IN * dpi
     drawRect(Color.Black, topLeft = Offset(m, m), size = Size(wIn * dpi - 2f * m, hIn * dpi - 2f * m), style = Stroke(lineW * 2f))
-    drawSheetTitleBlock(sheet, dpi, project, date, lineW)
+    drawSheetTitleBlock(sheet, dpi, project, date, state.projectInfo, lineW)
 }
 
-/** The strip down the right edge: project, sheet title, drawn by, date, scale, and the sheet number big at the bottom. */
-private fun DrawScope.drawSheetTitleBlock(sheet: SheetLayout, dpi: Float, project: String, date: String, lineW: Float) {
+/**
+ * The strip down the right edge, filled from the project info (ProjectInfo.kt): the company
+ * across the top, the revisions under it, then project, client, job address, sheet title, drawn
+ * by, date started and scale, and the sheet number big at the bottom.
+ */
+private fun DrawScope.drawSheetTitleBlock(sheet: SheetLayout, dpi: Float, project: String, date: String, info: ProjectInfo, lineW: Float) {
     val (wIn, hIn) = Sheets.paperIn(sheet)
     val strip = Sheets.stripIn(sheet)
     val m = Sheets.MARGIN_IN
@@ -268,23 +310,64 @@ private fun DrawScope.drawSheetTitleBlock(sheet: SheetLayout, dpi: Float, projec
     val caption = 0.09f * dpi
     val value = 0.16f * dpi
     val width = right - left - 2f * pad
-    val cells = listOf(
-        "PROJECT" to project,
-        "SHEET TITLE" to sheet.title,
-        "DRAWN BY" to sheet.drawnBy,
-        "DATE" to date,
-        "SCALE" to "As noted"
+
+    // The cells up from the sheet number. The address takes a line for each line typed (up to 3).
+    val address = info.address.lines().map { it.trim() }.filter { it.isNotEmpty() }.take(3).ifEmpty { listOf("") }
+    val cells: List<Pair<String, List<String>>> = listOf(
+        "PROJECT" to listOf(project),
+        "CLIENT" to listOf(info.clientName),
+        "JOB ADDRESS" to address,
+        "SHEET TITLE" to listOf(sheet.title),
+        "DRAWN BY" to listOf(sheet.drawnBy.ifBlank { info.drawnBy }),
+        "DATE STARTED" to listOf(info.startDate.ifBlank { date }),
+        "SCALE" to listOf("As noted")
     )
-    val cellH = 0.6f * dpi
+    val lineH = value * 1.25f
+    fun cellH(lines: Int) = 0.6f * dpi + (lines - 1) * lineH
     val numberH = 1.4f * dpi
-    var y = bottom - numberH - cells.size * cellH
-    for ((cap, v) in cells) {
+    val cellsTop = bottom - numberH - cells.sumOf { cellH(it.second.size).toDouble() }.toFloat()
+    var y = cellsTop
+    for ((cap, lines) in cells) {
         drawLine(Color.Black, Offset(left, y), Offset(right, y), strokeWidth = lineW)
         drawPageText(cap, Offset(left + pad, y + pad), caption, Color.DarkGray, bold = false, maxWidth = width)
-        drawPageText(v, Offset(left + pad, y + pad + caption * 1.6f), value, Color.Black, bold = true, maxWidth = width)
-        y += cellH
+        lines.forEachIndexed { i, v ->
+            drawPageText(v, Offset(left + pad, y + pad + caption * 1.6f + i * lineH), value, Color.Black, bold = true, maxWidth = width)
+        }
+        y += cellH(lines.size)
     }
     drawLine(Color.Black, Offset(left, y), Offset(right, y), strokeWidth = lineW * 2f)
     drawPageText("SHEET", Offset(left + pad, y + pad), caption, Color.DarkGray, bold = false, maxWidth = width)
     drawPageText(sheet.number, Offset(left + pad, y + pad + caption * 1.8f), 0.6f * dpi, Color.Black, bold = true, maxWidth = width)
+
+    // The company across the top.
+    var ty = top
+    if (info.company.isNotBlank()) {
+        drawPageText(info.company, Offset(left + pad, ty + pad), 0.2f * dpi, Color.Black, bold = true, maxWidth = width)
+        ty += 0.2f * dpi + 3f * pad
+        drawLine(Color.Black, Offset(left, ty), Offset(right, ty), strokeWidth = lineW * 2f)
+    }
+    // Revisions: number, date and what changed, newest last, as many as fit above the cells.
+    if (info.revisions.isNotEmpty()) {
+        val small = 0.1f * dpi
+        val rowH = 0.26f * dpi
+        drawPageText("REVISIONS", Offset(left + pad, ty + pad), caption, Color.DarkGray, bold = false, maxWidth = width)
+        ty += caption + 2f * pad
+        val noW = 0.35f * dpi
+        val dateW = 0.85f * dpi
+        drawLine(Color.Black, Offset(left, ty), Offset(right, ty), strokeWidth = lineW)
+        val room = ((cellsTop - pad - ty) / rowH).toInt().coerceAtLeast(0)
+        val shown = info.revisions.takeLast(room)
+        val tableTop = ty
+        for (r in shown) {
+            drawPageText(r.number, Offset(left + pad, ty + pad), small, Color.Black, bold = true, maxWidth = noW - pad)
+            drawPageText(r.date, Offset(left + noW + pad, ty + pad), small, Color.Black, bold = false, maxWidth = dateW - pad)
+            drawPageText(r.description, Offset(left + noW + dateW + pad, ty + pad), small, Color.Black, bold = false, maxWidth = right - left - noW - dateW - 2f * pad)
+            ty += rowH
+            drawLine(Color.Black, Offset(left, ty), Offset(right, ty), strokeWidth = lineW * 0.6f)
+        }
+        if (shown.isNotEmpty()) {
+            drawLine(Color.Black, Offset(left + noW, tableTop), Offset(left + noW, ty), strokeWidth = lineW * 0.6f)
+            drawLine(Color.Black, Offset(left + noW + dateW, tableTop), Offset(left + noW + dateW, ty), strokeWidth = lineW * 0.6f)
+        }
+    }
 }

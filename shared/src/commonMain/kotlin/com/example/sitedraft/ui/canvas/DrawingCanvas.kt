@@ -570,7 +570,14 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                 // Use the standard stroke weight for parametric symbols
                 val stroke = Stroke(width = element.strokeWidth, cap = StrokeCap.Round)
                 
-                if (element.category in PlanSymbols.categories) {
+                if (WallSection.isSection(element)) {
+                    // The typical wall section, true size in model space (WallSection): drawn at
+                    // its own scale's paper text size, so a sheet at that scale matches exactly.
+                    val denominator = WallSection.denominatorOf(element)
+                    with(WallSection) {
+                        drawSection(state, element.center, PrintPage.worldPxPerInch(state) * denominator, denominator, ink = whiteColor)
+                    }
+                } else if (element.category in PlanSymbols.categories) {
                     drawPlanSymbol(element, state, lineColor = whiteColor, accentColor = cyanColor)
                 } else if (element.category == "Lumber" || element.category == "Plywood") {
                     withTransform({

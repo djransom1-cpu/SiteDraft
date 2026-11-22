@@ -53,6 +53,17 @@ interface Platform {
      */
     fun exportPage(fileName: String, page: PageSpec, draw: DrawScope.() -> Unit): String?
     /**
+     * Several pages (a sheet set) as one PDF where the platform can make one; by default each
+     * page is exported on its own ("name - 1.pdf", "name - 2.pdf"...). Returns a message for the user.
+     */
+    fun exportPages(fileName: String, pages: List<Pair<PageSpec, DrawScope.() -> Unit>>): String? {
+        if (pages.size == 1) return exportPage(fileName, pages[0].first, pages[0].second)
+        val stem = fileName.removeSuffix(".pdf")
+        var last: String? = null
+        pages.forEachIndexed { i, (spec, draw) -> last = exportPage("$stem - ${i + 1}.pdf", spec, draw) ?: last }
+        return last?.let { "${pages.size} sheets exported. $it" }
+    }
+    /**
      * Renders [draw] onto [page] and sends it to a printer through the platform's print system
      * (Android's print framework, a desktop print dialog, the browser's print). Returns a message
      * for the user, or null where printing is not available.

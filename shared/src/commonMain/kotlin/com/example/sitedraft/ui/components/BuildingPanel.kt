@@ -185,6 +185,17 @@ fun BuildingPanel(
                 }
             }
             BuildingInputs(state.building) { onEvent(DrawingEvent.SetBuilding(it)) }
+
+            // The typical wall section lives in model space: placed once, edited there, shown on sheets.
+            HorizontalDivider()
+            Text("Typical wall section", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Drawn true size beside the plan from these inputs and the exterior walls. Select it to change its inputs; notes you add inside its frame go onto the sheet with it.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            OutlinedButton(onClick = { onEvent(DrawingEvent.PlaceWallSection) }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (com.example.sitedraft.ui.canvas.WallSection.sectionIn(state) == null) "Place in the drawing" else "Select it in the drawing")
+            }
         }
     }
 }
@@ -192,7 +203,7 @@ fun BuildingPanel(
 /** The building inputs, edited as text and applied together (Apply), so a half-typed number never moves a level. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSettings) -> Unit) {
+internal fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSettings) -> Unit) {
     fun ft(inches: Float) = Building.elevationText(inches)
     fun inch(v: Float) = formatInches(v)
     var foundation by remember(settings) { mutableStateOf(settings.foundation) }

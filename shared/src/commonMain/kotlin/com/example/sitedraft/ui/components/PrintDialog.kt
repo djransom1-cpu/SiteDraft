@@ -57,6 +57,8 @@ fun PrintDialog(
     onSheetsChange: (List<SheetLayout>) -> Unit = {},
     /** Paper space: open on the sheets (the Layers panel's Paper button). */
     startOnSheets: Boolean = false,
+    /** Sheets have their own screen now (SheetsScreen): "Sheet with views" goes there. */
+    onOpenSheets: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val prefs = LocalPlatform.current.prefs
@@ -119,8 +121,11 @@ fun PrintDialog(
                         FilterChip(
                             selected = settings.subject == subject,
                             enabled = subject != PrintSubject.SELECTED_ELEVATION || hasElevation,
-                            onClick = { settings = settings.copy(subject = subject) },
-                            label = { Text(subject.label) }
+                            onClick = {
+                                if (subject == PrintSubject.SHEET) { onOpenSheets(); onDismiss() }
+                                else settings = settings.copy(subject = subject)
+                            },
+                            label = { Text(if (subject == PrintSubject.SHEET) "Sheets…" else subject.label) }
                         )
                     }
                 }

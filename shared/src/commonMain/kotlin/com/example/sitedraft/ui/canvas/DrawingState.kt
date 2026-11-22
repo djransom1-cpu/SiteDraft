@@ -400,6 +400,8 @@ data class CanvasState(
     val showCabinetLabels: Boolean = true,
     // Large-format print sheets of views (Print > Sheet with views).
     val sheets: List<SheetLayout> = emptyList(),
+    // The job's details for the title block (client, address, dates, revisions). New in 1.0.36.
+    val projectInfo: ProjectInfo = ProjectInfo(),
     // The building: the inputs its levels are worked out from, its layers (empty = the defaults,
     // Building.defaultLayers) and the layer new drawing goes on (null = first-floor plan). See Building.kt.
     // New in 1.0.29; older versions skip these when reading.

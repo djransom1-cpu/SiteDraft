@@ -308,6 +308,32 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 _state.value = _state.value.copy(sheets = event.sheets)
                 triggerAutoSave()
             }
+            // The typical wall section in model space: placed once, to the right of the drawing,
+            // and selected so its inputs show in Properties.
+            is DrawingEvent.PlaceWallSection -> {
+                val existed = WallSection.sectionIn(_state.value) != null
+                val section = ensureWallSection()
+                _state.value = _state.value.copy(selectedElementId = section.id, selectedElementIds = emptySet())
+                triggerAutoSave()
+                platform.toast(if (existed) "The typical wall section is already in the drawing: it's selected" else "Typical wall section placed to the right of the drawing")
+            }
+            // A section view on a sheet, from the model-space section (placed first if there isn't one).
+            is DrawingEvent.AddWallSectionToSheet -> {
+                val section = ensureWallSection()
+                val s = _state.value
+                val sheet = s.sheets.firstOrNull { it.id == event.sheetId }
+                if (sheet != null && sheet.views.none { it.kind == SheetViewKind.SECTION }) {
+                    val view = SheetView(kind = SheetViewKind.SECTION, elementId = section.id, title = "Typical Wall Section", scale = PrintScale.THREE_QUARTER)
+                    val placed = Sheets.placed(sheet, view, s)
+                    _state.value = s.copy(sheets = s.sheets.map { if (it.id == sheet.id) it.copy(views = it.views + placed) else it })
+                }
+                triggerAutoSave()
+            }
+            is DrawingEvent.ExportSheetSet -> exportSheetSet(event.density, event.separate)
+            is DrawingEvent.UpdateProjectInfo -> {
+                _state.value = _state.value.copy(projectInfo = event.info)
+                triggerAutoSave()
+            }
             is DrawingEvent.SetActiveLayer -> applyLayerEdit(LayerEdits.setActive(_state.value, event.layerId))
             is DrawingEvent.SetLayerVisible -> applyLayerEdit(LayerEdits.setVisible(_state.value, event.layerId, event.visible))
             is DrawingEvent.ToggleLayerShown -> applyLayerEdit(LayerEdits.toggleShown(_state.value, event.layerId))
@@ -515,6 +541,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     private fun triggerAutoSave() {
         syncDerivedLayers()
         syncElevationViews()
+        syncWallSections()
         registerProjectName()
         pendingSave?.cancel()
         // Serialise on the caller's thread (state is read here), write off it.
@@ -2572,6 +2599,31 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         if (synced !== s) _state.value = synced
     }
 
+    /**
+     * Keeps the model-space wall section's frame the size of the section (the building inputs or
+     * the exterior walls may have changed). Its centre stays put. Cheap when nothing changed.
+     */
+    private fun syncWallSections() {
+        val s = _state.value
+        if (s.elements.none { WallSection.isSection(it) }) return
+        val size = WallSection.worldSize(s)
+        var changed = false
+        val updated = s.elements.map { e ->
+            if (e is DrawingElement.Symbol && WallSection.isSection(e) && e.size != size) { changed = true; e.copy(size = size) } else e
+        }
+        if (changed) _state.value = s.copy(elements = updated)
+    }
+
+    /** The wall section in model space: the one there, or a new one to the right of the drawing. */
+    private fun ensureWallSection(): DrawingElement.Symbol {
+        WallSection.sectionIn(_state.value)?.let { return it }
+        val s = _state.value
+        val section = WallSection.newSymbol(s, WallSection.spotFor(s))
+        pushUndoSnapshot()
+        _state.value = s.copy(elements = s.elements + section)
+        return section
+    }
+
     private fun syncElevationViews() {
         val s = _state.value
         if (s.elements.none { it is DrawingElement.ElevationView }) return
@@ -3305,6 +3357,36 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         platform.toast(message ?: "PDF export is not available here")
     }
 
+    /** Every sheet, in order: as one PDF, or [separate] a PDF per sheet (Sheets screen > Export set). */
+    private fun exportSheetSet(density: Float, separate: Boolean) {
+        val state = _state.value
+        val sheets = state.sheets.filter { it.views.isNotEmpty() }
+        if (sheets.isEmpty()) { platform.toast("No sheets with views yet"); return }
+        val date = todayDateText()
+        val pages: List<Pair<PageSpec, DrawScope.() -> Unit>> = sheets.map { sheet ->
+            val dpi = PrintPage.dpiFor(sheet.paper)
+            val (wIn, hIn) = Sheets.paperIn(sheet)
+            val spec = PageSpec((wIn * dpi).roundToInt(), (hIn * dpi).roundToInt(), dpi, density)
+            val draw: DrawScope.() -> Unit = { drawSheet(sheet, state, dpi, state.projectName, date) }
+            spec to draw
+        }
+        val name = "${state.projectName.trim()} - Sheets".replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+        val message = try {
+            if (separate) {
+                // One file each, named like a single sheet's export ("Job - A-1 Floor Plan.pdf").
+                var last: String? = null
+                sheets.zip(pages).forEach { (sheet, page) ->
+                    val stem = "${state.projectName.trim()} - ${sheet.number} ${sheet.title}".replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+                    last = platform.exportPage("$stem.pdf", page.first, page.second) ?: last
+                }
+                last?.let { "${sheets.size} sheets exported, a PDF each. $it" }
+            } else platform.exportPages("$name.pdf", pages)
+        } catch (e: Exception) {
+            "PDF export failed: ${e.message}"
+        }
+        platform.toast(message ?: "PDF export is not available here")
+    }
+
     private fun printPage(settings: PrintSettings, density: Float) {
         val (spec, draw) = composePage(settings, density) ?: return
         val message = try {
@@ -3412,6 +3494,14 @@ sealed class DrawingEvent {
     data class PositionOpening(val id: String, val fromEnd: Boolean, val toCenter: Boolean, val outside: Boolean, val distance: String? = null) : DrawingEvent()
     /** The project's print sheets, as edited in the Print dialog. */
     data class UpdateSheets(val sheets: List<SheetLayout>) : DrawingEvent()
+    /** Every sheet: as one PDF, or [separate] a PDF per sheet. */
+    data class ExportSheetSet(val density: Float, val separate: Boolean = false) : DrawingEvent()
+    /** Puts the typical wall section in model space (or selects the one there). */
+    object PlaceWallSection : DrawingEvent()
+    /** Adds the typical wall section view to sheet [sheetId], placing the section in model space first if needed. */
+    data class AddWallSectionToSheet(val sheetId: String) : DrawingEvent()
+    /** The job's details for the title block (Projects / Jobs > Project info). */
+    data class UpdateProjectInfo(val info: ProjectInfo) : DrawingEvent()
     /** Levels and layers (Building.kt): the layer new drawing goes on, shown or hidden, the user's own layers. */
     data class SetActiveLayer(val layerId: String) : DrawingEvent()
     data class SetLayerVisible(val layerId: String, val visible: Boolean) : DrawingEvent()

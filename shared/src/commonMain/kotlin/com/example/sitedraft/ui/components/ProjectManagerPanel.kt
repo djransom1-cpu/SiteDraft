@@ -91,6 +91,13 @@ fun ProjectManagerPanel(
                 }
             }
 
+            // The job's details for the title block on every sheet.
+            ProjectInfoCard(
+                info = state.projectInfo,
+                onChange = { viewModel.onEvent(DrawingEvent.UpdateProjectInfo(it)) },
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
             Button(
                 onClick = { 
                     viewModel.onEvent(DrawingEvent.NewProject)
