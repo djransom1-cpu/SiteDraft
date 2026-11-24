@@ -153,8 +153,9 @@ class ExteriorElevationTest {
     @Test
     fun `a hip end gets its own jacks from the end eave to the hip`() {
         val s = CanvasState(elements = box())
-        val gable = com.example.sitedraft.ui.canvas.RoofPlan.geometry(s, RoofSettings(ocIn = 24f))!!
-        val hip = com.example.sitedraft.ui.canvas.RoofPlan.geometry(s, RoofSettings(ocIn = 24f, endA = RoofEnd.HIP))!!
+        val rafters = com.example.sitedraft.ui.canvas.RoofFraming.RAFTERS
+        val gable = com.example.sitedraft.ui.canvas.RoofPlan.geometry(s, RoofSettings(framing = rafters, ocIn = 24f))!!
+        val hip = com.example.sitedraft.ui.canvas.RoofPlan.geometry(s, RoofSettings(framing = rafters, ocIn = 24f, endA = RoofEnd.HIP))!!
         // Members running the long way (along the ridge) are only in a hip end.
         fun endJacks(g: com.example.sitedraft.ui.canvas.RoofPlan.Geometry) =
             g.lines.filter { it.kind == com.example.sitedraft.ui.canvas.RoofPlan.Kind.MEMBER && kotlin.math.abs(it.a.y - it.b.y) < 0.01f }
@@ -164,6 +165,27 @@ class ExteriorElevationTest {
         assertTrue(jacks.size in 13..15)
         val king = jacks.maxByOrNull { kotlin.math.abs(it.b.x - it.a.x) }!!
         assertEquals(hip.ridgeStart.x, maxOf(king.a.x, king.b.x), 0.1f) // the king common reaches the end of the ridge
+    }
+
+    @Test
+    fun `a truss hip end is a step-down hip with a girder where the truss is 5 feet tall`() {
+        val s = CanvasState(elements = box())
+        val k = inch
+        val r = RoofSettings(ocIn = 24f, pitch = 6f, heelIn = 4f, endA = RoofEnd.HIP)
+        // 6/12, 4" heel: 5' tall at 112" in, on the 24" layout 120" (10'), under half the 28' span.
+        assertEquals(120f, com.example.sitedraft.ui.canvas.RoofPlan.girderSetbackIn(r, 336f)!!, 0.01f)
+        val g = com.example.sitedraft.ui.canvas.RoofPlan.geometry(s, r)!!
+        assertEquals(1, g.girders.size)
+        val girderX = g.footprint.left + 120f * k
+        val members = g.lines.filter { it.kind == com.example.sitedraft.ui.canvas.RoofPlan.Kind.MEMBER }
+        // End jacks (running the long way) stop at the girder, not the ridge.
+        val endJacks = members.filter { kotlin.math.abs(it.a.y - it.b.y) < 0.01f }
+        assertEquals(girderX, endJacks.maxOf { maxOf(it.a.x, it.b.x) }, 0.1f)
+        // Step-downs: between the girder and the commons the trusses run eave to eave.
+        val full = members.filter { kotlin.math.abs(it.a.x - it.b.x) < 0.01f && kotlin.math.abs(it.a.y - it.b.y) >= g.eave.height - 0.1f }
+        assertTrue(full.any { it.a.x > girderX + 0.1f && it.a.x < g.ridgeStart.x - 0.1f })
+        // Rafters: no girder.
+        assertEquals(0, com.example.sitedraft.ui.canvas.RoofPlan.geometry(s, r.copy(framing = com.example.sitedraft.ui.canvas.RoofFraming.RAFTERS))!!.girders.size)
     }
 
     @Test

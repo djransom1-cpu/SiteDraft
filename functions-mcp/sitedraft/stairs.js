@@ -83,13 +83,18 @@ function autoRise(s, project) {
   const b = L.settingsOf(project);
   const here = floorElevation(b, n);
   if (here == null) return null;
+  // Finish floor to finish floor (Stairs.finishIn, Nov 24): 3/4" on a framed floor, 0 on a slab, unless set.
+  const slabFirst = b.foundation === "SLAB";
+  const fin = (key, onSlab) => { const v = prop(s, key); return v >= 0 ? v : (onSlab ? 0 : 0.75); };
   if (goesDown(s, project)) {
-    if (n === 1) return b.foundation === "BASEMENT" ? here - basementFloor(b) : null;
-    const below = floorElevation(b, n - 1);
-    return below == null ? null : here - below;
+    let bottom;
+    if (n === 1) { if (b.foundation !== "BASEMENT") return null; bottom = basementFloor(b); }
+    else { bottom = floorElevation(b, n - 1); if (bottom == null) return null; }
+    const bottomOnSlab = n === 1 || (n - 1 === 1 && slabFirst);
+    return (here + fin(K.finTop, n === 1 && slabFirst)) - (bottom + fin(K.finBot, bottomOnSlab));
   }
   const above = floorElevation(b, n + 1) ?? (here + b.plateHeightIn + b.joistDepthIn + b.subfloorIn);
-  return above - here;
+  return (above + fin(K.finTop, false)) - (here + fin(K.finBot, n === 1 && slabFirst));
 }
 
 /** The floor opening's length and layer (Stairs.floorOpening), for describing; the app draws it. */

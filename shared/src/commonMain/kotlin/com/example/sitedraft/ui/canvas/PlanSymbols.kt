@@ -37,10 +37,12 @@ object PlanSymbols {
     const val SHOWERS = "Showers"
     /** Stairs built from one symbol: see [Stairs]. */
     const val STAIRS = "Stairs"
+    /** Guard rails (Guards, Nov 24). */
+    const val RAILINGS = "Railings"
     /** Ranges, cooktops, ovens, refrigerators and the like: see [Appliances]. */
     const val APPLIANCES = "Appliances"
     const val HOODS = "Hoods"
-    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS, STAIRS, APPLIANCES, HOODS,
+    val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS, STAIRS, RAILINGS, APPLIANCES, HOODS,
         Structure.FOUNDATION, Structure.FRAMING)
 
     /**
@@ -245,7 +247,7 @@ object PlanSymbols {
         // deep overall with the front 1 3/4" overhanging the island face; island cutout 35" x 22",
         // 10 1/8" deep; front panel 11" below the counter; hood 14 7/8" above it closed, 23 1/2" open.
         LYNX_36_GRILL to Pair(36f, LYNX_36_DEPTH)
-    ) + Shower.footprints + Stairs.footprints + Appliances.footprints + Structure.footprints
+    ) + Shower.footprints + Stairs.footprints + Guards.footprints + Appliances.footprints + Structure.footprints
 
     const val LYNX_36_DEPTH = 26.375f
     const val LYNX_36_FRONT_LIP = 1.75f
@@ -492,13 +494,11 @@ fun DrawScope.drawPlanSymbol(
                 val status = Remodel.drawStyle(element, state.remodelPhase)
                 // Studs on the house layout (FramingLayout): a wall running west-east measures from the
                 // west wall, one running north-south from the north wall (drawn turned, its start at the top).
-                val first = if (element.rotation % 360f == 0f) FramingLayout.origin(state)?.let { o ->
-                    val sp = inch * FramingLayout.SPACING_IN
-                    if (h > w) FramingLayout.firstMark(element.center.y - hh, o.y, sp) else FramingLayout.firstMark(element.center.x - hw, o.x, sp)
-                } else null
+                val first = wallFirstStud(element, state, inch)
                 val ros = FramingLayout.openingSpans(state)[element.id] ?: emptyList()
-                if (h > w) rotate(90f, pivot = Offset.Zero) { drawWallSection(name, h, w, inch, lineColor, accentColor, line, thin, status, first, ros) }
-                else drawWallSection(name, w, h, inch, lineColor, accentColor, line, thin, status, first, ros)
+                val bucks = FramingLayout.bucks(state)[element.id] ?: emptyList()
+                if (h > w) rotate(90f, pivot = Offset.Zero) { drawWallSection(name, h, w, inch, lineColor, accentColor, line, thin, status, first, ros, bucks) }
+                else drawWallSection(name, w, h, inch, lineColor, accentColor, line, thin, status, first, ros, bucks)
                 // Where a wing joins (Wings), this house wall comes out: blank the stretch and close the ends.
                 if (name == FloorPlan.EXTERIOR_WALL && !DerivedLayers.isGenerated(element) && element.rotation == 0f) {
                     val fp = runCatching { RoofPlan.footprint(state) }.getOrNull()
@@ -526,6 +526,7 @@ fun DrawScope.drawPlanSymbol(
                 with(Structure) { drawStructurePlan(element, state, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.SHOWERS -> with(Shower) { drawShowerPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.STAIRS -> with(Stairs) { drawStairPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
+            element.category == PlanSymbols.RAILINGS -> with(Guards) { drawGuardPlan(element, w, h, inch, lineColor, line, thin) }
             element.category == PlanSymbols.APPLIANCES || element.category == PlanSymbols.HOODS ->
                 with(Appliances) { drawAppliancePlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
             element.category == PlanSymbols.CABINETS -> drawCabinet(element, w, h, inch, lineColor, accentColor, faint, line, thin)
@@ -540,19 +541,27 @@ fun DrawScope.drawPlanSymbol(
                 // a 4 1/2" wall into the room and wiped out a band of floor hatch at the door.
                 val (cutTop, cutDepth) = doorWallCut(element, state, inch)
                 drawRect(color = state.backgroundColor, topLeft = Offset(-hw, cutTop), size = Size(w, cutDepth))
-                drawLine(color = faint, start = Offset(-hw, hh), end = Offset(hw, hh), strokeWidth = thin.width)
+                // The jambs take the wall's thickness (Dan, Nov 24: a door in a 2x6 wall looked set for a 2x4): a
+                // jamb line across the wall at each side, and the leaf hinged at the face of the wall on the side
+                // it swings into. Off a wall, the threshold stays the hinge line.
+                val inWall = cutDepth != DOOR_CUT_FALLBACK_IN * inch
+                val margin = inch * 0.25f
+                val face = if (inWall) cutTop + margin else hh
+                val back = if (inWall) cutTop + cutDepth - margin else hh
+                if (inWall) for (x in listOf(-hw, hw)) drawLine(color = lineColor, start = Offset(x, face), end = Offset(x, back), strokeWidth = thin.width)
+                drawLine(color = faint, start = Offset(-hw, (face + back) / 2f), end = Offset(hw, (face + back) / 2f), strokeWidth = thin.width)
                 // Hinged on the right jamb: the same door mirrored, leaf up the right edge.
                 if (PlanSymbols.hingeRight(element)) {
-                    drawRect(color = lineColor, topLeft = Offset(hw - leaf, hh - w), size = Size(leaf, w), style = line)
+                    drawRect(color = lineColor, topLeft = Offset(hw - leaf, face - w), size = Size(leaf, w), style = line)
                     drawArc(
                         color = accentColor, startAngle = -90f, sweepAngle = -90f, useCenter = false,
-                        topLeft = Offset(hw - w, hh - w), size = Size(2f * w, 2f * w), style = thin
+                        topLeft = Offset(hw - w, face - w), size = Size(2f * w, 2f * w), style = thin
                     )
                 } else {
-                    drawRect(color = lineColor, topLeft = Offset(-hw, hh - w), size = Size(leaf, w), style = line)
+                    drawRect(color = lineColor, topLeft = Offset(-hw, face - w), size = Size(leaf, w), style = line)
                     drawArc(
                         color = accentColor, startAngle = -90f, sweepAngle = 90f, useCenter = false,
-                        topLeft = Offset(-hw - w, hh - w), size = Size(2f * w, 2f * w), style = thin
+                        topLeft = Offset(-hw - w, face - w), size = Size(2f * w, 2f * w), style = thin
                     )
                 }
             }
@@ -839,7 +848,9 @@ private fun DrawScope.drawWallSection(
     /** From the wall's start to the first stud on the house layout (FramingLayout), px; null = from the wall's own end. */
     firstStud: Float? = null,
     /** Rough openings in the wall, px from its start (FramingLayout.openingSpans): no layout studs, a jack and a king each side. */
-    openings: List<Pair<Float, Float>> = emptyList()
+    openings: List<Pair<Float, Float>> = emptyList(),
+    /** Wall bucks where other walls meet this one (FramingLayout.bucks). */
+    bucks: List<FramingLayout.Buck> = emptyList()
 ) {
     val hw = w / 2f
     val hh = h / 2f
@@ -864,27 +875,18 @@ private fun DrawScope.drawWallSection(
             val studTop = -hh + drywall
             val studH = h - 2f * drywall
             if (studW > 0f && studH > 0f) {
-                // Left edges of the studs: one at each end, and the layout between.
-                val xs = if (firstStud != null) {
-                    val sp = inch * FramingLayout.SPACING_IN
-                    val mids = generateSequence(-hw + firstStud) { it + sp }.takeWhile { it + studW / 2f <= hw - studW }
-                        .filter { it - studW / 2f >= -hw + studW }.map { it - studW / 2f }.toList()
-                    (listOf(-hw) + mids).toMutableList()
-                } else generateSequence(-hw) { it + inch * 16f }.takeWhile { it + studW <= hw - studW * 0.5f }.toMutableList()
-                xs += hw - studW
-                // Openings (Dan): nothing on layout inside the rough opening or where its jack and king
-                // go; a jack against each side and a king outside it. Cripples stay on layout (not cut here).
-                if (openings.isNotEmpty()) {
-                    val ros = openings.map { (a, b) -> (-hw + a) to (-hw + b) }
-                    xs.removeAll { x -> ros.any { (a, b) -> x + studW > a - 2f * studW && x < b + 2f * studW } }
-                    for ((a, b) in ros) {
-                        for (x in listOf(a - studW, a - 2f * studW, b, b + studW)) if (x >= -hw - 0.01f && x + studW <= hw + 0.01f) xs += x
-                    }
-                }
-                for (x in xs) {
+                for (x in wallStudXs(hw, inch, firstStud, openings, bucks, studH)) {
                     drawRect(color = accentColor, topLeft = Offset(x, studTop), size = Size(studW, studH), style = thin)
                     drawLine(color = accentColor, start = Offset(x, studTop), end = Offset(x + studW, studTop + studH), strokeWidth = thin.width)
                     drawLine(color = accentColor, start = Offset(x, studTop + studH), end = Offset(x + studW, studTop), strokeWidth = thin.width)
+                }
+                // Each buck's flat stud against the face the other wall comes in on.
+                for (b in bucks) {
+                    val x = buckFlatX(hw, inch, b, studH)
+                    val y = if (b.side > 0) studTop + studH - studW else studTop
+                    drawRect(color = accentColor, topLeft = Offset(x, y), size = Size(studH, studW), style = thin)
+                    drawLine(color = accentColor, start = Offset(x, y), end = Offset(x + studH, y + studW), strokeWidth = thin.width)
+                    drawLine(color = accentColor, start = Offset(x, y + studW), end = Offset(x + studH, y), strokeWidth = thin.width)
                 }
             }
         }
@@ -1196,7 +1198,56 @@ private fun DrawScope.label(text: String, color: Color, sizePx: Float, center: O
  * threshold, centred on that wall, plus 1/4" each side; an 8" strip on the threshold when no
  * wall is found there.
  */
-private fun doorWallCut(door: DrawingElement.Symbol, state: CanvasState, inch: Float): Pair<Float, Float> {
+/**
+ * Left edges of a wall's studs (1 1/2"), the wall centred on 0 and [hw] half its length, px: one at each end and the
+ * layout between, on the house layout from [firstStud] (FramingLayout) or 16" from the left end; in a rough opening
+ * ([openings], px from the wall's start) no layout studs, a jack against each side and a king outside it (Dan).
+ * Cripples stay on layout (not cut here). Shared by the plan and the DXF export.
+ */
+internal fun wallStudXs(hw: Float, inch: Float, firstStud: Float?, openings: List<Pair<Float, Float>>,
+                        bucks: List<FramingLayout.Buck> = emptyList(), depthPx: Float = 0f): List<Float> {
+    val studW = inch * 1.5f
+    val xs = if (firstStud != null) {
+        val sp = inch * FramingLayout.SPACING_IN
+        val mids = generateSequence(-hw + firstStud) { it + sp }.takeWhile { it + studW / 2f <= hw - studW }
+            .filter { it - studW / 2f >= -hw + studW }.map { it - studW / 2f }.toList()
+        (listOf(-hw) + mids).toMutableList()
+    } else generateSequence(-hw) { it + inch * 16f }.takeWhile { it + studW <= hw - studW * 0.5f }.toMutableList()
+    xs += hw - studW
+    // Wall bucks (Dan, Nov 24): the pair of studs, the layout studs the buck covers taken out (the flat third: [buckFlats]).
+    for (b in bucks) {
+        val p0 = -hw + b.centerPx - (2f * studW + depthPx) / 2f
+        xs.removeAll { x -> x + studW > p0 + 0.01f && x < p0 + 2f * studW + depthPx - 0.01f }
+        xs += p0; xs += p0 + studW
+    }
+    if (openings.isNotEmpty()) {
+        val ros = openings.map { (a, b) -> (-hw + a) to (-hw + b) }
+        xs.removeAll { x -> ros.any { (a, b) -> x + studW > a - 2f * studW && x < b + 2f * studW } }
+        for ((a, b) in ros) {
+            for (x in listOf(a - studW, a - 2f * studW, b, b + studW)) if (x >= -hw - 0.01f && x + studW <= hw + 0.01f) xs += x
+        }
+    }
+    return xs
+}
+
+/** A wall buck's flat stud: its left edge along the wall (wall centred on 0, px), as long as the studs are deep ([depthPx]). */
+internal fun buckFlatX(hw: Float, inch: Float, b: FramingLayout.Buck, depthPx: Float): Float =
+    -hw + b.centerPx - (3f * inch + depthPx) / 2f + 3f * inch
+
+/** The house layout's first stud for a plan wall, px from its start (west or north end); null when it isn't square. */
+internal fun wallFirstStud(element: DrawingElement.Symbol, state: CanvasState, inch: Float): Float? {
+    if (element.rotation % 360f != 0f) return null
+    val o = FramingLayout.origin(state) ?: return null
+    val sp = inch * FramingLayout.SPACING_IN
+    val hw = element.size.width / 2f
+    val hh = element.size.height / 2f
+    return if (element.size.height > element.size.width) FramingLayout.firstMark(element.center.y - hh, o.y, sp) else FramingLayout.firstMark(element.center.x - hw, o.x, sp)
+}
+
+/** The cut a door makes when it isn't sitting in a wall, inches. */
+internal const val DOOR_CUT_FALLBACK_IN = 8f
+
+internal fun doorWallCut(door: DrawingElement.Symbol, state: CanvasState, inch: Float): Pair<Float, Float> {
     val hh = door.size.height / 2f
     val threshold = rotateAbout(door.center + Offset(0f, hh), door.center, door.rotation)
     val wall = Layers.onLevelOf(door, state).asSequence()
@@ -1204,7 +1255,7 @@ private fun doorWallCut(door: DrawingElement.Symbol, state: CanvasState, inch: F
         .filter { it.category == PlanSymbols.WALLS }
         .map { FloorPlan.bounds(it) }
         .firstOrNull { it.inflate(inch).contains(threshold) }
-        ?: return Pair(hh - inch * 4f, inch * 8f)
+        ?: return Pair(hh - inch * DOOR_CUT_FALLBACK_IN / 2f, inch * DOOR_CUT_FALLBACK_IN)
     val thickness = min(wall.width, wall.height)
     // The door's own "down" (towards the threshold) in world space; how far along it the wall's
     // centre line lies from the threshold.

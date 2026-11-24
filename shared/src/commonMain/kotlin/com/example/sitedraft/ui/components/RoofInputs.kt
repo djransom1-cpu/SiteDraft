@@ -24,6 +24,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.sitedraft.ui.canvas.BuildingSettings
 import com.example.sitedraft.ui.canvas.CanvasState
+import com.example.sitedraft.ui.canvas.DrawingElement
+import com.example.sitedraft.ui.canvas.Garages
+import com.example.sitedraft.ui.canvas.Wings
 import com.example.sitedraft.ui.canvas.RoofEnd
 import com.example.sitedraft.ui.canvas.RoofFraming
 import com.example.sitedraft.ui.canvas.RoofPlan
@@ -61,6 +64,8 @@ fun RoofInputs(state: CanvasState, onApply: (BuildingSettings) -> Unit) {
     var endB by remember(roof) { mutableStateOf(roof.endB) }
     var turn by remember(roof) { mutableStateOf(roof.turnRidge) }
     var plate by remember(building) { mutableStateOf(formatInches(building.plateHeightIn)) }
+    var girder by remember(roof) { mutableStateOf(formatInches(roof.girderHeightIn / 12f)) }
+    var addOn by remember(roof) { mutableStateOf(formatInches(roof.addOnOcIn)) }
 
     val parsed: BuildingSettings? = run {
         val p = parseInches(pitch)?.takeIf { it > 0f && it <= 24f } ?: return@run null
@@ -69,13 +74,22 @@ fun RoofInputs(state: CanvasState, onApply: (BuildingSettings) -> Unit) {
         val h = parseInches(heel)?.takeIf { it >= 0f } ?: return@run null
         val s = parseInches(oc)?.takeIf { it >= 4f } ?: return@run null
         val pl = parseInches(plate)?.takeIf { it > 0f } ?: return@run null
+        val gh = parseInches(girder)?.takeIf { it > 0f && it <= 20f } ?: return@run null
+        val ao = parseInches(addOn)?.takeIf { it >= 4f } ?: return@run null
         building.copy(plateHeightIn = pl, roof = roof.copy(framing = framing, pitch = p, overhangIn = o, rakeIn = rk, heelIn = h, ocIn = s,
-            rafterSize = size, endA = endA, endB = endB, turnRidge = turn))
+            rafterSize = size, endA = endA, endB = endB, turnRidge = turn, girderHeightIn = gh * 12f, addOnOcIn = ao))
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            RoofFraming.entries.forEach { f -> FilterChip(selected = framing == f, onClick = { framing = f }, label = { Text(f.label) }) }
+            // Switching changes the spacing to that framing's usual (Dan: trusses 24", rafters 16") if it was the other's.
+            RoofFraming.entries.forEach { f -> FilterChip(selected = framing == f, onClick = {
+                if (f != framing) {
+                    if (f == RoofFraming.TRUSSES && parseInches(oc) == 16f) oc = "24"
+                    if (f == RoofFraming.RAFTERS && parseInches(oc) == 24f) oc = "16"
+                }
+                framing = f
+            }, label = { Text(f.label) }) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedTextField(pitch, { pitch = it }, label = { Text("Pitch (rise in 12)") }, singleLine = true, modifier = Modifier.weight(1f))
@@ -88,6 +102,12 @@ fun RoofInputs(state: CanvasState, onApply: (BuildingSettings) -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedTextField(heel, { heel = it }, label = { Text("Heel (in)") }, singleLine = true, modifier = Modifier.weight(1f))
             OutlinedTextField(plate, { plate = it }, label = { Text("Wall height to top plate (in)") }, singleLine = true, modifier = Modifier.weight(1f))
+        }
+        if (framing == RoofFraming.TRUSSES && (endA == RoofEnd.HIP || endB == RoofEnd.HIP)) {
+            OutlinedTextField(girder, { girder = it }, label = { Text("Hip girder where the truss is this tall (ft)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        }
+        if (state.elements.any { it is DrawingElement.Symbol && (Garages.isGarage(it) || Wings.isWing(it)) }) {
+            OutlinedTextField(addOn, { addOn = it }, label = { Text("Garage and wing trusses o.c. (in)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
         if (framing == RoofFraming.RAFTERS) {
             Text("Rafter size", style = MaterialTheme.typography.labelLarge)

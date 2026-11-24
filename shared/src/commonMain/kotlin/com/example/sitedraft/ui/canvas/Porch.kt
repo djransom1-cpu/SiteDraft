@@ -358,8 +358,18 @@ object Porches {
      * concrete cap (masonry) or the posts (wood deck); columns from the deck to the porch beam, its top
      * lined up with the first-floor plate; the roof over it as set (shed, gable or hip).
      */
-    fun elevation(p: DrawingElement.Symbol, state: CanvasState, view: ViewerSide, fp: Rect, k: Float): Pair<List<ESeg>, List<ELabel>> {
+    fun elevation(p: DrawingElement.Symbol, state: CanvasState, view: ViewerSide, fp: Rect, k: Float): Pair<List<ESeg>, List<ELabel>> =
+        elevationWithMasks(p, state, view, fp, k).let { it.first to it.second }
+
+    /**
+     * The porch in an exterior elevation, plus what it stands in front of the house wall with (Dan, Nov 24): outlines
+     * (x, elevation) of its columns, beam, roof and deck seen from the front, so the house's siding and brick lines
+     * behind them come out.
+     */
+    fun elevationWithMasks(p: DrawingElement.Symbol, state: CanvasState, view: ViewerSide, fp: Rect, k: Float): Triple<List<ESeg>, List<ELabel>, List<List<Pair<Float, Float>>>> {
         val segs = mutableListOf<ESeg>(); val labels = mutableListOf<ELabel>()
+        val masks = mutableListOf<List<Pair<Float, Float>>>()
+        fun mask(x1: Float, e1: Float, x2: Float, e2: Float) { if (x2 > x1 && e2 > e1) masks += listOf(x1 to e1, x2 to e1, x2 to e2, x1 to e2) }
         fun line(x1: Float, e1: Float, x2: Float, e2: Float, pen: ExteriorElevation.Pen) { segs += ESeg(x1, e1, x2, e2, pen) }
         fun rect(x1: Float, e1: Float, x2: Float, e2: Float, pen: ExteriorElevation.Pen) {
             line(x1, e1, x2, e1, pen); line(x2, e1, x2, e2, pen); line(x2, e2, x1, e2, pen); line(x1, e2, x1, e1, pen)
@@ -369,7 +379,7 @@ object Porches {
         val ps = viewerSide(side)
         val opposite = (ps == ViewerSide.ABOVE && view == ViewerSide.BELOW) || (ps == ViewerSide.BELOW && view == ViewerSide.ABOVE) ||
             (ps == ViewerSide.LEFT && view == ViewerSide.RIGHT) || (ps == ViewerSide.RIGHT && view == ViewerSide.LEFT)
-        if (opposite) return segs to labels
+        if (opposite) return Triple(segs, labels, masks)
         val s = state.building
         val front = ps == view
         val xs = listOf(r.topLeft, r.topRight, r.bottomLeft, r.bottomRight).map { Elevation.alongOf(fp, view, it) / k }
@@ -410,7 +420,12 @@ object Porches {
             }
         }
         line(min(xa, xb) - 12f, grade, max(xa, xb) + 12f, grade, ExteriorElevation.Pen.HEAVY)
-        if (prop(p, ROOF) != 1) return segs to labels
+        // In front of the house: the deck and what's under it (posts: just the deck band and the posts).
+        if (front) {
+            if (type == 0 || type == 1) mask(xa - capOver, grade + 0.5f, xb + capOver, deck)
+            else mask(xa, under, xb, deck)
+        }
+        if (prop(p, ROOF) != 1) return Triple(segs, labels, masks)
         // Columns from the deck up to the beam, and the beam.
         val colKind = prop(p, COLUMNS)
         val cols = columns(p, fp, k)
@@ -418,6 +433,7 @@ object Porches {
         for ((x, masonry) in colXs) {
             val half = if (masonry) 8f else 3f
             rect(x - half, deck, x + half, beamBot, ExteriorElevation.Pen.MEDIUM)
+            if (front) mask(x - half, deck, x + half, beamBot)
             if (masonry) { var e = deck + VENEER_COURSE_IN; while (e < beamBot - 0.5f) { line(x - half, e, x + half, e, ExteriorElevation.Pen.THIN); e += VENEER_COURSE_IN } }
         }
         val ov = s.roof?.overhangIn ?: 12f
@@ -443,10 +459,12 @@ object Porches {
             }
         }
         if (front) {
-            rect(xa, beamBot, xb, beamTop, ExteriorElevation.Pen.MEDIUM)
             val l = xa - ov; val rr = xb + ov
             val eaveTop = eaveTopIn(p, s)
             val eaveBot = eaveTop - fascia
+            // The beam shows only below the soffit (Dan, Nov 24: it was drawn up past the fascia).
+            val beamShown = min(beamTop, eaveBot)
+            if (beamShown > beamBot) { rect(xa, beamBot, xb, beamShown, ExteriorElevation.Pen.MEDIUM); mask(xa, beamBot, xb, beamShown) }
             if (style == 0) {
                 // Shed seen from the front: the fascia, the roof rising away to the house wall.
                 val depthIn = ((if (side == Side.TOP || side == Side.BOTTOM) r.height else r.width) / k) + ov
@@ -456,12 +474,14 @@ object Porches {
                 val tie = eaveTop + (depthIn - vMeet) * pitch
                 rect(l, eaveBot, rr, eaveTop, ExteriorElevation.Pen.HEAVY)
                 line(l, eaveTop, l, tie, ExteriorElevation.Pen.HEAVY); line(l, tie, rr, tie, ExteriorElevation.Pen.HEAVY); line(rr, tie, rr, eaveTop, ExteriorElevation.Pen.HEAVY)
+                mask(l, eaveBot, rr, tie)
                 shingles(listOf(l to eaveTop, rr to eaveTop, rr to tie, l to tie))
             } else {
                 val mid = (l + rr) / 2f
                 val ridge = eaveTop + (rr - l) / 2f * pitch
                 line(l, eaveTop, mid, ridge, ExteriorElevation.Pen.HEAVY); line(mid, ridge, rr, eaveTop, ExteriorElevation.Pen.HEAVY)
                 line(l, eaveBot, rr, eaveBot, ExteriorElevation.Pen.MEDIUM); line(l, eaveBot, l, eaveTop, ExteriorElevation.Pen.HEAVY); line(rr, eaveBot, rr, eaveTop, ExteriorElevation.Pen.HEAVY)
+                masks += listOf(l to eaveBot, rr to eaveBot, rr to eaveTop, mid to ridge, l to eaveTop)
                 if (style == 1) line(xa, beamTop, xb, beamTop, ExteriorElevation.Pen.MEDIUM)      // the gable end's bottom
                 else shingles(listOf(l to eaveTop, rr to eaveTop, mid to ridge))                   // the hip end's face
             }
@@ -505,7 +525,7 @@ object Porches {
                 }
             }
         }
-        return segs to labels
+        return Triple(segs, labels, masks)
     }
 
     /** The porch on the plan: its outline, what kind it is, and the roof's columns. */

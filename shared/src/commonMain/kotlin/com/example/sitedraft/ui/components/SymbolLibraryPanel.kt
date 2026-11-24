@@ -104,6 +104,8 @@ fun SymbolLibraryPanel(
             SymbolCategory(PlanSymbols.APPLIANCES, Icons.Default.Microwave, com.example.sitedraft.ui.canvas.Appliances.appliances, onEvent)
             SymbolCategory(PlanSymbols.HOODS, Icons.Default.Air, com.example.sitedraft.ui.canvas.Appliances.hoods, onEvent)
             SymbolCategory(PlanSymbols.STAIRS, Icons.Default.Stairs, com.example.sitedraft.ui.canvas.Stairs.library, onEvent)
+            // Guard rails (Nov 24): stretch along a loft, landing or deck edge.
+            SymbolCategory(PlanSymbols.RAILINGS, Icons.Default.Stairs, com.example.sitedraft.ui.canvas.Guards.library, onEvent)
             SymbolCategory(PlanSymbols.CABINETS, Icons.Default.Kitchen, PlanSymbols.cabinets, onEvent)
             SymbolCategory(PlanSymbols.OUTDOOR, Icons.Default.OutdoorGrill, PlanSymbols.outdoor, onEvent)
             SymbolCategory(PlanSymbols.CLOSET, Icons.Default.Checkroom, PlanSymbols.closet, onEvent)

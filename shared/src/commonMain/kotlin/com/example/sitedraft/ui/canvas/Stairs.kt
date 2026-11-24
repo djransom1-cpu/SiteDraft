@@ -74,11 +74,16 @@ object Stairs {
     const val DIR = "stDir"              // what auto worked out: 1 up, 2 down (kept by [sync])
     const val RISE_SET = "stRiseSet"     // 1 = the rise was typed by hand; 0 = it follows the building
     const val SHOW_R = "stShowR"         // 1 = the riser count goes with UP / DN on the plan
+    const val GUARD_AUTO = "stGuardAuto" // 1 = guards around the floor opening's open sides (Guards, Nov 24)
+    const val FIN_TOP = "stFinTop"       // finish floor at the top, inches; -1 = automatic (Nov 24)
+    const val FIN_BOT = "stFinBot"       // finish floor at the bottom, inches; -1 = automatic
+    /** Automatic finish floor (Dan, Nov 24): 3/4" on a framed floor (hardwood, or tile on underlayment), 0 on a slab. */
+    const val FINISH_FRAMED_IN = 0.75f
     /** Code headroom over the nosings (IRC R311.7.2, 6'-8"), for the floor opening over the stair. */
     const val HEADROOM_IN = 80f
 
     val keys = setOf(RISE, TREAD, NOSING, WIDTH, FLIGHT1, TURN, PER_TURN, RAIL_LEFT, RAIL_RIGHT, RAIL_H, GUARD_H, INNER_R, OUTER_R, WALKLINE,
-        GOES, RISE_SET, SHOW_R)
+        GOES, RISE_SET, SHOW_R, GUARD_AUTO, FIN_TOP, FIN_BOT)
     val goesLabels = listOf("Auto", "Up", "Down")
     val railLabels = listOf("None", "Handrail", "Guard + balusters")
     const val RAIL_NONE = 0
@@ -106,6 +111,9 @@ object Stairs {
             DIR to 1f,
             RISE_SET to if (t == Type.DECK) 1f else 0f,
             SHOW_R to 1f,
+            GUARD_AUTO to 1f,
+            FIN_TOP to -1f,
+            FIN_BOT to -1f,
         ).let { if (t == Type.CURVED) it + (RAIL_LEFT to RAIL_GUARD.toFloat()) + (RAIL_RIGHT to RAIL_HANDRAIL.toFloat()) else it }
     }
 
@@ -128,6 +136,19 @@ object Stairs {
         val treads1 get() = (flight1 - 1).coerceAtLeast(0)
         val treads2 get() = (flight2 - 1).coerceAtLeast(0)
         val rise get() = risers * riser
+    }
+
+    /** The plan's cut plane, inches above the floor a stair starts from. */
+    const val CUT_PLANE_IN = 48f
+
+    /**
+     * The tread an up stair's break line crosses (Dan, Nov 24): the first tread whose riser top is past the
+     * cut plane, counted from the bottom (1 = the first tread); null when the whole flight is under it.
+     */
+    fun breakTread(l: Layout): Int? {
+        if (l.riser <= 0f) return null
+        val i = kotlin.math.ceil(CUT_PLANE_IN / l.riser).toInt()
+        return i.takeIf { it in 1 until l.treads }
     }
 
     fun layout(s: DrawingElement.Symbol): Layout {
@@ -237,13 +258,23 @@ object Stairs {
         val n = floorOf(s, state) ?: return null
         val b = state.building
         val here = Building.floorElevationIn(b, n) ?: return null
+        // Finish floor to finish floor (Dan, Nov 24): the floors' heights are to the subfloor (or slab), plus each end's finish.
+        val slabFirst = b.foundation == FoundationType.SLAB
         return if (goesDown(s, state)) {
-            if (n == 1) (if (b.foundation == FoundationType.BASEMENT) here - Building.basementFloorIn(b) else null)
-            else Building.floorElevationIn(b, n - 1)?.let { here - it }
+            val bottom = if (n == 1) (if (b.foundation == FoundationType.BASEMENT) Building.basementFloorIn(b) else return null)
+                else Building.floorElevationIn(b, n - 1) ?: return null
+            val bottomOnSlab = n == 1 || (n - 1 == 1 && slabFirst)
+            (here + finishIn(s, FIN_TOP, n == 1 && slabFirst)) - (bottom + finishIn(s, FIN_BOT, bottomOnSlab))
         } else {
             val above = Building.floorElevationIn(b, n + 1) ?: (here + b.plateHeightIn + b.joistDepthIn + b.subfloorIn)
-            above - here
+            (above + finishIn(s, FIN_TOP, false)) - (here + finishIn(s, FIN_BOT, n == 1 && slabFirst))
         }
+    }
+
+    /** A stair's finish floor at one end ([FIN_TOP] / [FIN_BOT]), inches: as set, or automatic ([FINISH_FRAMED_IN], 0 on a slab). */
+    fun finishIn(s: DrawingElement.Symbol, key: String, onSlab: Boolean): Float {
+        val v = prop(s, key)
+        return if (v >= 0f) v else if (onSlab) 0f else FINISH_FRAMED_IN
     }
 
     /**
@@ -377,7 +408,17 @@ object Stairs {
         when (t) {
             Type.STRAIGHT, Type.DECK -> {
                 parts += Shower.Part.Poly(listOf(Offset(-hw, -hh), Offset(hw, -hh), Offset(hw, hh), Offset(-hw, hh)), true, Shower.Ink.LINE)
-                for (i in 1 until l.treads) seg(Offset(-hw, hh - i * T), Offset(hw, hh - i * T), Shower.Ink.THIN)
+                // An up stair is cut at the plan's cut plane (Dan, Nov 24): a break line at the first riser past 4' up,
+                // the treads beyond it dashed (above the cut). A down stair is seen whole from above.
+                val cut = if (t == Type.STRAIGHT && !down) breakTread(l) else null
+                for (i in 1 until l.treads) seg(Offset(-hw, hh - i * T), Offset(hw, hh - i * T), if (cut != null && i > cut) Shower.Ink.DASHED else Shower.Ink.THIN)
+                if (cut != null) {
+                    val yb = hh - (cut + 0.5f) * T
+                    val a = minOf(W * 0.3f, T * 1.2f)
+                    fun at(f: Float) = Offset(-hw + 2f * hw * f, yb + a - 2f * a * f)
+                    val z = inch * 2.5f
+                    parts += Shower.Part.Poly(listOf(at(0f), at(0.44f), at(0.48f) + Offset(0f, -z), at(0.52f) + Offset(0f, z), at(0.56f), at(1f)), false, Shower.Ink.LINE)
+                }
                 if (t == Type.DECK) {
                     // Three stringers under the open treads.
                     for (x in listOf(-hw + inch * 1.5f, 0f, hw - inch * 1.5f)) seg(Offset(x, -hh), Offset(x, hh), Shower.Ink.DASHED)

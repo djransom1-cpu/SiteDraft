@@ -147,6 +147,7 @@ class ConnectorExportTest {
             putJsonObject("keys") {
                 put("rise", Stairs.RISE); put("tread", Stairs.TREAD); put("width", Stairs.WIDTH); put("flight1", Stairs.FLIGHT1)
                 put("turn", Stairs.TURN); put("goes", Stairs.GOES); put("dir", Stairs.DIR); put("riseSet", Stairs.RISE_SET); put("showR", Stairs.SHOW_R)
+                put("finTop", Stairs.FIN_TOP); put("finBot", Stairs.FIN_BOT)
             }
             put("headroomIn", Stairs.HEADROOM_IN)
             putJsonArray("samples") {

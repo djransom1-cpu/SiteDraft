@@ -2887,6 +2887,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 // A shower carries its glass, curb, tile and fixture settings.
                 if (category == PlanSymbols.SHOWERS) properties = properties + Shower.defaults(name)
                 if (category == PlanSymbols.STAIRS) properties = properties + Stairs.defaults(name)
+                if (category == PlanSymbols.RAILINGS) properties = properties + Guards.defaults(name)
                 if (category in Structure.categories) properties = properties + Structure.defaults(name)
                 if (category == PlanSymbols.DOORS_WINDOWS) {
                     properties = properties + if (PlanSymbols.isWindow(name)) {

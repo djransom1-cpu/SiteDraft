@@ -144,8 +144,9 @@ function buildServer(ctx) {
     change("draw_walls", T.drawWalls));
 
   reg("place_opening",
-    "Puts a door, window, sliding door or cased opening in a wall, positioned like the app's Position on the wall: measured from the " +
-    "left/right end (top/bottom on a north-south wall), to the near edge or the centre, from the room's inside corner or the building's outside corner. " +
+    "Puts a door, window, sliding door or cased opening in a wall: measured from the left/right end (top/bottom on a north-south wall) " +
+    "of the whole wall, from that end's inside corner (or the building's outside corner), to the near edge or the centre, like a field string " +
+    "along the wall, even where interior walls meet it partway. The result also gives the distance from the corner of the room it's in (the app's Position). " +
     "Doors need swing_into (the side the door swings to) and hinge (left/right); a pocket door needs pocket (the side it slides into).",
     {
       project: Project, wall_id: z.string(),
@@ -299,7 +300,9 @@ function buildServer(ctx) {
     "Site Draft builds the roof plan and framing when it reloads the project; the exterior elevations show it. remove: true takes it away. Ask Dan rather than guess.",
     { project: Project, framing: z.enum(["trusses", "rafters"]).optional(), pitch: z.union([z.number(), z.string()]).optional().describe("Rise per 12, e.g. 6 or \"6/12\""),
       overhang: Len.optional().describe("Eave overhang, level, past the wall"), rake: Len.optional().describe("Overhang at a gable end"), heel: Len.optional(),
-      spacing: Len.optional().describe("Truss or rafter spacing"), rafter_size: z.string().optional().describe("e.g. 2x8 (rafters)"),
+      spacing: Len.optional().describe("Truss or rafter spacing (switching framing sets 24\" trusses / 16\" rafters unless given)"), rafter_size: z.string().optional().describe("e.g. 2x8 (rafters)"),
+      girder_height: Len.optional().describe("Truss hip ends (step-down hip): the hip girder goes where the truss is this tall, default 5' (Dan: 4'-6')"),
+      addon_spacing: Len.optional().describe("Garage and wing truss spacing, default 24\""),
       ends: z.enum(["gable", "hip"]).optional().describe("Both ends"), end_a: z.enum(["gable", "hip"]).optional().describe("The west (or north) end"),
       end_b: z.enum(["gable", "hip"]).optional().describe("The east (or south) end"), turn_ridge: z.boolean().optional().describe("Run the ridge the short way"),
       covering: z.string().optional().describe("shingles, standing seam, metal (exposed fastener), cedar shakes, spanish tile, slate"), remove: z.boolean().optional() },

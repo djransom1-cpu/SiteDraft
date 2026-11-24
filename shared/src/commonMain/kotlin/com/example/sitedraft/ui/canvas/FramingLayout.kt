@@ -6,7 +6,8 @@ import androidx.compose.ui.geometry.Offset
  * One layout for the whole house (Dan, Nov 24): studs, joists and ladder blocks all on the same
  * 16" marks, measured west to east from the outside of the west wall and north to south from the
  * outside of the north wall, wherever an interior wall starts. Members are centred on the marks.
- * Stud bays then sit over joist bays, open for the plumber and the HVAC runs.
+ * Stud bays then sit over joist bays, open for the plumber and the HVAC runs. Upper-floor joists and the roof
+ * trusses stack on it too (24" trusses land on every third 16" mark, every 48"); the first floor's walls set it.
  */
 object FramingLayout {
     const val SPACING_IN = 16f
@@ -22,10 +23,77 @@ object FramingLayout {
             it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL && !DerivedLayers.isGenerated(it) &&
                 Remodel.status(it) != WallStatus.DEMO && it.rotation % 90f == 0f
         }
-        val o = if (ext.isEmpty()) null else ext.map { FloorPlan.bounds(it) }.let { rs -> Offset(rs.minOf { it.left }, rs.minOf { it.top }) }
+        // The first floor's walls set it (an upper floor that overhangs doesn't move the layout under it).
+        val of = Layers.resolver(state)
+        val first = ext.filter { of(it).id == Building.FLOOR1_PLAN }
+        val base = first.ifEmpty { ext }
+        val o = if (base.isEmpty()) null else base.map { FloorPlan.bounds(it) }.let { rs -> Offset(rs.minOf { it.left }, rs.minOf { it.top }) }
         cacheFor = els
         cached = o
         return o
+    }
+
+    /**
+     * A wall buck (Dan, Nov 24): where a wall meets the face of another (a T), the wall being met gets two studs side by
+     * side and a third laid flat against the face the other wall comes in on, beside the pair, centred on the meeting
+     * wall: nailing for the drywall on both sides of it. [centerPx] from the wall's start (west / north end); [side] the
+     * face in the wall's own drawing frame: +1 its +y face (south of a west-east wall, west of a north-south one), -1 the other.
+     */
+    data class Buck(val centerPx: Float, val side: Int)
+
+    private var bucksFor: List<DrawingElement>? = null
+    private var bucks: Map<String, List<Buck>> = emptyMap()
+
+    /**
+     * Every framed wall's bucks, by wall id. A wall whose end touches another's face (within an inch) away from that
+     * wall's ends makes a buck there; at a corner (an L) the two end studs already make the corner buck.
+     */
+    fun bucks(state: CanvasState): Map<String, List<Buck>> {
+        val els = state.elements
+        if (els === bucksFor) return bucks
+        val inch = state.inchesToPx(1f)
+        val walls = els.filterIsInstance<DrawingElement.Symbol>().filter {
+            it.category == PlanSymbols.WALLS && !DerivedLayers.isGenerated(it) && Remodel.status(it) != WallStatus.DEMO && it.rotation % 90f == 0f
+        }
+        val out = HashMap<String, MutableList<Buck>>()
+        val tol = inch
+        for (w in walls) {
+            val depthIn = Schedules.studDepthIn(w.symbolName) ?: continue
+            val wb = FloorPlan.bounds(w)
+            val horiz = Elevation.isHorizontal(w)
+            val len = if (horiz) wb.width else wb.height
+            val half = (3f + depthIn) / 2f * inch
+            for (b in walls) {
+                if (b.id == w.id || Elevation.isHorizontal(b) == horiz) continue
+                val bb = FloorPlan.bounds(b)
+                val c: Float
+                val side: Int
+                if (horiz) {
+                    c = bb.center.x - wb.left
+                    if (bb.center.x <= wb.left || bb.center.x >= wb.right) continue
+                    side = when {
+                        bb.top >= wb.top - tol && bb.top <= wb.bottom + tol && bb.bottom > wb.bottom + tol -> 1
+                        bb.bottom <= wb.bottom + tol && bb.bottom >= wb.top - tol && bb.top < wb.top - tol -> -1
+                        else -> 0
+                    }
+                } else {
+                    c = bb.center.y - wb.top
+                    if (bb.center.y <= wb.top || bb.center.y >= wb.bottom) continue
+                    side = when {
+                        bb.right <= wb.right + tol && bb.right >= wb.left - tol && bb.left < wb.left - tol -> 1   // comes in from the west
+                        bb.left >= wb.left - tol && bb.left <= wb.right + tol && bb.right > wb.right + tol -> -1  // from the east
+                        else -> 0
+                    }
+                }
+                if (side == 0) continue
+                // Near the wall's end it's a corner: the end studs make that buck.
+                if (c < half + 1.5f * inch || c > len - half - 1.5f * inch) continue
+                out.getOrPut(w.id) { mutableListOf() } += Buck(c, side)
+            }
+        }
+        bucksFor = els
+        bucks = out
+        return out
     }
 
     private var spansFor: List<DrawingElement>? = null

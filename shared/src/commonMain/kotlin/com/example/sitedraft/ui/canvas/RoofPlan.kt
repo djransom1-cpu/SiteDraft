@@ -65,8 +65,24 @@ object RoofPlan {
         val spanIn: Float,
         val lengthIn: Float,
         val ridgeStart: Offset,
-        val ridgeEnd: Offset
+        val ridgeEnd: Offset,
+        /** Truss hip ends: each hip girder's middle on the page, for its label. */
+        val girders: List<Offset> = emptyList()
     )
+
+    /**
+     * A truss hip end's girder (Dan, Nov 24: step-down hip, manufacturer corner jacks): in from the end wall's outside
+     * where the truss is [RoofSettings.girderHeightIn] tall (heel plus the rise), to the nearest layout mark, at least
+     * one space in and no farther than half the span (where the commons start). Inches; null when not a truss roof.
+     */
+    fun girderSetbackIn(r: RoofSettings, spanIn: Float): Float? {
+        if (r.framing != RoofFraming.TRUSSES || r.pitch <= 0f) return null
+        val oc = max(r.ocIn, 4f)
+        val raw = ((r.girderHeightIn - r.heelIn) * 12f / r.pitch).coerceAtLeast(0f)
+        val most = kotlin.math.floor(spanIn / 2f / oc) * oc
+        if (most < oc) return null
+        return ((raw / oc).roundToInt() * oc).coerceIn(oc, most)
+    }
 
     fun geometry(state: CanvasState, r: RoofSettings): Geometry? {
         val fp = footprint(state) ?: return null
@@ -100,15 +116,34 @@ object RoofPlan {
         // Trusses or rafters at their spacing from the end wall, eave to ridge on each side; in a hip
         // end they stop at the hip (jacks), which runs at 45 deg from the eave corner.
         val oc = max(r.ocIn, 4f) * k
-        val count = ((L.width) / oc).toInt()
-        val positions = (0..count).map { L.left + it * oc } + (if (L.left + count * oc < L.right - k) listOf(L.right) else emptyList())
+        // Trusses: a hip end is a step-down hip (Dan, Nov 24). Corner and end jacks out to the girder, the girder,
+        // step-down trusses (full width, flat tops) from it to the commons. Rafters: jacks run to the hip all the way.
+        val setback = girderSetbackIn(r, span / k)?.let { it * k }
+        val gA = if (r.endA == RoofEnd.HIP && setback != null) L.left + setback else null
+        val gB = if (r.endB == RoofEnd.HIP && setback != null) L.right - setback else null
+        val limA = gA ?: ru1
+        val limB = gB ?: ru2
+        // On the house layout (FramingLayout): the end members on the walls, the rest on the spacing measured from
+        // the layout's origin, so they stack over the studs and joists below.
+        val uo = FramingLayout.origin(state)?.let { if (across) it.x else it.y } ?: L.left
+        val marks = buildList {
+            var u = L.left + FramingLayout.firstMark(L.left, uo, oc)
+            while (u < L.right - k && size < 2000) { add(u); u += oc }
+        }
+        val positions = (listOf(L.left) + marks.filter { it > L.left + k } + listOf(L.right) + listOfNotNull(gB)).distinct().sorted()
         for (u in positions) {
             // How far in from each eave the hip reaches at this point (0 outside a hip end).
-            val inA = if (r.endA == RoofEnd.HIP && u < ru1) (u - eu1) else Float.MAX_VALUE
-            val inB = if (r.endB == RoofEnd.HIP && u > ru2) (eu2 - u) else Float.MAX_VALUE
+            val inA = if (r.endA == RoofEnd.HIP && u < limA - 0.01f) (u - eu1) else Float.MAX_VALUE
+            val inB = if (r.endB == RoofEnd.HIP && u > limB + 0.01f) (eu2 - u) else Float.MAX_VALUE
             val reach = min(min(inA, inB), vc - ev1)
+            if (reach >= vc - ev1) { line(u, ev1, u, ev2, Kind.MEMBER); continue }
             line(u, ev1, u, ev1 + reach, Kind.MEMBER)
             line(u, ev2, u, ev2 - reach, Kind.MEMBER)
+        }
+        // The girders: plies drawn side by side (1-1/2" each, three), wall to wall with the tails.
+        for (g in listOfNotNull(gA, gB)) {
+            val dir = if (g == gA) 1f else -1f
+            for (ply in 1..2) line(g + dir * ply * 1.5f * k, ev1, g + dir * ply * 1.5f * k, ev2, Kind.MEMBER)
         }
         // A hip end's own jacks (Dan, Nov 22): square to the end wall, from its eave to the hip, laid
         // out from the king common in the middle (which runs to the end of the ridge) at the spacing.
@@ -119,13 +154,14 @@ object RoofPlan {
         }.filter { it >= L.top - 0.01f && it <= L.bottom + 0.01f }
         for (v in endPositions) {
             val reach = min(v - ev1, ev2 - v)
-            if (r.endA == RoofEnd.HIP) line(eu1, v, eu1 + min(reach, ru1 - eu1), v, Kind.MEMBER)
-            if (r.endB == RoofEnd.HIP) line(eu2, v, eu2 - min(reach, eu2 - ru2), v, Kind.MEMBER)
+            if (r.endA == RoofEnd.HIP) line(eu1, v, eu1 + min(reach, limA - eu1), v, Kind.MEMBER)
+            if (r.endB == RoofEnd.HIP) line(eu2, v, eu2 - min(reach, eu2 - limB), v, Kind.MEMBER)
         }
         val ridgeStart = page(ru1, vc)
         val ridgeEnd = page(ru2, vc)
         val eave = if (across) Rect(eu1, ev1, eu2, ev2) else Rect(ev1, eu1, ev2, eu2)
-        return Geometry(eave, fp, across, lines, span / k, L.width / k, ridgeStart, ridgeEnd)
+        val girders = listOfNotNull(gA?.let { page(it, (ev1 + vc) / 2f) }, gB?.let { page(it, (ev1 + vc) / 2f) })
+        return Geometry(eave, fp, across, lines, span / k, L.width / k, ridgeStart, ridgeEnd, girders)
     }
 
     /** ProCalc's numbers for this roof: rafter (or top chord) and hip cuts, ridge, count, sheathing. */
@@ -156,6 +192,9 @@ object RoofPlan {
             "$member @ ${formatInches(r.ocIn)}\" o.c.: ${n.roof.commonCount} " + (if (r.framing == RoofFraming.TRUSSES) "trusses" else "commons"),
             "Rafter to wall ${ftIn(n.rafter.rafterLen)}, tail ${ftIn(n.rafter.tailLen)}, overall ${ftIn(n.rafter.overall)}",
             if (n.roof.totalHips > 0) "Hips: ${n.roof.totalHips} at ${ftIn(n.rafter.hipOverall)} overall (hip pitch ${pitchText(n.rafter.hipPitch.toFloat())})" else null,
+            girderSetbackIn(r, g.spanIn)?.takeIf { r.endA == RoofEnd.HIP || r.endB == RoofEnd.HIP }?.let {
+                "Hip girder ${ftIn(it.toDouble())} in from the end wall, truss ${ftIn((r.heelIn + it * r.pitch / 12f).toDouble())} tall there; step-downs to the commons at ${ftIn(g.spanIn / 2.0)}"
+            },
             "Sheathing about ${n.roof.totalSqFt.roundToInt()} sq ft, ${n.roof.sheetCount} sheets; sub-fascia ${(n.roof.totalSubFasciaLF / 12.0).roundToInt()} lf",
             "Roofing: ${r.covering.label}, about ${kotlin.math.ceil(n.roof.totalSqFt / 100.0).toInt()} squares (same area as the sheathing, no waste)"
         )
@@ -203,7 +242,7 @@ object RoofPlan {
             }
             val c = gr.boundingRect().center
             val p = pitchText(state.building.roof?.pitch ?: 6f)
-            label(if (finish) "GARAGE ROOF $p" else "GARAGE TRUSSES @ ${formatInches(state.building.roof?.ocIn ?: 24f)}\" O.C., $p", c)
+            label(if (finish) "GARAGE ROOF $p" else "GARAGE TRUSSES @ ${formatInches(state.building.roof?.addOnOcIn ?: 24f)}\" O.C., $p", c)
         }
         // Wing roofs (Wings.roof3d): tied into the house roof with valleys.
         for (wr in Wings.wings(state)) {
@@ -215,7 +254,7 @@ object RoofPlan {
                 Kind.WALL -> drawLine(faint, l.a, l.b, strokeWidth = thin, pathEffect = dash)
             }
             val p = pitchText(state.building.roof?.pitch ?: 6f)
-            label(if (finish) "WING ROOF $p" else "WING TRUSSES @ ${formatInches(state.building.roof?.ocIn ?: 24f)}\" O.C., $p", wr.boundingRect().center)
+            label(if (finish) "WING ROOF $p" else "WING TRUSSES @ ${formatInches(state.building.roof?.addOnOcIn ?: 24f)}\" O.C., $p", wr.boundingRect().center)
         }
     }
 
@@ -250,7 +289,7 @@ object RoofPlan {
         }
         // Labels: what the members are, the pitch on each side, and the ridge.
         val text = k * 7f
-        val member = if (r.framing == RoofFraming.TRUSSES) "TRUSSES @ ${formatInches(r.ocIn)}\" O.C." else "${r.rafterSize} RAFTERS @ ${formatInches(r.ocIn)}\" O.C."
+        val member = if (r.framing == RoofFraming.TRUSSES) "TRUSSES @ ${formatInches(r.ocIn)}\" O.C. BY MANUFACTURER" else "${r.rafterSize} RAFTERS @ ${formatInches(r.ocIn)}\" O.C."
         val c = g.footprint.center
         fun label(t: String, at: Offset, size: Float = text) {
             val w = size * 0.6f * t.length
@@ -261,6 +300,15 @@ object RoofPlan {
         label(pitchText(r.pitch), c - off)
         label(pitchText(r.pitch), c + off)
         val ridgeMid = (g.ridgeStart + g.ridgeEnd) / 2f
+        // Hip girders: a tag on a white patch beside the plies.
+        for (gp in g.girders) {
+            val t = "HIP GIRDER"
+            val sz = text * 0.8f
+            val w = sz * 0.6f * t.length
+            val at = gp
+            drawRect(state.backgroundColor, topLeft = Offset(at.x - w / 2f - sz * 0.3f, at.y - sz * 0.8f), size = androidx.compose.ui.geometry.Size(w + sz * 0.6f, sz * 1.6f))
+            label(t, at, sz)
+        }
         label("RIDGE", ridgeMid - (if (g.ridgeAcross) Offset(0f, text * 1.2f) else Offset(text * 2.5f, 0f)), text * 0.8f)
     }
 

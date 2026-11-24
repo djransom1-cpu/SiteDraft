@@ -304,13 +304,20 @@ function setRoof(project, a) {
     return { state: project, result: { roof: "removed" } };
   }
   const r = { ...(s.roof || {}) };
-  if (a.framing) r.framing = { trusses: "TRUSSES", rafters: "RAFTERS" }[String(a.framing).toLowerCase()];
+  if (a.framing) {
+    const f = { trusses: "TRUSSES", rafters: "RAFTERS" }[String(a.framing).toLowerCase()];
+    // Switching changes the spacing to that framing's usual (Dan: trusses 24", rafters 16") unless one is given.
+    if (a.spacing == null && f !== (r.framing || "TRUSSES")) r.ocIn = f === "TRUSSES" ? 24 : 16;
+    r.framing = f;
+  }
   if (a.pitch != null) { const p = Number(String(a.pitch).split("/")[0]); if (!(p > 0 && p <= 24)) throw new M.UserError("pitch: rise per 12, e.g. 6 for a 6/12."); r.pitch = p; }
   if (a.overhang != null) r.overhangIn = len(a.overhang, "overhang");
   if (a.rake != null) r.rakeIn = len(a.rake, "rake");
   if (a.heel != null) r.heelIn = len(a.heel, "heel");
   if (a.spacing != null) r.ocIn = len(a.spacing, "spacing");
   if (a.rafter_size) r.rafterSize = String(a.rafter_size);
+  if (a.girder_height != null) { const g = len(a.girder_height, "girder_height"); if (!(g > 0 && g <= 240)) throw new M.UserError("girder_height: how tall the truss is at the hip girder, e.g. 5'."); r.girderHeightIn = g; }
+  if (a.addon_spacing != null) r.addOnOcIn = len(a.addon_spacing, "addon_spacing");
   const end = (v, what) => { const x = { gable: "GABLE", hip: "HIP" }[String(v).toLowerCase()]; if (!x) throw new M.UserError(`${what}: gable or hip.`); return x; };
   if (a.ends) { r.endA = end(a.ends, "ends"); r.endB = r.endA; }
   if (a.end_a) r.endA = end(a.end_a, "end_a");
@@ -326,7 +333,8 @@ function setRoof(project, a) {
   reconcile(project);
   compact(project);
   const shown = { framing: (r.framing || "TRUSSES").toLowerCase(), pitch: `${r.pitch ?? 6}/12`, overhang: inchText(r.overhangIn ?? 12), rake: inchText(r.rakeIn ?? 12),
-    heel: inchText(r.heelIn ?? 4), spacing: `${inchText(r.ocIn ?? 24)} o.c.`, ends: `${(r.endA || "GABLE").toLowerCase()} / ${(r.endB || "GABLE").toLowerCase()}`,
+    heel: inchText(r.heelIn ?? 4), spacing: `${inchText(r.ocIn ?? 24)} o.c.`, garage_and_wing_trusses: `${inchText(r.addOnOcIn ?? 24)} o.c.`,
+    hip_girder_at_truss_height: (r.framing || "TRUSSES") === "TRUSSES" ? inchText(r.girderHeightIn ?? 60) : undefined, ends: `${(r.endA || "GABLE").toLowerCase()} / ${(r.endB || "GABLE").toLowerCase()}`,
     ridge: r.turnRidge ? "turned (runs the short way)" : "runs the long way", covering: (r.covering || "ARCH_SHINGLES").toLowerCase().replace(/_/g, " ") };
   return { state: project, result: { roof: shown, note: "Site Draft builds the roof plan and framing over the first-floor 2x6 exterior walls when it reloads the project (within a few seconds if it's open)." } };
 }

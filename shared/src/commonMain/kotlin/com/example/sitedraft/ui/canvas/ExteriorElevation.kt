@@ -495,7 +495,16 @@ object ExteriorElevation {
         // Porches on this face or sticking out past it (Porches.elevation, Nov 23).
         val porchLabels = mutableListOf<Label>()
         for (pc in state.elements.filterIsInstance<DrawingElement.Symbol>().filter { Porches.isPorch(it) && of(it).id == Building.FLOOR1_PLAN }) {
-            val (ps, pl) = Porches.elevation(pc, state, side, fp, k)
+            val (ps, pl, masks) = Porches.elevationWithMasks(pc, state, side, fp, k)
+            // In front of the house wall it hides the siding and brick behind its columns, beam, roof and deck (Dan, Nov 24).
+            for (m in masks) {
+                val poly = m.map { Offset(it.first, it.second) }
+                val kept = segs.flatMap { sg ->
+                    if (sg.pen == Pen.HIDDEN) return@flatMap listOf(sg)
+                    Wings.outside(Offset(sg.a.x, -sg.a.y), Offset(sg.b.x, -sg.b.y), poly).map { (a, b) -> Seg(Offset(a.x, -a.y), Offset(b.x, -b.y), sg.pen) }
+                }
+                segs.clear(); segs += kept
+            }
             ps.forEach { line(it.x1, it.e1, it.x2, it.e2, it.pen) }
             pl.forEach { porchLabels += Label(it.text, Offset(it.x - it.text.length * textIn * 0.31f, y(it.e + textIn * 0.5f))) }
         }

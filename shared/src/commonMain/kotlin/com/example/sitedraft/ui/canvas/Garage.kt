@@ -394,6 +394,9 @@ object Garages {
         s3(ee1, c1 - ov, eaveZ, ee2, c1 - ov, eaveZ, RoofPlan.Kind.EAVE)
         s3(ee1, c2 + ov, eaveZ, ee2, c2 + ov, eaveZ, RoofPlan.Kind.EAVE)
         // The ends: against the house the roof dies into the wall (its outline on the wall); else a gable rake or a hip.
+        // Where the roof runs on over the house roof (Dan, Nov 24): a valley set (trusses) on the house roof, out to the ridge's end.
+        data class Over(val end: Float, val ridgeIn: Float, val eaveIn: Float, val flush1: Boolean, val flush2: Boolean)
+        val overs = mutableListOf<Over>()
         for ((end, atHouse, rEnd) in listOf(Triple(e1, houseAtA1, r1), Triple(e2, houseAtA2, r2))) {
             if (atHouse && houseEaveFaces && hr != null) {
                 // Into the house's eave side: the ridge runs on until it meets the house roof, valleys from the eaves.
@@ -408,6 +411,7 @@ object Garages {
                 // valley there; the house's hip stops at this ridge and the hip end's rafters run up to it.
                 if (!flushHipAt(c1)) s3(eaveIn, c1 - ov, eaveZ, ridgeIn, cm, ridgeZ, RoofPlan.Kind.HIP)
                 if (!flushHipAt(c2)) s3(eaveIn, c2 + ov, eaveZ, ridgeIn, cm, ridgeZ, RoofPlan.Kind.HIP)
+                overs += Over(end, ridgeIn, eaveIn, flushHipAt(c1), flushHipAt(c2))
             } else if (atHouse) {
                 s3(end, c1 - ov, eaveZ, end, cm, ridgeZ, RoofPlan.Kind.EAVE); s3(end, cm, ridgeZ, end, c2 + ov, eaveZ, RoofPlan.Kind.EAVE)
             } else if (hip) {
@@ -424,7 +428,7 @@ object Garages {
         }
         // Trusses square to the ridge at the house's spacing. In a hip end they stop at the hips (jacks from each eave),
         // and the end gets its own jacks square to the end wall, out from the king common at the middle (as the house's).
-        val oc = (hr?.ocIn ?: 24f).coerceAtLeast(4f) * k
+        val oc = (hr?.addOnOcIn ?: 24f).coerceAtLeast(4f) * k
         val hipA1 = hip && !houseAtA1
         val hipA2 = hip && !houseAtA2
         var a = a1
@@ -438,6 +442,21 @@ object Garages {
                 s3(a, c2 + ov, eaveZ, a, c2 + ov - reach, eaveZ, RoofPlan.Kind.MEMBER)
             }
             a += oc
+        }
+        // The valley set: on the trusses' layout past the house wall, eave to eave until the eaves meet the house roof,
+        // then valley to valley, shorter each one, up to the ridge's end. A side in line with a house hip end has no
+        // valley (one plane with the hip end): its members run out to that eave.
+        for (o in overs) {
+            val dir = if (o.ridgeIn >= o.end) 1f else -1f
+            var a = if (dir > 0f) a1 + (kotlin.math.floor((o.end - a1) / oc + 1e-3f) + 1f) * oc else a1 - oc
+            while ((o.ridgeIn - a) * dir > 0.5f * k) {
+                val t = if (kotlin.math.abs(o.ridgeIn - o.eaveIn) < 0.01f) 1f else ((a - o.eaveIn) / (o.ridgeIn - o.eaveIn)).coerceIn(0f, 1f)
+                val reach = (1f - t) * (half + ov)
+                val lo = if (o.flush1) c1 - ov else cm - reach
+                val hi = if (o.flush2) c2 + ov else cm + reach
+                if (hi - lo > k) s3(a, lo, eaveZ, a, hi, eaveZ, RoofPlan.Kind.MEMBER)
+                a += dir * oc
+            }
         }
         for ((isHip, end, rEnd) in listOf(Triple(hipA1, e1, r1), Triple(hipA2, e2, r2))) {
             if (!isHip) continue
@@ -518,13 +537,15 @@ object Garages {
         // The house's exterior finish above the block course (Dan, Nov 23: match the house), broken at the doors
         // and their headers; plain lap siding when the job has no finish set.
         val fin = s.exterior ?: ExteriorFinish(main = WallFinish.LAP, mainIn = 6f, cornerTrimIn = 0f)
-        val doorHoles = doorXs.map { (a, b) -> Rect(a - 1.5f, slab, b + 1.5f, slab + dh + hdr.depthIn) }
+        // The header shows only below the soffit (Dan, Nov 24: it was drawn up past the fascia).
+        val hdrTop = minOf(slab + dh + hdr.depthIn, wallTop)
+        val doorHoles = doorXs.map { (a, b) -> Rect(a - 1.5f, slab, b + 1.5f, hdrTop) }
         ExteriorElevation.finishWall(fin, xa, xb, sill, wallTop, doorHoles, null, ::line)
         // Doors with three panel lines, the header over each.
         for ((a, b) in doorXs) {
             rect(a, slab, b, slab + dh, ExteriorElevation.Pen.MEDIUM)
             for (i in 1..3) line(a, slab + dh * i / 4f, b, slab + dh * i / 4f, ExteriorElevation.Pen.THIN)
-            rect(a - 1.5f, slab + dh, b + 1.5f, slab + dh + hdr.depthIn, ExteriorElevation.Pen.THIN)
+            if (hdrTop > slab + dh) rect(a - 1.5f, slab + dh, b + 1.5f, hdrTop, ExteriorElevation.Pen.THIN)
             labels += Porches.ELabel("${formatFeetInches((b - a) / 12f)} x ${formatFeetInches(dh / 12f)} OVERHEAD DOOR", (a + b) / 2f, slab + dh / 2f)
         }
         // Labels inside the wall, clear of the fascia: the header just under the door head, the name above the door label.
@@ -604,7 +625,10 @@ object Garages {
             }
         }
         val hr = s.roof
-        val seesFace = alongX == (view == ViewerSide.ABOVE || view == ViewerSide.BELOW)
+        // A side plane faces the view, or a hip end does (Dan, Nov 24: the wing's hip end had no shingles): its eave
+        // runs level across the view. A gable end shows only its rakes.
+        val seesFace = alongX == (view == ViewerSide.ABOVE || view == ViewerSide.BELOW) ||
+            drawn.any { (a, b, kind) -> kind == RoofPlan.Kind.EAVE && kotlin.math.abs(a.second - b.second) < 0.01f && kotlin.math.abs(a.first - b.first) > 1f }
         if (hr != null && seesFace) {
             val exposure = (hr.coveringIn ?: hr.covering.defaultIn).coerceAtLeast(2f)
             val dz = exposure * hr.pitch / kotlin.math.sqrt(144f + hr.pitch * hr.pitch)

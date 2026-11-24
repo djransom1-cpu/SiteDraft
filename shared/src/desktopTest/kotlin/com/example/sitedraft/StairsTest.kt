@@ -37,6 +37,16 @@ class StairsTest {
     }
 
     @Test
+    fun `an up stair breaks at the first riser past the 4 foot cut plane`() {
+        // 108" in 14 risers of 7.71": riser 7 tops out at 54", past 48", so the break crosses the 7th tread.
+        val l = Stairs.layout(stair(Stairs.STRAIGHT).let { it.copy(properties = it.properties + (Stairs.RISE to 108f)) })
+        assertEquals(14, l.risers)
+        assertEquals(7, Stairs.breakTread(l))
+        // A short flight under the cut plane has no break.
+        assertEquals(null, Stairs.breakTread(Stairs.layout(stair(Stairs.STRAIGHT).let { it.copy(properties = it.properties + (Stairs.RISE to 30f)) })))
+    }
+
+    @Test
     fun `a straight stair is as long as its treads`() {
         val s = stair(Stairs.STRAIGHT)
         val (w, d) = Stairs.footprintIn(s)

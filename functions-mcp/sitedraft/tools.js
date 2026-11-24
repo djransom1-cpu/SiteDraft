@@ -473,6 +473,17 @@ function placeOpening(state, a) {
     sym = M.makeSymbol({ name, category: G.DOORS_WINDOWS, center: { x: midX, y: midY }, widthPx: horizontal ? w : t, depthPx: horizontal ? t : w,
       color: ink(state), properties: { widthInches: widthIn, depthInches: M.footprints[name][1], ...props } });
   }
+  // Seat it at the end being measured from first (Nov 24): openingShift measures from the corners of the room the
+  // opening is in, so starting at the wall's middle measured from a room partway along a wall that interior walls
+  // split. From the end, the distance runs from that end's corner, like a field string along the wall.
+  {
+    const ax0 = G.axis(horizontal);
+    const anchor0 = ax0.a(G.openingAnchor(sym));
+    const target = ref.fromEnd ? ax0.a2(wb) - w / 2 - inch : ax0.a1(wb) + w / 2 + inch;
+    const d = ax0.along(target - anchor0);
+    const c = M.pt(sym.center);
+    sym.center = M.ptText({ x: c.x + d.x, y: c.y + d.y });
+  }
   const withIt = { ...state, elements: [...(state.elements || []), sym] };
   const distance = len(a.distance ?? 0, "distance");
   const shift = G.openingShift(sym, withIt, distance * inch, ref, inch);
@@ -493,7 +504,8 @@ function placeOpening(state, a) {
     if (lo < oa + ow - 0.5 && hi > oa - ow + 0.5) fail(`That overlaps the ${o.symbolName} (${o.id}) already in this wall.`);
   }
   const check = G.openingDistance(sym, withIt, ref, inch);
-  return { state: withIt, result: { placed: { id: sym.id, type: name, wallId: wall.id, widthIn: r2(widthIn), measured: `${fmt(check / inch, state)} from the ${from} ${ref.outside ? "outside" : "inside"} corner to the ${ref.toCenter ? "centre" : "near edge"}` } } };
+  return { state: withIt, result: { placed: { id: sym.id, type: name, wallId: wall.id, widthIn: r2(widthIn), measured: `${fmt(distance, state)} from the ${from} end's ${ref.outside ? "outside" : "inside"} corner to the ${ref.toCenter ? "centre" : "near edge"}`,
+    inItsRoom: `${fmt(check / inch, state)} from the ${from} ${ref.outside ? "outside" : "inside"} corner of the room it's in (what the app's Position shows)` } } };
 }
 
 // =============================================================================== cabinets

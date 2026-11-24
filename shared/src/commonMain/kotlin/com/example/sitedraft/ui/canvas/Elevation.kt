@@ -45,6 +45,8 @@ data class ElevationSpec(
     val stairSide: Int = -1,
     /** Set (0 front, 1 back, 2 left end, 3 right end) when [wallId] is an island: that face of it. */
     val islandFace: Int = -1,
+    /** True: [wallId]'s framing elevation (WallFraming, Nov 24) - plates, studs on layout, jacks, kings, headers, cripples. */
+    val framing: Boolean = false,
     /** Crown molding on top of the uppers (and pantries), this tall in inches; 0 = none. */
     val crownIn: Float = 0f,
     /** A valance across the gap between two uppers over a sink (the window over the sink). */
@@ -196,6 +198,7 @@ object Elevation {
         if (spec.showerFace >= 0 && wall.category == PlanSymbols.SHOWERS) Shower.elevationSize(wall, spec.showerFace, state)
         else if (spec.stairSide >= 0 && wall.category == PlanSymbols.STAIRS) Stairs.elevationSize(wall, spec.stairSide, state)
         else if (spec.islandFace >= 0 && PlanSymbols.isIsland(wall)) islandSize(wall, spec, state)
+        else if (spec.framing && wall.category == PlanSymbols.WALLS) WallFraming.elevationSize(wall, state)
         else Size(lengthPx(wall), state.inchesToPx(spec.wallHeightIn))
 
     /** Where a point sits along the wall, measured from the end on the viewer's LEFT. */
@@ -301,6 +304,8 @@ object Elevation {
                 Stairs.buildElevation(wall, view.spec.stairSide, view.origin, state, view.color)
             view.spec.islandFace >= 0 && PlanSymbols.isIsland(wall) ->
                 buildIsland(wall, view.spec, view.origin, state, view.color)
+            view.spec.framing && wall.category == PlanSymbols.WALLS ->
+                WallFraming.buildElevation(wall, view.spec.side, view.origin, state, view.color)
             else -> build(wall, view.spec, view.origin, state, view.color)
         }
     }

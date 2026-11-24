@@ -95,6 +95,12 @@ class WingTest {
         // Set in from the corner: valleys both sides.
         val inset = sym(Wings.NAME, Wings.CATEGORY, 240f, -240f, 408f, 0f, "w2", mapOf(Wings.FOUND to 1f))
         assertEquals(4, Wings.roof3d(inset, st(inset)).count { it.kind == RoofPlan.Kind.HIP })
+        // The valley set (Dan, Nov 24): wing members run on over the house roof, past the wall (y > 0), up to the ridge's end.
+        for (w in listOf(flush, inset)) {
+            val over = Wings.roof3d(w, st(w)).filter { it.kind == RoofPlan.Kind.MEMBER && it.a.y > 1f && kotlin.math.abs(it.a.y - it.b.y) < 0.01f }
+            println("valley set ${w.id}: ${over.size} " + over.joinToString { "y=${it.a.y / inch} x=${it.a.x / inch}..${it.b.x / inch}" })
+            assertTrue("valley set on ${w.id}", over.isNotEmpty())
+        }
         // The house roof: its northeast hip now stops at the wing's ridge (x = 396", half the wing in from the wall).
         val s = st(flush)
         val g = RoofPlan.geometry(s, hips)!!
@@ -102,6 +108,12 @@ class WingTest {
         val neHip = trimmed.filter { it.kind == RoofPlan.Kind.HIP && maxOf(it.a.x, it.b.x) / inch > 340f && minOf(it.a.y, it.b.y) / inch < 143f }
         assertEquals(1, neHip.size)
         assertEquals(396f, maxOf(neHip[0].a.x, neHip[0].b.x) / inch, 0.6f)
+        // In line with the hip end, the wing's members frame that corner: no house hip-end jacks left there (Dan, Nov 24).
+        assertTrue(trimmed.none { it.kind == RoofPlan.Kind.MEMBER && (it.a.x + it.b.x) / 2f / inch in 400f..490f && (it.a.y + it.b.y) / 2f / inch in -10f..80f })
+        // The house's east eave still runs the full length.
+        assertTrue("east eaves: " + trimmed.filter { it.kind == RoofPlan.Kind.EAVE && maxOf(it.a.x, it.b.x) / inch > 400f }.joinToString { "(${it.a.x / inch},${it.a.y / inch})-(${it.b.x / inch},${it.b.y / inch})" } +
+            " cover: " + Wings.houseRoofCover(flush, s)!!.joinToString { "(${it.x / inch},${it.y / inch})" },
+            trimmed.any { it.kind == RoofPlan.Kind.EAVE && kotlin.math.abs(it.a.x - it.b.x) < 0.01f && it.a.x / inch > 490f && minOf(it.a.y, it.b.y) / inch < 0f })
         // No house eave left along the north wall over the wing.
         assertTrue(trimmed.none { it.kind == RoofPlan.Kind.EAVE && kotlin.math.abs(it.a.y - it.b.y) < 0.01f && it.a.y / inch < 0f &&
             minOf(it.a.x, it.b.x) / inch > 300f })

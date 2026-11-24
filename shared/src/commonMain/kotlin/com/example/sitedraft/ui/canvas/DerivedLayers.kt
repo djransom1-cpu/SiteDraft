@@ -79,7 +79,7 @@ object DerivedLayers {
     fun sync(state: CanvasState): CanvasState {
         if (!state.building.autoLayers) return state
         // Stairs open the floor framing at their top (Stairs.floorOpening, Nov 24).
-        val desired = (asExisting(build(state), state) + Stairs.floorOpenings(state)).map { stamped(it) }
+        val desired = (planParts(state) + Stairs.floorOpenings(state) + Guards.forStairs(state)).map { stamped(it) }
         val current = state.elements.filter { isGenerated(it) }
         val currentIds = current.map { it.id }.toSet()
         val suppressed = state.suppressedGenIds + (state.generatedIds - currentIds)
@@ -120,7 +120,37 @@ object DerivedLayers {
      * no exterior walls or the layer isn't one the plan builds.
      */
     fun matchLayer(state: CanvasState, layerId: String): List<DrawingElement.Symbol> =
-        (asExisting(build(state), state) + Stairs.floorOpenings(state)).filter { it.layerId == layerId }.map { it.copy(id = randomId()) }
+        (planParts(state) + Stairs.floorOpenings(state) + Guards.forStairs(state)).filter { it.layerId == layerId }.map { it.copy(id = randomId()) }
+
+    /** Id prefix (after [GEN_PREFIX]) of the parts built for the new area of a remodel. */
+    const val NEW_AREA = "na:"
+
+    /** The exterior walls that count for a remodel: hand-drawn 2x6 walls not coming out. */
+    private fun remodelExterior(state: CanvasState) = state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
+        it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL && !isGenerated(it) && Remodel.status(it) != WallStatus.DEMO
+    }
+
+    /**
+     * What the plan builds. A remodel with both Existing and New exterior walls (Dan, Nov 24: new walls added to an
+     * existing house) is built twice: the existing house on its own (its foundation, drawn Existing, as [asExisting]),
+     * and the new area on its own (footings and foundation walls under the new walls, its own joist bay, beam, posts
+     * and pads, sized to it), so the existing house isn't framed as new. The new area's parts carry [NEW_AREA] in
+     * their ids; garages, porches and wings go with the existing house. Otherwise everything as one building.
+     */
+    fun planParts(state: CanvasState): List<DrawingElement.Symbol> {
+        val ext = remodelExterior(state)
+        val existing = ext.filter { Remodel.status(it) == WallStatus.EXISTING }
+        val fresh = ext.filter { Remodel.status(it) != WallStatus.EXISTING }
+        if (existing.isEmpty() || fresh.isEmpty()) return asExisting(build(state), state)
+        val freshIds = fresh.map { it.id }.toSet()
+        val existingIds = existing.map { it.id }.toSet()
+        val house = asExisting(build(state.copy(elements = state.elements.filter { it.id !in freshIds })), state, onlyExisting = true)
+        val additions = listOf("ga", "pc", "wg", "rim:wg")
+        val newArea = build(state.copy(elements = state.elements.filter { it.id !in existingIds && !Wings.isWing(it) && !Garages.isGarage(it) && !Porches.isPorch(it) }))
+            .filter { p -> additions.none { p.id.removePrefix(GEN_PREFIX).startsWith(it) } }
+            .map { it.copy(id = GEN_PREFIX + NEW_AREA + it.id.removePrefix(GEN_PREFIX)) }
+        return house + newArea
+    }
 
     /**
      * Remodel (Dan, Nov 24): when every exterior wall is Existing, the existing house gets no floor
@@ -128,11 +158,9 @@ object DerivedLayers {
      * pads, ladders and anchor bolts are left out. Its foundation walls and footings stay, drawn
      * Existing, for new work to tie into. Wings, garages and porches (additions) are built in full, New.
      */
-    private fun asExisting(parts: List<DrawingElement.Symbol>, state: CanvasState): List<DrawingElement.Symbol> {
-        val ext = state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
-            it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL && !isGenerated(it) && Remodel.status(it) != WallStatus.DEMO
-        }
-        if (ext.isEmpty() || ext.any { Remodel.status(it) != WallStatus.EXISTING }) return parts
+    private fun asExisting(parts: List<DrawingElement.Symbol>, state: CanvasState, onlyExisting: Boolean = false): List<DrawingElement.Symbol> {
+        val ext = remodelExterior(state)
+        if (!onlyExisting && (ext.isEmpty() || ext.any { Remodel.status(it) != WallStatus.EXISTING })) return parts
         val additions = listOf("ga", "pc", "wg", "rim:wg")
         // Kept and drawn Existing: the foundation always; with "Show existing framing" (Dan: an option,
         // existing houses are laid out their own way) the joist bay, beams, posts and pads too.

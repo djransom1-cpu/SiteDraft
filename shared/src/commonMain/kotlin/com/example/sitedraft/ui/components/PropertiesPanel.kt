@@ -748,6 +748,9 @@ fun PropertiesPanel(
                             if (selectedElement.category == PlanSymbols.STAIRS) {
                                 StairSection(selectedElement, onEvent)
                             }
+                            if (selectedElement.category == PlanSymbols.RAILINGS) {
+                                GuardSection(selectedElement, onEvent)
+                            }
                             if (selectedElement.category in Structure.categories) {
                                 StructureSection(selectedElement, state, onEvent)
                                 RemodelFramingSection(selectedElement, onEvent)
@@ -755,6 +758,16 @@ fun PropertiesPanel(
                             // Remodel: the wall's status (Existing / Demo / New) and demo part of it.
                             if (selectedElement.category == PlanSymbols.WALLS && !DerivedLayers.isGenerated(selectedElement)) {
                                 RemodelWallSection(selectedElement, state, onEvent)
+                            }
+                            // Framing elevation and stud count (WallFraming, Nov 24).
+                            if (selectedElement is DrawingElement.Symbol && WallFraming.isFramed(selectedElement) && selectedElement.rotation % 90f == 0f) {
+                                val f = WallFraming.frame(selectedElement, state)
+                                Text(text = "Framing", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                                Text(text = WallFraming.countText(f), style = MaterialTheme.typography.bodySmall)
+                                OutlinedButton(onClick = {
+                                    val side = if (Elevation.isHorizontal(selectedElement)) ViewerSide.BELOW else ViewerSide.LEFT
+                                    onEvent(DrawingEvent.StartPlacement(Placement.Elevation(ElevationSpec(wallId = selectedElement.id, side = side, framing = true), "framing elevation")))
+                                }) { Text("Framing elevation (tap, then tap an empty spot)") }
                             }
                             // A wall on a floor plan can be marked bearing: the layer builder carries it down to a footing.
                             if (selectedElement.category == PlanSymbols.WALLS && Layers.layerOf(selectedElement, state).trade == LayerTrade.FLOOR_PLAN) {
@@ -1601,6 +1614,14 @@ private fun StairSection(stair: DrawingElement.Symbol, onEvent: (DrawingEvent) -
         if (!follows) TextButton(onClick = { set(Stairs.RISE_SET, "0") }) { Text("Follow the building") }
     }
     inches("Total rise, floor to floor", Stairs.RISE)
+    // Finish floor at each end (Nov 24): blank/automatic = 3/4" on a framed floor, 0 on a slab.
+    if (type != Stairs.Type.DECK) {
+        val auto = Stairs.prop(stair, Stairs.FIN_TOP) < 0f && Stairs.prop(stair, Stairs.FIN_BOT) < 0f
+        EditableProperty("Finish floor at the top (in)", if (Stairs.prop(stair, Stairs.FIN_TOP) < 0f) "auto" else formatInches(Stairs.prop(stair, Stairs.FIN_TOP))) { set(Stairs.FIN_TOP, it) }
+        EditableProperty("Finish floor at the bottom (in)", if (Stairs.prop(stair, Stairs.FIN_BOT) < 0f) "auto" else formatInches(Stairs.prop(stair, Stairs.FIN_BOT))) { set(Stairs.FIN_BOT, it) }
+        Text(text = "Rise is finish to finish: auto = 3/4\" on a framed floor, 0 on the basement slab.", style = MaterialTheme.typography.bodySmall)
+        if (!auto) TextButton(onClick = { set(Stairs.FIN_TOP, "-1"); set(Stairs.FIN_BOT, "-1") }) { Text("Automatic finish") }
+    }
     chips("Riser count on the plan", Stairs.SHOW_R, listOf("Off", "On"))
     inches("Tread depth", Stairs.TREAD)
     inches("Nosing", Stairs.NOSING)
@@ -1634,6 +1655,11 @@ private fun StairSection(stair: DrawingElement.Symbol, onEvent: (DrawingEvent) -
     }
     inches("Handrail height", Stairs.RAIL_H)
     inches("Guard height", Stairs.GUARD_H)
+    if (type != Stairs.Type.DECK) {
+        chips("Guard around the floor opening", Stairs.GUARD_AUTO, listOf("Off", "On"))
+        Text(text = "With Build from the floor plan on: a guard on each open side of the stair's floor opening (not where a wall runs, or the stair has its own guard).",
+            style = MaterialTheme.typography.bodySmall)
+    }
     Text(text = "Elevation (tap one, then tap an empty spot on the canvas)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         val sides = if (type == Stairs.Type.SPIRAL) listOf(0) else listOf(0, 1)
@@ -1642,6 +1668,25 @@ private fun StairSection(stair: DrawingElement.Symbol, onEvent: (DrawingEvent) -
                 val spec = ElevationSpec(wallId = stair.id, side = ViewerSide.BELOW, stairSide = side)
                 onEvent(DrawingEvent.StartPlacement(Placement.Elevation(spec, "stair elevation")))
             }) { Text(if (type == Stairs.Type.SPIRAL) "Side elevation" else Stairs.sideLabelsFor(stair)[side]) }
+        }
+    }
+}
+
+/** A guard rail (Guards.kt): its height and whether the plan notes it. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GuardSection(guard: DrawingElement.Symbol, onEvent: (DrawingEvent) -> Unit) {
+    val g = com.example.sitedraft.ui.canvas.Guards
+    fun set(key: String, v: String) = onEvent(DrawingEvent.UpdateElementProperty(guard.id, key, v))
+    Text(text = "Guard rail", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+    Text(text = "Stretch it along the edge like a wall. 36\" where the drop is over 30\" (IRC R312); balusters under 4\" apart.",
+        style = MaterialTheme.typography.bodySmall)
+    if (DerivedLayers.isGenerated(guard)) Text(text = "Made from the stair's floor opening: change it on the stair.", style = MaterialTheme.typography.bodySmall)
+    EditableProperty("Guard height (in)", formatInches(g.prop(guard, g.HEIGHT))) { set(g.HEIGHT, it) }
+    Text(text = "Note on the plan", style = MaterialTheme.typography.labelLarge)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("Off", "On").forEachIndexed { i, label ->
+            FilterChip(selected = (g.prop(guard, g.NOTE) >= 0.5f) == (i == 1), onClick = { set(g.NOTE, i.toString()) }, label = { Text(label) })
         }
     }
 }

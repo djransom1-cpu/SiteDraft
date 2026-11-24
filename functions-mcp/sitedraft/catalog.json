@@ -732,6 +732,10 @@
             60.0,
             60.0
         ],
+        "Guard Rail": [
+            48.0,
+            3.5
+        ],
         "Range 30\"": [
             30.0,
             26.0
@@ -1595,7 +1599,10 @@
                 "stGoes": 0.0,
                 "stDir": 1.0,
                 "stRiseSet": 0.0,
-                "stShowR": 1.0
+                "stShowR": 1.0,
+                "stGuardAuto": 1.0,
+                "stFinTop": -1.0,
+                "stFinBot": -1.0
             },
             "L Stair (landing)": {
                 "stRise": 108.0,
@@ -1615,7 +1622,10 @@
                 "stGoes": 0.0,
                 "stDir": 1.0,
                 "stRiseSet": 0.0,
-                "stShowR": 1.0
+                "stShowR": 1.0,
+                "stGuardAuto": 1.0,
+                "stFinTop": -1.0,
+                "stFinBot": -1.0
             },
             "U Stair (landing)": {
                 "stRise": 108.0,
@@ -1635,7 +1645,10 @@
                 "stGoes": 0.0,
                 "stDir": 1.0,
                 "stRiseSet": 0.0,
-                "stShowR": 1.0
+                "stShowR": 1.0,
+                "stGuardAuto": 1.0,
+                "stFinTop": -1.0,
+                "stFinBot": -1.0
             },
             "Deck Stair (open)": {
                 "stRise": 36.0,
@@ -1655,7 +1668,10 @@
                 "stGoes": 0.0,
                 "stDir": 1.0,
                 "stRiseSet": 1.0,
-                "stShowR": 1.0
+                "stShowR": 1.0,
+                "stGuardAuto": 1.0,
+                "stFinTop": -1.0,
+                "stFinBot": -1.0
             },
             "Curved Stair": {
                 "stRise": 108.0,
@@ -1675,7 +1691,10 @@
                 "stGoes": 0.0,
                 "stDir": 1.0,
                 "stRiseSet": 0.0,
-                "stShowR": 1.0
+                "stShowR": 1.0,
+                "stGuardAuto": 1.0,
+                "stFinTop": -1.0,
+                "stFinBot": -1.0
             },
             "Spiral Stair": {
                 "stRise": 108.0,
@@ -1695,7 +1714,10 @@
                 "stGoes": 0.0,
                 "stDir": 1.0,
                 "stRiseSet": 0.0,
-                "stShowR": 1.0
+                "stShowR": 1.0,
+                "stGuardAuto": 1.0,
+                "stFinTop": -1.0,
+                "stFinBot": -1.0
             }
         },
         "keys": {
@@ -1707,7 +1729,9 @@
             "goes": "stGoes",
             "dir": "stDir",
             "riseSet": "stRiseSet",
-            "showR": "stShowR"
+            "showR": "stShowR",
+            "finTop": "stFinTop",
+            "finBot": "stFinBot"
         },
         "headroomIn": 80.0,
         "samples": [
@@ -1767,7 +1791,7 @@
                 "typedRise": 0,
                 "rotation": 0.0,
                 "down": true,
-                "riseIn": 95.5,
+                "riseIn": 96.25,
                 "risers": 13,
                 "footprintWIn": 36.0,
                 "footprintDIn": 120.0,
@@ -1899,7 +1923,7 @@
                 "typedRise": 0,
                 "rotation": 180.0,
                 "down": true,
-                "riseIn": 95.5,
+                "riseIn": 96.25,
                 "risers": 13,
                 "footprintWIn": 36.0,
                 "footprintDIn": 120.0,
@@ -1965,7 +1989,7 @@
                 "typedRise": 0,
                 "rotation": 0.0,
                 "down": true,
-                "riseIn": 95.5,
+                "riseIn": 96.25,
                 "risers": 13,
                 "footprintWIn": 86.0,
                 "footprintDIn": 96.0,
@@ -2031,7 +2055,7 @@
                 "typedRise": 0,
                 "rotation": 270.0,
                 "down": true,
-                "riseIn": 95.5,
+                "riseIn": 96.25,
                 "risers": 13,
                 "footprintWIn": 72.0,
                 "footprintDIn": 96.0,
@@ -2097,7 +2121,7 @@
                 "typedRise": 0,
                 "rotation": 0.0,
                 "down": true,
-                "riseIn": 95.5,
+                "riseIn": 96.25,
                 "risers": 13,
                 "footprintWIn": 60.0,
                 "footprintDIn": 60.0,
@@ -2442,7 +2466,7 @@
                 "typedRise": 0,
                 "rotation": 180.0,
                 "down": true,
-                "riseIn": 95.5,
+                "riseIn": 96.25,
                 "risers": 13,
                 "footprintWIn": 36.0,
                 "footprintDIn": 120.0,
@@ -3462,15 +3486,15 @@
                 "typedRise": 0,
                 "rotation": 0.0,
                 "down": true,
-                "riseIn": 99.5,
+                "riseIn": 100.25,
                 "risers": 13,
                 "footprintWIn": 36.0,
                 "footprintDIn": 120.0,
                 "openingLayer": "floor1-structural",
                 "openingWIn": 36.0,
-                "openingLIn": 118.0,
+                "openingLIn": 117.0,
                 "openingCenterXIn": 0.0,
-                "openingCenterYIn": -0.9999975
+                "openingCenterYIn": -1.4999999
             },
             {
                 "building": "flushSlab",
@@ -3594,15 +3618,15 @@
                 "typedRise": 0,
                 "rotation": 180.0,
                 "down": true,
-                "riseIn": 99.5,
+                "riseIn": 100.25,
                 "risers": 13,
                 "footprintWIn": 36.0,
                 "footprintDIn": 120.0,
                 "openingLayer": "floor1-structural",
                 "openingWIn": 36.0,
-                "openingLIn": 118.0,
+                "openingLIn": 117.0,
                 "openingCenterXIn": 0.0,
-                "openingCenterYIn": 0.9999975
+                "openingCenterYIn": 1.4999999
             },
             {
                 "building": "flushSlab",
@@ -3660,7 +3684,7 @@
                 "typedRise": 0,
                 "rotation": 0.0,
                 "down": true,
-                "riseIn": 99.5,
+                "riseIn": 100.25,
                 "risers": 13,
                 "footprintWIn": 86.0,
                 "footprintDIn": 96.0,
@@ -3726,7 +3750,7 @@
                 "typedRise": 0,
                 "rotation": 270.0,
                 "down": true,
-                "riseIn": 99.5,
+                "riseIn": 100.25,
                 "risers": 13,
                 "footprintWIn": 72.0,
                 "footprintDIn": 96.0,
@@ -3792,7 +3816,7 @@
                 "typedRise": 0,
                 "rotation": 0.0,
                 "down": true,
-                "riseIn": 99.5,
+                "riseIn": 100.25,
                 "risers": 13,
                 "footprintWIn": 60.0,
                 "footprintDIn": 60.0,

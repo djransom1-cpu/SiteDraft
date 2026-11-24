@@ -280,7 +280,11 @@ data class RoofSettings(
     val soffit: SoffitType = SoffitType.BOXED,
     val attic: AtticInsulation = AtticInsulation.BLOWN,
     val atticR: Int = 49,
-    val iceWaterFt: Float = 6f
+    val iceWaterFt: Float = 6f,
+    /** Truss hip ends (Dan, Nov 24): the hip girder sits where the truss is about this tall (4'-6'), on the layout. */
+    val girderHeightIn: Float = 60f,
+    /** Garage and wing trusses' spacing (Dan: residential trusses 24" o.c.), whatever the house is framed with. */
+    val addOnOcIn: Float = 24f
 )
 
 /** How the eave's underside is finished (Dan: per job, boxed level by default). */

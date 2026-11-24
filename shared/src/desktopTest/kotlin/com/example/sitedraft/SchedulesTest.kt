@@ -64,6 +64,10 @@ class SchedulesTest {
         val label = DrawingElement.Text(id = "t", text = "Kitchen", topLeft = Offset(100f * inch, 100f * inch), fontSize = 12f, color = Color.White)
         val s = CanvasState(elements = room + label + door("d", 60f, 60f), activeLayerId = "roof-structural")
         assertEquals("Kitchen", Schedules.rows(s, Schedules.Kind.DOOR).single().room)
+        // Jamb width from the wall's studs (Dan, Nov 24): 2x6 takes 6 9/16", 2x4 4 9/16".
+        assertEquals(6.5625f, Schedules.studDepthIn("2x6 Wall")!! + 1f + 1f / 16f, 0.001f)
+        assertEquals(4.5625f, Schedules.studDepthIn("2x4 Wall")!! + 1f + 1f / 16f, 0.001f)
+        assertEquals(null, Schedules.studDepthIn("8\" Block Wall"))
     }
 
     @Test

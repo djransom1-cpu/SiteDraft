@@ -5,6 +5,7 @@ import androidx.compose.ui.geometry.Rect
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -137,11 +138,16 @@ object OverhangDetail {
         line(x0 - 0.5f, rfTop(x0 - 0.5f), RUN_IN, rfTop(RUN_IN), Shower.Ink.LINE)
         note(r.covering.label.uppercase(), RUN_IN * 0.45f, rfTop(RUN_IN * 0.45f), false)
         note("UNDERLAYMENT ABOVE THE ICE & WATER SHIELD", RUN_IN * 0.75f, iwTop(RUN_IN * 0.75f), false)
-        // Pitch: rise over 12 above the roof.
-        val px = RUN_IN - 14f
-        val pe = rfTop(px) + 5f
-        poly(Shower.Ink.THIN, false, listOf(pt(px, pe), pt(px + 12f * 0.5f, pe), pt(px + 12f * 0.5f, pe + r.pitch * 0.5f)))
-        parts.add(Shower.Part.Label(RoofPlan.pitchText(r.pitch), pt(px + 7f, pe + r.pitch * 0.25f + 1f), 1f, Shower.Ink.LINE))
+        // Pitch (Dan, Nov 24): the 12 leg level on top, the plumb leg hanging down on the low side, the slope parallel
+        // to the roof just above it; "12" over the level leg, the rise beside the plumb leg.
+        val pw = 6f                                              // the 12 leg, drawn 6" long
+        val px = RUN_IN - 16f
+        val rise = pw * t
+        val pBot = rfTop(px) + 3f                                // the plumb leg's foot, clear of the roof
+        val pTop = pBot + rise
+        poly(Shower.Ink.THIN, true, listOf(pt(px, pTop), pt(px + pw, pTop), pt(px, pBot)))
+        parts.add(Shower.Part.Label("12", pt(px + pw / 2f - 0.8f, pTop + 1.6f), 1f, Shower.Ink.LINE))
+        parts.add(Shower.Part.Label(formatInches((r.pitch * 4f).roundToInt() / 4f), pt(px - 1.6f, pBot + rise / 2f + 0.8f), 1f, Shower.Ink.LINE))
 
         // ---- The soffit ----
         val siding = { topE: Float ->

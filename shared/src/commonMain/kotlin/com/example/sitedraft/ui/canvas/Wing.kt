@@ -307,7 +307,16 @@ object Wings {
         val ov = hr.overhangIn * k
         val half = (fr.pu2 - fr.pu1) / 2f
         fun uv(u: Float, v: Float): Offset { val q = fr.world(u, u, v, v); return Offset(q.left, q.top) }
-        return listOf(uv(fr.pu1 - ov, ov), uv(fr.pu2 + ov, ov), uv((fr.pu1 + fr.pu2) / 2f, -half))
+        // A side in line with a hip end (Dan, Nov 24): that slope is the hip end's plane, framed by this roof's members
+        // out to the hip end's eave, so the house's hip-end jacks come out there too, down to where the ridge ends
+        // (just inside the eave, which stays).
+        val fp = runCatching { RoofPlan.footprint(state) }.getOrNull()
+        val endsAlong = if (fr.alongX) fp?.let { it.left to it.right } else fp?.let { it.top to it.bottom }
+        val flushA = eaveSide && hr.endA == RoofEnd.HIP && endsAlong != null && kotlin.math.abs(fr.pu1 - endsAlong.first) < k
+        val flushB = eaveSide && hr.endB == RoofEnd.HIP && endsAlong != null && kotlin.math.abs(fr.pu2 - endsAlong.second) < k
+        val inside = 0.75f * k
+        return listOfNotNull(uv(fr.pu1 - ov + (if (flushA) inside else 0f), ov), uv(fr.pu2 + ov - (if (flushB) inside else 0f), ov), uv((fr.pu1 + fr.pu2) / 2f, -half),
+            if (flushA) uv(fr.pu1 - ov + inside, -half) else null, if (flushB) uv(fr.pu2 + ov - inside, -half) else null)
     }
 
     /** The house roof's plan lines with what the wings' roofs cover taken out (eave, hip, rafters under them). */

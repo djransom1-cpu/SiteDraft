@@ -33,7 +33,8 @@ object DetailKit {
         PORCH_POST("Porch Post Footing Detail", "S", 12),
         GARAGE_FROST("Garage Frost Wall Detail", "S", 12),
         HOUSE_WALL("Exterior Wall Section", "S", 16),
-        GARAGE_WALL("Garage Wall Section", "S", 16)
+        GARAGE_WALL("Garage Wall Section", "S", 16),
+        STAIR("Stair Section Detail", "S", 24)
     }
 
     data class Note(val text: String, val at: Offset, val left: Boolean)
@@ -54,6 +55,7 @@ object DetailKit {
         Detail.GARAGE_FROST -> GarageFrostDetail.geometry(state)
         Detail.HOUSE_WALL -> WallSections.house(state)
         Detail.GARAGE_WALL -> WallSections.garage(state)
+        Detail.STAIR -> StairDetail.geometry(state)
     }
 
     /** The detail's size in world px: its real extent (notes included) at the drawing's scale. */

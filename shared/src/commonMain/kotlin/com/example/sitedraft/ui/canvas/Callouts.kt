@@ -39,7 +39,7 @@ object Callouts {
     enum class Target(val label: String) {
         WALL_SECTION("Typical wall section"), OVERHANG("Overhang detail"), BEAM_POCKET("Beam pocket detail"),
         COLUMN("Column detail"), FOOTING("Footing detail"), PORCH_POST("Porch post footing"), GARAGE_FROST("Garage frost wall"),
-        HOUSE_WALL("Exterior wall section"), GARAGE_WALL("Garage wall section");
+        HOUSE_WALL("Exterior wall section"), GARAGE_WALL("Garage wall section"), STAIR("Stair section");
         val bit get() = 1 shl ordinal
         fun detail(): DetailKit.Detail? = when (this) {
             WALL_SECTION -> null
@@ -51,6 +51,7 @@ object Callouts {
             GARAGE_FROST -> DetailKit.Detail.GARAGE_FROST
             HOUSE_WALL -> DetailKit.Detail.HOUSE_WALL
             GARAGE_WALL -> DetailKit.Detail.GARAGE_WALL
+            STAIR -> DetailKit.Detail.STAIR
         }
     }
 

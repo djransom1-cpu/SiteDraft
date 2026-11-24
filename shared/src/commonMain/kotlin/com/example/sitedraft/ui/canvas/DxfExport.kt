@@ -368,8 +368,16 @@ object DxfExport {
         val inch = state.inchesToPx(1f)
         val name = s.symbolName
         when {
-            s.category == PlanSymbols.WALLS ->
-                if (h > w) wallSection(p.turned(90f), name, h, w, inch) else wallSection(p, name, w, h, inch)
+            s.category == PlanSymbols.WALLS -> {
+                // Studs on the house layout with jacks and kings at openings, as the plan draws them (Nov 24);
+                // an Existing wall is its outline only, a Demo wall left out of the framing too.
+                val st = Remodel.drawStyle(s, state.remodelPhase)
+                val studs = st == WallStatus.NEW
+                val first = wallFirstStud(s, state, inch)
+                val ros = FramingLayout.openingSpans(state)[s.id] ?: emptyList()
+                val bucks = FramingLayout.bucks(state)[s.id] ?: emptyList()
+                if (h > w) wallSection(p.turned(90f), name, h, w, inch, studs, first, ros, bucks) else wallSection(p, name, w, h, inch, studs, first, ros, bucks)
+            }
             s.category == PlanSymbols.SHOWERS -> showerPlan(p, s, w, h, inch)
             s.category == PlanSymbols.APPLIANCES || s.category == PlanSymbols.HOODS -> for (part in Appliances.planParts(s, w, h, inch)) {
                 val pen = if (part.inkIsDashed()) p.dashed() else p
@@ -393,6 +401,15 @@ object DxfExport {
                     }
                 }
             }
+            s.category == PlanSymbols.RAILINGS -> for (part in Guards.planParts(s, w, h, inch)) {
+                val pen = if (part.inkIsDashed()) p.dashed() else p
+                when (part) {
+                    is Shower.Part.Seg -> pen.line(part.a, part.b)
+                    is Shower.Part.Poly -> pen.poly(part.points, part.closed)
+                    is Shower.Part.Ring -> pen.circle(part.c, part.r)
+                    is Shower.Part.Label -> pen.label(part.text, part.c, part.size)
+                }
+            }
             s.category == PlanSymbols.STAIRS -> for (part in Stairs.planParts(s, w, h, inch)) {
                 val pen = if (part.inkIsDashed()) p.dashed() else p
                 when (part) {
@@ -406,14 +423,20 @@ object DxfExport {
             s.category == PlanSymbols.CLOSET -> closetPart(p, name, w, h, inch)
             s.category == PlanSymbols.FURNITURE -> furniture(p, name, w, h, inch)
             PlanSymbols.isDoor(name) -> {
-                // Hinge bottom-left, leaf standing open up the left edge, swing to the latch.
-                p.line(Offset(-hw, hh), Offset(hw, hh))
+                // Hinge bottom-left, leaf standing open up the left edge, swing to the latch. In a wall: jambs across
+                // its thickness and the hinge at the face it swings from (as the plan draws it, Nov 24).
+                val (cutTop, cutDepth) = doorWallCut(s, state, inch)
+                val inWall = cutDepth != DOOR_CUT_FALLBACK_IN * inch
+                val face = if (inWall) cutTop + inch * 0.25f else hh
+                val back = if (inWall) cutTop + cutDepth - inch * 0.25f else hh
+                p.line(Offset(-hw, (face + back) / 2f), Offset(hw, (face + back) / 2f))
+                if (inWall) { p.line(Offset(-hw, face), Offset(-hw, back)); p.line(Offset(hw, face), Offset(hw, back)) }
                 if (PlanSymbols.hingeRight(s)) {
-                    p.rect(Offset(hw - inch * 1.75f, hh - w), Size(inch * 1.75f, w))
-                    p.arc(Offset(hw, hh), w, -180f, 90f)
+                    p.rect(Offset(hw - inch * 1.75f, face - w), Size(inch * 1.75f, w))
+                    p.arc(Offset(hw, face), w, -180f, 90f)
                 } else {
-                    p.rect(Offset(-hw, hh - w), Size(inch * 1.75f, w))
-                    p.arc(Offset(-hw, hh), w, -90f, 90f)
+                    p.rect(Offset(-hw, face - w), Size(inch * 1.75f, w))
+                    p.arc(Offset(-hw, face), w, -90f, 90f)
                 }
             }
             PlanSymbols.isSlidingDoor(name) || PlanSymbols.isWindow(name) || PlanSymbols.isOpening(name) || PlanSymbols.isPocketDoor(name) ->
@@ -564,11 +587,12 @@ object DxfExport {
     }
 
     /** A wall [w] long and [h] thick, running left to right: outline, drywall faces, studs on their own layer. */
-    private fun wallSection(p: Pen, name: String, w: Float, h: Float, inch: Float) {
+    private fun wallSection(p: Pen, name: String, w: Float, h: Float, inch: Float, studs: Boolean = true,
+                            firstStud: Float? = null, openings: List<Pair<Float, Float>> = emptyList(), bucks: List<FramingLayout.Buck> = emptyList()) {
         val hw = w / 2f
         val hh = h / 2f
         p.rect(Offset(-hw, -hh), Size(w, h))
-        if (name.contains("Wall") && name.startsWith("2x") || name.contains("Framing")) {
+        if (studs && (name.contains("Wall") && name.startsWith("2x") || name.contains("Framing"))) {
             val drywall = if (name.contains("Framing")) 0f else inch * 0.5f
             if (drywall > 0f) {
                 p.line(Offset(-hw, -hh + drywall), Offset(hw, -hh + drywall))
@@ -579,12 +603,17 @@ object DxfExport {
             val studH = h - 2f * drywall
             if (studW > 0f && studH > 0f) {
                 val studs = p.onLayer(FRAMING)
-                val xs = generateSequence(-hw) { it + inch * 16f }.takeWhile { it + studW <= hw - studW * 0.5f }.toMutableList()
-                xs += hw - studW
-                for (x in xs) {
+                for (x in wallStudXs(hw, inch, firstStud, openings, bucks, studH)) {
                     studs.rect(Offset(x, studTop), Size(studW, studH))
                     studs.line(Offset(x, studTop), Offset(x + studW, studTop + studH))
                     studs.line(Offset(x, studTop + studH), Offset(x + studW, studTop))
+                }
+                for (b in bucks) {
+                    val x = buckFlatX(hw, inch, b, studH)
+                    val y = if (b.side > 0) studTop + studH - studW else studTop
+                    studs.rect(Offset(x, y), Size(studH, studW))
+                    studs.line(Offset(x, y), Offset(x + studH, y + studW))
+                    studs.line(Offset(x, y + studW), Offset(x + studH, y))
                 }
             }
         }

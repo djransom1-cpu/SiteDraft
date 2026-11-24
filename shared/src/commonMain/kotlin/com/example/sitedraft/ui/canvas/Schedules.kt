@@ -90,8 +90,27 @@ object Schedules {
         val location: String,
         val room: String,
         val header: String,
-        val roughOpening: String
+        val roughOpening: String,
+        /** Doors: the jamb width the wall takes (Dan, Nov 24), "—" when it isn't in a stud wall. */
+        val jamb: String = "—"
     )
+
+    /** Stud depth of a framed wall, inches, from its type (2x4, 2x6, 2x8); null for block, concrete and the like. */
+    fun studDepthIn(wallName: String): Float? = when {
+        wallName.startsWith("2x4") -> 3.5f
+        wallName.startsWith("2x6") -> 5.5f
+        wallName.startsWith("2x8") -> 7.25f
+        else -> null
+    }
+
+    /**
+     * A door's jamb width (Dan, Nov 24): the stud plus 1/2" drywall each side plus 1/16", so 4 9/16" in a 2x4 wall
+     * and 6 9/16" in a 2x6 wall. Null when the door isn't in a stud wall.
+     */
+    fun jambWidthIn(door: DrawingElement.Symbol, state: CanvasState): Float? {
+        val wall = OpeningPosition.hostWall(door, state) ?: return null
+        return studDepthIn(wall.symbolName)?.let { it + 1f + 1f / 16f }
+    }
 
     /**
      * Header by Dan's rule of thumb: the opening width in feet plus 2 is the depth (8' takes a
@@ -194,7 +213,8 @@ object Schedules {
                 mark = mark(s) ?: "—", markNo = markNo(s) ?: Int.MAX_VALUE,
                 widthIn = w, heightIn = h, sillIn = sill, type = type, operation = operation,
                 location = location, room = roomOf(s, state),
-                header = header(w), roughOpening = roughOpeningText(s, w, h, exterior = location == "Exterior")
+                header = header(w), roughOpening = roughOpeningText(s, w, h, exterior = location == "Exterior"),
+                jamb = if (window) "—" else jambWidthIn(s, state)?.let { formatInches(it) + "\"" } ?: "—"
             )
         }.sortedWith(compareBy({ it.markNo }, { it.room }))
     }
@@ -212,7 +232,8 @@ object Schedules {
             Column("LOCATION", 0.85f) { it.location },
             Column("ROOM", 1.4f) { it.room },
             Column("HEADER", 1.3f) { it.header },
-            Column("ROUGH OPENING", 1.7f) { it.roughOpening }
+            Column("ROUGH OPENING", 1.7f) { it.roughOpening },
+            Column("JAMB", 0.75f) { it.jamb }
         )
         Kind.WINDOW -> listOf(
             Column("MARK", 0.6f) { it.mark },
