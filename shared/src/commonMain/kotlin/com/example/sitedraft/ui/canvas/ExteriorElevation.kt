@@ -332,6 +332,21 @@ object ExteriorElevation {
         val reach = FACE_REACH_IN * k
         // Each opening with its casing: the siding stops at it.
         val holes = mutableListOf<Rect>()
+        // A garage in front of this face hides the house's openings behind it (Dan, Nov 24: the bedroom windows were drawn
+        // over the garage's west wall). Its stretch along the face, px from the face's start.
+        val tolPx = 2f * k
+        val hiddenBy = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { Garages.isGarage(it) && of(it).id == Building.FLOOR1_PLAN }
+            .map { it.boundingRect() }
+            .filter { g -> when (side) {
+                ViewerSide.LEFT -> g.right <= fp.left + tolPx
+                ViewerSide.RIGHT -> g.left >= fp.right - tolPx
+                ViewerSide.ABOVE -> g.bottom <= fp.top + tolPx
+                ViewerSide.BELOW -> g.top >= fp.bottom - tolPx
+            } }
+            .map { g ->
+                val a1 = Elevation.alongOf(fp, side, g.topLeft); val a2 = Elevation.alongOf(fp, side, g.bottomRight)
+                minOf(a1, a2) to maxOf(a1, a2)
+            }
         for (o in state.elements.filterIsInstance<DrawingElement.Symbol>()) {
             val kind = Schedules.kindOf(o) ?: continue
             val layer = of(o)
@@ -350,6 +365,7 @@ object ExteriorElevation {
             val w = Schedules.widthAlongPx(o) / k
             val x1 = c - w / 2f
             val x2 = c + w / 2f
+            if (hiddenBy.any { (g1, g2) -> c * k > g1 && c * k < g2 }) continue
             if (kind == Schedules.Kind.WINDOW) {
                 val sill = base + (o.properties[PlanSymbols.PROP_SILL_IN] ?: 36f)
                 val head = sill + (o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: 48f)
