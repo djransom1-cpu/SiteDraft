@@ -32,6 +32,8 @@ object Guards {
     val keys = setOf(HEIGHT, NOTE)
     const val DEPTH_IN = 3.5f
     const val DEFAULT_LENGTH_IN = 48f
+    /** The far end's guard is left off when a wall runs this close to the opening's edge, inches. */
+    const val END_WALL_REACH_IN = 12f
 
     fun isGuard(e: DrawingElement): Boolean = e is DrawingElement.Symbol && e.category == PlanSymbols.RAILINGS
     fun defaults(name: String): Map<String, Float> = mapOf(HEIGHT to 36f, NOTE to 1f)
@@ -127,10 +129,10 @@ object Guards {
         val of = Layers.resolver(state)
         val walls = state.elements.filterIsInstance<DrawingElement.Symbol>()
             .filter { it.category == PlanSymbols.WALLS && of(it).id == layerId }
-            .map { FloorPlan.bounds(it).inflate(3f * inch) }
-        fun walled(a: Offset, b: Offset): Boolean {
+            .map { FloorPlan.bounds(it) }
+        fun walled(a: Offset, b: Offset, reachIn: Float = 3f): Boolean {
             val pts = listOf(0.25f, 0.5f, 0.75f).map { t -> world(stair, a + (b - a) * t) }
-            return walls.any { r -> pts.count { r.contains(it) } >= 2 }
+            return walls.any { w -> val r = w.inflate(reachIn * inch); pts.count { r.contains(it) } >= 2 }
         }
         val out = mutableListOf<DrawingElement.Symbol>()
         fun guard(key: String, centre: Offset, lengthPx: Float, turn: Float, noted: Boolean) {
@@ -145,7 +147,8 @@ object Guards {
         val rails = listOf(Stairs.RAIL_LEFT, Stairs.RAIL_RIGHT).map { Stairs.code(stair, it) }
         var noted = false
         // The far end first (it carries the note), then the two sides, outside the opening's edges.
-        if (!walled(Offset(-w / 2f, bottom), Offset(w / 2f, bottom))) {
+        // The far end: none when a wall runs within about a foot of the opening's edge (Dan, Nov 24).
+        if (!walled(Offset(-w / 2f, bottom), Offset(w / 2f, bottom), END_WALL_REACH_IN)) {
             guard("end", Offset(0f, bottom + d / 2f), w + 2f * d, 0f, true); noted = true
         }
         for ((i, sx) in listOf(-1f, 1f).withIndex()) {

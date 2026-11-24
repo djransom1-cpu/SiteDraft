@@ -85,4 +85,21 @@ class GuardsTest {
         val gaps = xs.zipWithNext { a, b -> b - a }
         gaps.forEach { assertEquals(gaps[0], it, 0.01f) }
     }
+
+    @Test
+    fun `no end guard when a wall runs within a foot of the opening's far edge`() {
+        val two = BuildingSettings(upperFloors = listOf(UpperFloor("Second floor", 1310f)), autoLayers = true)
+        val (s, st) = stairOn(two, goes = 1)
+        val inch = st.inchesToPx(1f)
+        val far = s.center.y - s.size.height / 2f + Stairs.floorOpening(s, st)!!.size.height
+        // A wall across the far end, 10" past the opening's edge.
+        val wall = DrawingElement.Symbol(id = "w", symbolName = FloorPlan.INTERIOR_WALL, category = PlanSymbols.WALLS,
+            center = Offset(s.center.x, far + 10f * inch + 2.25f * inch), size = Size(80f * inch, 4.5f * inch), color = Color.White, layerId = "floor2-plan")
+        val (s2, st2) = stairOn(two, goes = 1, extra = listOf(wall))
+        assertEquals(setOf("left", "right"), Guards.forStair(s2, st2).map { it.id.substringAfterLast(":") }.toSet())
+        // 2' away: the end is still open, guarded.
+        val away = wall.copy(center = wall.center + Offset(0f, 14f * inch))
+        val (s3, st3) = stairOn(two, goes = 1, extra = listOf(away))
+        assertTrue(Guards.forStair(s3, st3).any { it.id.endsWith(":end") })
+    }
 }

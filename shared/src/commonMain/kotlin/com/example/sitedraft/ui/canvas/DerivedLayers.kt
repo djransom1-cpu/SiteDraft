@@ -79,7 +79,9 @@ object DerivedLayers {
     fun sync(state: CanvasState): CanvasState {
         if (!state.building.autoLayers) return state
         // Stairs open the floor framing at their top (Stairs.floorOpening, Nov 24).
-        val desired = (planParts(state) + Stairs.floorOpenings(state) + Guards.forStairs(state)).map { stamped(it) }
+        // Section and detail markers go where their drawings belong once the drawings are in the model (CalloutsAuto, Nov 24).
+        val parts = planParts(state)
+        val desired = (parts + Stairs.floorOpenings(state) + Guards.forStairs(state) + CalloutsAuto.forPlan(state, parts)).map { stamped(it) }
         val current = state.elements.filter { isGenerated(it) }
         val currentIds = current.map { it.id }.toSet()
         val suppressed = state.suppressedGenIds + (state.generatedIds - currentIds)
