@@ -2,6 +2,7 @@ package com.example.sitedraft.ui.canvas
 
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -48,7 +49,7 @@ object PlanSymbols {
      * double-hang are 12" deep, shelving and drawer units 16", shoe shelves 12".
      */
     val closet = listOf(
-        "Shelf & Rod 36\"", "Shelf & Rod 48\"", "Double Hang 36\"", "Double Hang 48\"",
+        "Shelf & Rod 36\"", "Shelf & Rod 48\"", "Double Hang 36\"", "Double Hang 48\"", "Rod 48\"",
         "Shelving 24\"", "Shelving 36\"", "Drawers 24\"", "Drawers 30\"", "Shoe Shelves 24\""
     )
 
@@ -117,7 +118,7 @@ object PlanSymbols {
         "Window 3'-0\"", "Window 4'-0\"", "Window 6'-0\""
     )
     val walls = listOf(
-        "2x4 Wall", "2x6 Wall", "2x4 Framing", "2x6 Framing", "8\" Block Wall", "8\" Concrete Wall"
+        "2x4 Wall", "2x6 Wall", "2x4 Framing", "2x6 Framing", "12\" Block Wall", "10\" Concrete Wall", "8\" Block Wall", "8\" Concrete Wall"
     )
 
     /** A freestanding rolled-rim tub on four feet; floor tile runs under it. */
@@ -173,6 +174,9 @@ object PlanSymbols {
         "2x6 Wall" to Pair(DEFAULT_WALL_LENGTH_IN, 6.5f),
         "2x4 Framing" to Pair(DEFAULT_WALL_LENGTH_IN, 3.5f),
         "2x6 Framing" to Pair(DEFAULT_WALL_LENGTH_IN, 5.5f),
+        // Foundation walls (Dan): 12" block below grade, 10" poured; 8" block above grade only.
+        "12\" Block Wall" to Pair(DEFAULT_WALL_LENGTH_IN, 11.625f),
+        "10\" Concrete Wall" to Pair(DEFAULT_WALL_LENGTH_IN, 10f),
         "8\" Block Wall" to Pair(DEFAULT_WALL_LENGTH_IN, 7.625f),
         "8\" Concrete Wall" to Pair(DEFAULT_WALL_LENGTH_IN, 8f),
         "Base 12\"" to Pair(12f, 24f),
@@ -209,6 +213,8 @@ object PlanSymbols {
         "Shelf & Rod 48\"" to Pair(48f, 12f),
         "Double Hang 36\"" to Pair(36f, 12f),
         "Double Hang 48\"" to Pair(48f, 12f),
+        // A hanging rod alone, no shelf (Dan, Nov 23): stretch it to the closet.
+        "Rod 48\"" to Pair(48f, 12f),
         "Shelving 24\"" to Pair(24f, 16f),
         "Shelving 36\"" to Pair(36f, 16f),
         "Drawers 24\"" to Pair(24f, 16f),
@@ -266,6 +272,20 @@ object PlanSymbols {
     fun isPocketDoor(name: String) = name.startsWith("Pocket Door")
     fun pocketRight(symbol: DrawingElement.Symbol) = hingeRight(symbol)
     fun isWindow(name: String) = name.startsWith("Window ")
+    /**
+     * How a window opens (Dan, Nov 22 2026), kept in its properties as an index into
+     * [windowTypeLabels]; unset = double hung. A casement's hinge side is [PROP_HINGE_RIGHT]
+     * (on = the +x end of the symbol as drawn). Shown in the window schedule and on elevations.
+     */
+    const val PROP_WINDOW_TYPE = "windowType"
+    val windowTypeLabels = listOf("Double hung", "Slider", "Casement", "Awning", "Fixed (picture)")
+    const val WINDOW_DOUBLE_HUNG = 0
+    const val WINDOW_SLIDER = 1
+    const val WINDOW_CASEMENT = 2
+    const val WINDOW_AWNING = 3
+    const val WINDOW_FIXED = 4
+    fun windowType(symbol: DrawingElement.Symbol): Int =
+        (symbol.properties[PROP_WINDOW_TYPE] ?: 0f).toInt().coerceIn(0, windowTypeLabels.lastIndex)
     /** A cased opening (doorway without a door). */
     fun isOpening(name: String) = name.startsWith("Opening ")
 
@@ -468,8 +488,39 @@ fun DrawScope.drawPlanSymbol(
             element.category == PlanSymbols.WALLS -> {
                 // A wall taller than it is wide runs vertically: draw it sideways so the studs
                 // and hatch follow its length. (The floor-plan tool never rotates walls.)
-                if (h > w) rotate(90f, pivot = Offset.Zero) { drawWallSection(name, h, w, inch, lineColor, accentColor, line, thin) }
-                else drawWallSection(name, w, h, inch, lineColor, accentColor, line, thin)
+                // Remodel (Remodel.kt): existing walls are a plain outline, demo walls dashed, new walls in full.
+                val status = Remodel.drawStyle(element, state.remodelPhase)
+                // Studs on the house layout (FramingLayout): a wall running west-east measures from the
+                // west wall, one running north-south from the north wall (drawn turned, its start at the top).
+                val first = if (element.rotation % 360f == 0f) FramingLayout.origin(state)?.let { o ->
+                    val sp = inch * FramingLayout.SPACING_IN
+                    if (h > w) FramingLayout.firstMark(element.center.y - hh, o.y, sp) else FramingLayout.firstMark(element.center.x - hw, o.x, sp)
+                } else null
+                val ros = FramingLayout.openingSpans(state)[element.id] ?: emptyList()
+                if (h > w) rotate(90f, pivot = Offset.Zero) { drawWallSection(name, h, w, inch, lineColor, accentColor, line, thin, status, first, ros) }
+                else drawWallSection(name, w, h, inch, lineColor, accentColor, line, thin, status, first, ros)
+                // Where a wing joins (Wings), this house wall comes out: blank the stretch and close the ends.
+                if (name == FloorPlan.EXTERIOR_WALL && !DerivedLayers.isGenerated(element) && element.rotation == 0f) {
+                    val fp = runCatching { RoofPlan.footprint(state) }.getOrNull()
+                    val me = Rect(element.center.x - hw, element.center.y - hh, element.center.x + hw, element.center.y + hh)
+                    for (wg in Wings.wings(state)) {
+                        val j = Wings.joint(wg, fp, inch) ?: continue
+                        val cut = me.intersect(j)
+                        if (cut.width <= 0f || cut.height <= 0f) continue
+                        val local = cut.translate(-element.center.x, -element.center.y)
+                        // Past the faces by the line width, so no half of the outline is left across the opening.
+                        val lw = line.width
+                        val blank = if (w >= h) Rect(local.left, local.top - lw, local.right, local.bottom + lw) else Rect(local.left - lw, local.top, local.right + lw, local.bottom)
+                        drawRect(state.backgroundColor, blank.topLeft, blank.size)
+                        if (w >= h) {
+                            if (cut.left > me.left + 0.5f) drawLine(lineColor, Offset(local.left, -hh), Offset(local.left, hh), line.width)
+                            if (cut.right < me.right - 0.5f) drawLine(lineColor, Offset(local.right, -hh), Offset(local.right, hh), line.width)
+                        } else {
+                            if (cut.top > me.top + 0.5f) drawLine(lineColor, Offset(-hw, local.top), Offset(hw, local.top), line.width)
+                            if (cut.bottom < me.bottom - 0.5f) drawLine(lineColor, Offset(-hw, local.bottom), Offset(hw, local.bottom), line.width)
+                        }
+                    }
+                }
             }
             element.category in Structure.categories ->
                 with(Structure) { drawStructurePlan(element, state, w, h, inch, lineColor, accentColor, faint, line, thin) }
@@ -783,11 +834,24 @@ private fun DrawScope.drawOpening(
 /** A wall section of length [w] and thickness [h], centred on the origin, running left to right. */
 private fun DrawScope.drawWallSection(
     name: String, w: Float, h: Float, inch: Float,
-    lineColor: Color, accentColor: Color, line: Stroke, thin: Stroke
+    lineColor: Color, accentColor: Color, line: Stroke, thin: Stroke,
+    status: WallStatus = WallStatus.NEW,
+    /** From the wall's start to the first stud on the house layout (FramingLayout), px; null = from the wall's own end. */
+    firstStud: Float? = null,
+    /** Rough openings in the wall, px from its start (FramingLayout.openingSpans): no layout studs, a jack and a king each side. */
+    openings: List<Pair<Float, Float>> = emptyList()
 ) {
     val hw = w / 2f
     val hh = h / 2f
+    if (status == WallStatus.DEMO) {
+        // Coming out: a dashed outline, nothing inside, the usual way demo shows on a plan.
+        val dashed = Stroke(width = line.width, cap = StrokeCap.Butt, pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 6f, inch * 4f)))
+        drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = dashed)
+        return
+    }
     drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+    // Existing: just the outline, so the new work (studs, block, concrete) stands out against it.
+    if (status == WallStatus.EXISTING) return
     when {
         name.contains("Wall") && (name.startsWith("2x")) || name.contains("Framing") -> {
             val drywall = if (name.contains("Framing")) 0f else inch * 0.5f
@@ -800,8 +864,23 @@ private fun DrawScope.drawWallSection(
             val studTop = -hh + drywall
             val studH = h - 2f * drywall
             if (studW > 0f && studH > 0f) {
-                val xs = generateSequence(-hw) { it + inch * 16f }.takeWhile { it + studW <= hw - studW * 0.5f }.toMutableList()
+                // Left edges of the studs: one at each end, and the layout between.
+                val xs = if (firstStud != null) {
+                    val sp = inch * FramingLayout.SPACING_IN
+                    val mids = generateSequence(-hw + firstStud) { it + sp }.takeWhile { it + studW / 2f <= hw - studW }
+                        .filter { it - studW / 2f >= -hw + studW }.map { it - studW / 2f }.toList()
+                    (listOf(-hw) + mids).toMutableList()
+                } else generateSequence(-hw) { it + inch * 16f }.takeWhile { it + studW <= hw - studW * 0.5f }.toMutableList()
                 xs += hw - studW
+                // Openings (Dan): nothing on layout inside the rough opening or where its jack and king
+                // go; a jack against each side and a king outside it. Cripples stay on layout (not cut here).
+                if (openings.isNotEmpty()) {
+                    val ros = openings.map { (a, b) -> (-hw + a) to (-hw + b) }
+                    xs.removeAll { x -> ros.any { (a, b) -> x + studW > a - 2f * studW && x < b + 2f * studW } }
+                    for ((a, b) in ros) {
+                        for (x in listOf(a - studW, a - 2f * studW, b, b + studW)) if (x >= -hw - 0.01f && x + studW <= hw + 0.01f) xs += x
+                    }
+                }
                 for (x in xs) {
                     drawRect(color = accentColor, topLeft = Offset(x, studTop), size = Size(studW, studH), style = thin)
                     drawLine(color = accentColor, start = Offset(x, studTop), end = Offset(x + studW, studTop + studH), strokeWidth = thin.width)
@@ -975,9 +1054,10 @@ private fun DrawScope.drawClosetPart(
     val hh = h / 2f
     val dashed = Stroke(width = thin.width, pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 2f, inch * 1.5f)))
     val textSize = (inch * 3.5f).coerceAtLeast(6f)
-    drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+    // A rod alone has no shelf, so no outline: just the rod.
+    if (!name.startsWith("Rod ")) drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
     when {
-        name.startsWith("Shelf & Rod") || name.startsWith("Double Hang") -> {
+        name.startsWith("Shelf & Rod") || name.startsWith("Double Hang") || name.startsWith("Rod ") -> {
             // Rod 10 1/2" out from the wall, drawn as a dashed line; rod ends as short ticks.
             val rodY = -hh + inch * 10.5f
             drawPath(Path().apply { moveTo(-hw + inch, rodY); lineTo(hw - inch, rodY) }, color = accentColor, style = dashed)

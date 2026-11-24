@@ -45,6 +45,11 @@ enum class PageOrientation(val label: String) { PORTRAIT("Portrait"), LANDSCAPE(
  */
 enum class PrintScale(val label: String, val denominator: Int?) {
     FIT("Fit to page", null),
+    // Engineer's scales for site plans (Dan, Nov 22): a lot doesn't fit at an architect's scale.
+    ENG_30("1\" = 30'-0\"", 360),
+    ENG_20("1\" = 20'-0\"", 240),
+    ENG_10("1\" = 10'-0\"", 120),
+    SIXTEENTH("1/16\" = 1'-0\"", 192),
     EIGHTH("1/8\" = 1'-0\"", 96),
     QUARTER("1/4\" = 1'-0\"", 48),
     THREE_EIGHTHS("3/8\" = 1'-0\"", 32),

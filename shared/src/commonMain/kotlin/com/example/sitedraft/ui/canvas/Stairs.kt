@@ -69,7 +69,17 @@ object Stairs {
     const val OUTER_R = "stOuterR"
     const val WALKLINE = "stWalk"
 
-    val keys = setOf(RISE, TREAD, NOSING, WIDTH, FLIGHT1, TURN, PER_TURN, RAIL_LEFT, RAIL_RIGHT, RAIL_H, GUARD_H, INNER_R, OUTER_R, WALKLINE)
+    // Up or down from the floor it is drawn on, and the rise from the building (Dan, Nov 24).
+    const val GOES = "stGoes"            // 0 auto (up when there is a floor above, else down), 1 up, 2 down
+    const val DIR = "stDir"              // what auto worked out: 1 up, 2 down (kept by [sync])
+    const val RISE_SET = "stRiseSet"     // 1 = the rise was typed by hand; 0 = it follows the building
+    const val SHOW_R = "stShowR"         // 1 = the riser count goes with UP / DN on the plan
+    /** Code headroom over the nosings (IRC R311.7.2, 6'-8"), for the floor opening over the stair. */
+    const val HEADROOM_IN = 80f
+
+    val keys = setOf(RISE, TREAD, NOSING, WIDTH, FLIGHT1, TURN, PER_TURN, RAIL_LEFT, RAIL_RIGHT, RAIL_H, GUARD_H, INNER_R, OUTER_R, WALKLINE,
+        GOES, RISE_SET, SHOW_R)
+    val goesLabels = listOf("Auto", "Up", "Down")
     val railLabels = listOf("None", "Handrail", "Guard + balusters")
     const val RAIL_NONE = 0
     const val RAIL_HANDRAIL = 1
@@ -92,6 +102,10 @@ object Stairs {
             INNER_R to 48f,
             OUTER_R to 96f,
             WALKLINE to 12f,
+            GOES to 0f,
+            DIR to 1f,
+            RISE_SET to if (t == Type.DECK) 1f else 0f,
+            SHOW_R to 1f,
         ).let { if (t == Type.CURVED) it + (RAIL_LEFT to RAIL_GUARD.toFloat()) + (RAIL_RIGHT to RAIL_HANDRAIL.toFloat()) else it }
     }
 
@@ -194,6 +208,107 @@ object Stairs {
         return "${l.risers} risers @ ${formatInches(l.riser)}\", ${l.treads} treads @ ${formatInches(l.tread)}\"$at$run"
     }
 
+    // ---- The building: up or down, the rise, the floor opening (Dan, Nov 24) ----
+
+    /** The floor (1-based) a stair is drawn on, when it is on a floor plan layer. */
+    private fun floorOf(s: DrawingElement.Symbol, state: CanvasState): Int? {
+        val layer = Layers.layerOf(s, state)
+        if (layer.trade != LayerTrade.FLOOR_PLAN) return null
+        return layer.levelId?.removePrefix("floor")?.toIntOrNull()
+    }
+
+    /** True when the stair goes down from its floor: picked, or auto (up when there is a floor above, otherwise down). */
+    fun goesDown(s: DrawingElement.Symbol, state: CanvasState): Boolean {
+        when (code(s, GOES)) { 1 -> return false; 2 -> return true }
+        if (type(s.symbolName) == Type.DECK) return false
+        val n = floorOf(s, state) ?: return false
+        val b = state.building
+        if (Building.floorElevationIn(b, n + 1) != null) return false
+        return n > 1 || b.foundation == FoundationType.BASEMENT
+    }
+
+    /**
+     * The rise from the building, inches, or null when it is typed by hand (or a deck stair, or not
+     * on a floor plan). Up: this floor's top of subfloor to the next one (or, with no floor above,
+     * the wall height plus the floor framing). Down: to the floor below, or the basement slab.
+     */
+    fun autoRiseIn(s: DrawingElement.Symbol, state: CanvasState): Float? {
+        if (type(s.symbolName) == Type.DECK || code(s, RISE_SET) == 1) return null
+        val n = floorOf(s, state) ?: return null
+        val b = state.building
+        val here = Building.floorElevationIn(b, n) ?: return null
+        return if (goesDown(s, state)) {
+            if (n == 1) (if (b.foundation == FoundationType.BASEMENT) here - Building.basementFloorIn(b) else null)
+            else Building.floorElevationIn(b, n - 1)?.let { here - it }
+        } else {
+            val above = Building.floorElevationIn(b, n + 1) ?: (here + b.plateHeightIn + b.joistDepthIn + b.subfloorIn)
+            above - here
+        }
+    }
+
+    /**
+     * Keeps every stair in step with the building: which way it goes ([DIR]) and, unless typed by
+     * hand, its rise, with the footprint following. Returns [state] itself when nothing changes.
+     */
+    fun sync(state: CanvasState): CanvasState {
+        if (state.elements.none { it is DrawingElement.Symbol && it.category == PlanSymbols.STAIRS }) return state
+        val inch = state.inchesToPx(1f)
+        var changed = false
+        val out = state.elements.map { e ->
+            if (e !is DrawingElement.Symbol || e.category != PlanSymbols.STAIRS) return@map e
+            var p = e.properties
+            val dir = if (goesDown(e, state)) 2f else 1f
+            if (p[DIR] != dir) p = p + (DIR to dir)
+            val rise = autoRiseIn(e, state)
+            if (rise != null && rise > 0f && abs((p[RISE] ?: -1f) - rise) > 0.01f) p = p + (RISE to rise)
+            if (p === e.properties) return@map e
+            changed = true
+            val u = e.copy(properties = p)
+            val (wIn, dIn) = footprintIn(u)
+            u.copy(size = Size(wIn * inch, dIn * inch))
+        }
+        return if (changed) state.copy(elements = out) else state
+    }
+
+    /**
+     * The floor opening a stair needs (generated, DerivedLayers), on the floor framing at its top:
+     * a stair going down opens its own floor, one going up the floor above. A straight stair's
+     * opening runs back from the top only as far as code headroom needs: the header must sit
+     * [HEADROOM_IN] over the nosing line, so the opening is (headroom + floor thickness) / riser
+     * treads long, never longer than the stair. Other stairs open their whole footprint. Null when
+     * that floor has no structural layer.
+     */
+    fun floorOpening(s: DrawingElement.Symbol, state: CanvasState): DrawingElement.Symbol? {
+        val t = type(s.symbolName)
+        if (t == Type.DECK) return null
+        val n = floorOf(s, state) ?: return null
+        val framingFloor = if (goesDown(s, state)) n else n + 1
+        val layerId = "${Building.floorId(framingFloor)}-structural"
+        if (state.effectiveLayers.none { it.id == layerId }) return null
+        val b = state.building
+        val inch = state.inchesToPx(1f)
+        val l = layout(s)
+        val w = s.size.width
+        val h = s.size.height
+        val lenPx = if (t == Type.STRAIGHT) {
+            val needIn = ceil((HEADROOM_IN + b.subfloorIn + b.joistDepthIn) * l.tread / l.riser)
+            minOf(needIn * inch, h)
+        } else h
+        // The top of the stair is the top of the unrotated symbol.
+        val local = Offset(0f, -h / 2f + lenPx / 2f)
+        val r = s.rotation * PI.toFloat() / 180f
+        val centre = s.center + Offset(local.x * cos(r) - local.y * sin(r), local.x * sin(r) + local.y * cos(r))
+        return DrawingElement.Symbol(
+            id = DerivedLayers.GEN_PREFIX + "stair:" + s.id, symbolName = Structure.OPENING, category = Structure.FRAMING,
+            center = centre, size = Size(w, lenPx), rotation = s.rotation, color = s.color,
+            properties = mapOf("widthInches" to w / inch, "depthInches" to lenPx / inch), layerId = layerId
+        )
+    }
+
+    /** Every stair's floor opening. */
+    fun floorOpenings(state: CanvasState): List<DrawingElement.Symbol> =
+        state.elements.filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.STAIRS }.mapNotNull { floorOpening(it, state) }
+
     // ---- Plan ----
 
     /** The shape the stair blanks under itself, in its own frame (null = its rectangle). */
@@ -230,7 +345,12 @@ object Stairs {
         val W = l.width * inch
         val parts = mutableListOf<Shower.Part>()
         fun seg(a: Offset, b: Offset, ink: Shower.Ink = Shower.Ink.THIN) { parts += Shower.Part.Seg(a, b, ink) }
-        fun arrow(points: List<Offset>) {
+        // Going down, the arrow starts at the top and points down the stair (DN); either way the
+        // riser count goes with it unless switched off ("UP 14R", "DN 13R").
+        val down = code(s, DIR) == 2
+        val note = (if (down) "DN" else "UP") + if (code(s, SHOW_R) == 1) " ${l.risers}R" else ""
+        fun arrow(drawn: List<Offset>) {
+            val points = if (down) drawn.reversed() else drawn
             if (points.size < 2) return
             parts += Shower.Part.Poly(points, false, Shower.Ink.ACCENT)
             val a = points[points.size - 2]
@@ -240,7 +360,7 @@ object Stairs {
             val head = inch * 3f
             seg(b, b - d * head + n * head * 0.5f, Shower.Ink.ACCENT)
             seg(b, b - d * head - n * head * 0.5f, Shower.Ink.ACCENT)
-            parts += Shower.Part.Label("UP", points.first() + Offset(inch * 5f, 0f), (inch * 3.5f).coerceAtLeast(6f), Shower.Ink.ACCENT)
+            parts += Shower.Part.Label(note, points.first() + Offset(inch * 5f, 0f), (inch * 3.5f).coerceAtLeast(6f), Shower.Ink.ACCENT)
         }
         /** A rail along the edge from [a] to [b]; [inward] points into the stair. */
         fun rail(kind: Int, a: Offset, b: Offset, inward: Offset) {

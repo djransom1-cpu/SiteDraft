@@ -222,6 +222,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 selectedElementIds = if (event.ids.size > 1) event.ids else emptySet()
             )
             is DrawingEvent.UpdateElementProperty -> updateElementProperty(event.id, event.property, event.value)
+            is DrawingEvent.AddWing -> addWing(event)
             is DrawingEvent.UpdateScale -> {
                 updateScale(event.ratio, event.label)
                 triggerAutoSave()
@@ -233,6 +234,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             is DrawingEvent.ImportImage -> importImage(event.bitmap)
             is DrawingEvent.AddLine -> addLine(event.start, event.end)
             is DrawingEvent.SetWallMode -> _state.value = _state.value.copy(wallMode = _state.value.wallMode.copy(active = event.active))
+            // Remodel (Remodel.kt): which plan shows, what new walls are drawn as, a wall's status, demo part of a wall.
+            is DrawingEvent.SetRemodelPhase -> { _state.value = _state.value.copy(remodelPhase = event.phase); triggerAutoSave() }
+            is DrawingEvent.SetWallDrawStatus -> { _state.value = _state.value.copy(wallDrawStatus = event.status); triggerAutoSave() }
+            is DrawingEvent.SetWallStatus -> setWallStatus(event.status)
+            is DrawingEvent.DemoWallPart -> demoWallPart(event)
             is DrawingEvent.SetWallDirection -> _state.value = _state.value.copy(wallMode = _state.value.wallMode.copy(direction = event.direction))
             is DrawingEvent.SetWallCursor -> setWallCursor(event.offset)
             is DrawingEvent.AddWall -> addWall(event.lengthPx)
@@ -329,7 +335,51 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 }
                 triggerAutoSave()
             }
+            is DrawingEvent.AddDetailToSheet -> {
+                val kind = DetailKit.Detail.entries.getOrNull(event.kind) ?: DetailKit.Detail.OVERHANG
+                var s = _state.value
+                val detail = DetailKit.detailIn(s, kind) ?: DetailKit.newSymbol(s, kind, DetailKit.spotFor(s, kind)).also {
+                    pushUndoSnapshot()
+                    s = s.copy(elements = s.elements + it)
+                }
+                val sheet = s.sheets.firstOrNull { it.id == event.sheetId }
+                if (sheet != null && sheet.views.none { it.elementId == detail.id }) {
+                    val scale = PrintScale.entries.firstOrNull { it.denominator == kind.denominator } ?: PrintScale.ONE
+                    val view = SheetView(kind = SheetViewKind.ELEVATION, elementId = detail.id, title = kind.title, scale = scale)
+                    val placed = Sheets.placed(sheet, view, s)
+                    s = s.copy(sheets = s.sheets.map { if (it.id == sheet.id) it.copy(views = it.views + placed) else it })
+                }
+                _state.value = s
+                triggerAutoSave()
+            }
             is DrawingEvent.ExportSheetSet -> exportSheetSet(event.density, event.separate)
+            // A notes layer only this viewport shows: made, added to the viewport, and made the
+            // layer drawing goes on, with the viewport's own layers turned on faint to trace over.
+            is DrawingEvent.AddSheetNotesLayer -> {
+                val s = _state.value
+                val sheet = s.sheets.firstOrNull { it.id == event.sheetId }
+                val view = sheet?.views?.firstOrNull { it.id == event.viewId && it.kind == SheetViewKind.PLAN }
+                if (sheet != null && view != null) {
+                    val base = view.layerIds ?: s.effectiveLayers.filter { !Sheets.isSheetNotes(it.id) }.map { it.id }
+                    val level = view.layerIds?.firstNotNullOfOrNull { id -> s.effectiveLayers.firstOrNull { it.id == id }?.levelId }
+                    val name = "${sheet.number} ${view.title} notes".trim()
+                    val r = LayerEdits.add(s, name, level, id = Sheets.SHEET_NOTES_PREFIX + randomId().take(8))
+                    if (r.refused != null) {
+                        platform.toast(r.refused)
+                    } else {
+                        val newId = r.state.layers.last().id
+                        val active = LayerEdits.setActive(r.state, newId).state
+                        _state.value = active.copy(
+                            shownLayerIds = active.shownLayerIds + base,
+                            sheets = active.sheets.map { sh ->
+                                if (sh.id != sheet.id) sh else sh.copy(views = sh.views.map { if (it.id == view.id) it.copy(layerIds = base + newId) else it })
+                            }
+                        )
+                        triggerAutoSave()
+                        platform.toast("$name made and active: text and dimensions you add now print only on ${sheet.number}")
+                    }
+                }
+            }
             is DrawingEvent.UpdateProjectInfo -> {
                 _state.value = _state.value.copy(projectInfo = event.info)
                 triggerAutoSave()
@@ -384,6 +434,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     // Worked out after the snapshot, so the undo history it carries includes it.
                     applyLayerEdit(LayerEdits.moveTo(_state.value, ids, event.layerId))
                 }
+            }
+            is DrawingEvent.ShowOpeningMarks -> {
+                _state.value = _state.value.copy(showOpeningMarks = event.show)
+                triggerAutoSave()
             }
             is DrawingEvent.ShowCabinetLabels -> {
                 _state.value = _state.value.copy(showCabinetLabels = event.show)
@@ -528,7 +582,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 val loaded = json.decodeFromString(CanvasState.serializer(), text)
                 val list = storage.read("project_list.txt")?.lines()?.filter { it.isNotBlank() }?.sorted() ?: emptyList()
                 withContext(Dispatchers.Main) {
-                    _state.replace(loaded.copy(availableProjects = list, selectedElementId = null, selectedElementIds = emptySet()))
+                    _state.replace(Layers.reconcile(loaded).let { it.copy(availableProjects = list, selectedElementId = null, selectedElementIds = emptySet(), sheets = Sheets.renumbered(it.sheets, it)) })
                 }
             } catch (e: Exception) {
                 platform.log("SiteDraft", "restore failed: ${e.message}")
@@ -539,9 +593,16 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     private fun projectFileName(name: String) = "project_${name.replace(" ", "_")}.json"
 
     private fun triggerAutoSave() {
+        syncStairs()
         syncDerivedLayers()
         syncElevationViews()
         syncWallSections()
+        syncScheduleMarks()
+        syncRoof()
+        syncExteriorElevations()
+        syncSiteLot()
+        syncDetails()
+        syncSheetNumbers()
         registerProjectName()
         pendingSave?.cancel()
         // Serialise on the caller's thread (state is read here), write off it.
@@ -2081,6 +2142,33 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         _state.value = _state.value.copy(wallMode = _state.value.wallMode.copy(cursor = p))
     }
 
+    private fun setWallStatus(status: WallStatus) {
+        val s = _state.value
+        val ids = s.selectedElementIds.ifEmpty { setOfNotNull(s.selectedElementId) }
+        val walls = s.elements.filter { it.id in ids && Remodel.canHaveStatus(it) }
+        if (walls.isEmpty()) { platform.toast("Select a wall or framing first"); return }
+        pushUndoSnapshot()
+        _state.value = _state.value.copy(elements = _state.value.elements.map { e ->
+            if (e.id in ids && Remodel.canHaveStatus(e)) Remodel.withStatus(e as DrawingElement.Symbol, status) else e
+        })
+        triggerAutoSave()
+        if (walls.size > 1) platform.toast("${walls.size} set to ${status.label}")
+    }
+
+    private fun demoWallPart(event: DrawingEvent.DemoWallPart) {
+        val s = _state.value
+        val wall = s.elements.firstOrNull { it.id == event.wallId } as? DrawingElement.Symbol ?: return
+        val r = Remodel.splitForDemo(wall, event.fromIn, event.lengthIn, event.fromStart, s)
+        val pieces = r.getOrElse { platform.toast(it.message ?: "Couldn't split that wall"); return }
+        pushUndoSnapshot()
+        val i = s.elements.indexOfFirst { it.id == wall.id }
+        val out = s.elements.toMutableList().apply { removeAt(i); addAll(i, pieces) }
+        val demo = pieces.first { Remodel.status(it) == WallStatus.DEMO }
+        _state.value = _state.value.copy(elements = out, selectedElementId = demo.id, selectedElementIds = emptySet())
+        triggerAutoSave()
+        platform.toast("Wall split: the demo piece is selected")
+    }
+
     private fun addWall(lengthPx: Float) {
         val wall = _state.value.wallMode
         val start = wall.cursor ?: return
@@ -2591,6 +2679,13 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
      * Keeps each elevation view's frame in step with its wall (the wall may have been stretched,
      * trimmed or the heights edited). Runs with every autosave; cheap when nothing changed.
      */
+    /** Stairs: up or down, and the rise from the building unless typed (Stairs.sync). */
+    private fun syncStairs() {
+        val s = _state.value
+        val synced = Stairs.sync(s)
+        if (synced !== s) _state.value = synced
+    }
+
     /** Foundation and framing built from the first-floor plan, when the builder is on (DerivedLayers). */
     private fun syncDerivedLayers() {
         val s = _state.value
@@ -2612,6 +2707,129 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             if (e is DrawingElement.Symbol && WallSection.isSection(e) && e.size != size) { changed = true; e.copy(size = size) } else e
         }
         if (changed) _state.value = s.copy(elements = updated)
+    }
+
+    /**
+     * The roof symbol on the Roof structural layer, kept over the first-floor exterior walls with
+     * its frame on the eave line (RoofPlan); taken away when the roof is removed or there are no walls.
+     */
+    private fun syncRoof() {
+        val s = _state.value
+        val geo = s.building.roof?.let { RoofPlan.geometry(s, it) }
+        if (geo == null) {
+            if (s.elements.any { RoofPlan.isRoof(it) || RoofPlan.isRoofFinish(it) })
+                _state.value = s.copy(elements = s.elements.filter { !RoofPlan.isRoof(it) && !RoofPlan.isRoofFinish(it) })
+            return
+        }
+        // The framing plan (Roof structural) and the roof plan with its roofing (Roof plan): one roof, both framed on the eave line.
+        fun want(id: String, name: String, layer: String) = DrawingElement.Symbol(
+            id = id, symbolName = name, category = RoofPlan.CATEGORY,
+            center = geo.eave.center, size = geo.eave.size, color = Color.White, layerId = layer
+        )
+        var elements = s.elements
+        var changed = false
+        for ((w, test) in listOf(
+            want(RoofPlan.ID, RoofPlan.SYMBOL, RoofPlan.LAYER) to { e: DrawingElement -> RoofPlan.isRoof(e) },
+            want(RoofPlan.FINISH_ID, RoofPlan.FINISH_SYMBOL, RoofPlan.FINISH_LAYER) to { e: DrawingElement -> RoofPlan.isRoofFinish(e) }
+        )) {
+            val existing = elements.firstOrNull(test) as? DrawingElement.Symbol
+            if (existing == null) { elements = elements + w; changed = true }
+            else if (existing.center != w.center || existing.size != w.size || existing.rotation != 0f || existing.layerId != w.layerId) {
+                elements = elements.map { if (test(it)) w else it }; changed = true
+            }
+        }
+        if (changed) _state.value = s.copy(elements = elements)
+    }
+
+    /**
+     * The four exterior elevations in model space (ExteriorElevation), once the grade exposure is
+     * set: new ones in a row under the drawing, existing ones kept where they were put and sized
+     * to what they now show. Taken away when the exposure is cleared or there are no exterior walls.
+     */
+    private fun syncExteriorElevations() {
+        val s = _state.value
+        val existing = ExteriorElevation.all(s)
+        if (s.building.gradeExposureIn == null || RoofPlan.footprint(s) == null) {
+            if (existing.isNotEmpty()) _state.value = s.copy(elements = s.elements.filter { !ExteriorElevation.isExterior(it) })
+            return
+        }
+        var elements = s.elements
+        var changed = false
+        val missing = ExteriorElevation.Face.entries.filter { f -> existing.none { ExteriorElevation.faceOf(it) == f } }
+        val spots = if (missing.isEmpty()) emptyMap() else ExteriorElevation.spots(s)
+        for (f in ExteriorElevation.Face.entries) {
+            val size = ExteriorElevation.worldSize(s, f) ?: continue
+            val cur = existing.firstOrNull { ExteriorElevation.faceOf(it) == f }
+            if (cur == null) {
+                val at = spots[f] ?: continue
+                elements = elements + DrawingElement.Symbol(
+                    id = ExteriorElevation.idFor(f), symbolName = ExteriorElevation.SYMBOL, category = ExteriorElevation.CATEGORY,
+                    center = at, size = size, color = Color.White, layerId = ExteriorElevation.LAYER,
+                    properties = mapOf(ExteriorElevation.PROP_FACE to f.ordinal.toFloat())
+                )
+                changed = true
+            } else if (cur.size != size || cur.rotation != 0f) {
+                elements = elements.map { if (it.id == cur.id) cur.copy(size = size, rotation = 0f) else it }
+                changed = true
+            }
+        }
+        if (changed) _state.value = s.copy(elements = elements)
+    }
+
+    /**
+     * The site plan on the Site layer (SiteLot): its own drawing, away from the others. Made to the
+     * right of everything when the lot is first typed in; after that it stays where it is put (drag
+     * it, and the lot, the house and its roof plan all go with it) and only its size follows what it
+     * draws. Taken away when the calls are cleared.
+     */
+    private fun syncSiteLot() {
+        val s = _state.value
+        val existing = s.elements.firstOrNull { SiteLot.isLot(it) } as? DrawingElement.Symbol
+        val g = SiteLot.geometry(s)
+        if (g == null) {
+            if (existing != null) _state.value = s.copy(elements = s.elements.filter { !SiteLot.isLot(it) })
+            return
+        }
+        val size = g.extent.size
+        if (existing == null) {
+            val lot = DrawingElement.Symbol(
+                id = SiteLot.ID, symbolName = SiteLot.SYMBOL, category = SiteLot.CATEGORY,
+                center = SiteLot.spotFor(s, size), size = size, color = Color.White, layerId = SiteLot.LAYER
+            )
+            _state.value = s.copy(elements = s.elements + lot)
+        } else if (existing.size != size || existing.rotation != 0f || existing.layerId != SiteLot.LAYER) {
+            _state.value = s.copy(elements = s.elements.map { if (SiteLot.isLot(it)) existing.copy(size = size, rotation = 0f, layerId = SiteLot.LAYER) else it })
+        }
+    }
+
+    /** The construction details in model space, framed on what they draw now (the roof or wall may have changed). */
+    private fun syncDetails() {
+        val s = _state.value
+        if (s.elements.none { DetailKit.isDetail(it) }) return
+        var changed = false
+        val updated = s.elements.map { e ->
+            if (e is DrawingElement.Symbol && DetailKit.isDetail(e)) {
+                val size = DetailKit.worldSize(s, DetailKit.kindOf(e))
+                if (e.size != size) { changed = true; e.copy(size = size) } else e
+            } else e
+        }
+        if (changed) _state.value = s.copy(elements = updated)
+    }
+
+    /** The sheet set kept in Dan's order and numbered by it (Sheets.renumbered). */
+    private fun syncSheetNumbers() {
+        val s = _state.value
+        if (s.sheets.isEmpty()) return
+        val renumbered = Sheets.renumbered(s.sheets, s)
+        if (renumbered != s.sheets) _state.value = s.copy(sheets = renumbered)
+    }
+
+    /** Door and window marks for the schedules: new openings get the next number (Schedules). */
+    private fun syncScheduleMarks() {
+        val s = _state.value
+        if (!Schedules.inUse(s)) return
+        val marked = Schedules.assignMarks(s)
+        if (marked !== s) _state.value = marked
     }
 
     /** The wall section in model space: the one there, or a new one to the right of the drawing. */
@@ -2705,6 +2923,26 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 properties = mapOf("thicknessInches" to thicknessInches, "lengthFeet" to 2f)
                 Size((thicknessInches / 12f) * ratio, 2f * ratio)
             }
+            // Section and detail callouts: a 8' cut line or leader, the bubble past its end.
+            // A porch, 8' wide and 5' out (Dan's usual), dragged against an exterior wall.
+            // A garage, 24' x 24' unless resized, dragged against the house (attached) or set apart (detached).
+            // A wing, 14' wide and 20' out unless resized, against a house wall.
+            category == Wings.CATEGORY -> {
+                properties = Wings.defaults() + mapOf("widthInches" to 168f, "depthInches" to 240f)
+                Size(_state.value.inchesToPx(168f), _state.value.inchesToPx(240f))
+            }
+            category == Garages.CATEGORY -> {
+                properties = Garages.defaults() + mapOf("widthInches" to 288f, "depthInches" to 288f)
+                Size(_state.value.inchesToPx(288f), _state.value.inchesToPx(288f))
+            }
+            category == Porches.CATEGORY -> {
+                properties = Porches.defaults() + mapOf("widthInches" to 96f, "depthInches" to 60f)
+                Size(_state.value.inchesToPx(96f), _state.value.inchesToPx(60f))
+            }
+            category == Callouts.CATEGORY -> {
+                properties = Callouts.defaults(name)
+                Size(_state.value.inchesToPx(96f), _state.value.inchesToPx(24f))
+            }
             name == "Tree" -> Size(120f, 120f)
             name == "Bush" -> Size(80f, 80f)
             name == "Light Pole" -> Size(60f, 60f)
@@ -2742,6 +2980,26 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             elements = _state.value.elements + symbol,
             selectedElementId = symbol.id
         )
+        triggerAutoSave()
+    }
+
+    /** A wing off the house (Wings): [AddWing.wall] 0 N, 1 S, 2 W, 3 E; from the corner (null = centred on the wall). */
+    private fun addWing(event: DrawingEvent.AddWing) {
+        val st = _state.value
+        val fp = RoofPlan.footprint(st) ?: return
+        val inch = st.inchesToPx(1f)
+        if (inch <= 0f || event.widthIn <= 0f || event.depthIn <= 0f) return
+        val wall = event.wall.coerceIn(0, 3)
+        val size = if (wall <= 1) Size(event.widthIn * inch, event.depthIn * inch) else Size(event.depthIn * inch, event.widthIn * inch)
+        val probe = DrawingElement.Symbol(symbolName = Wings.NAME, category = Wings.CATEGORY, center = Offset.Zero, size = size, color = st.currentColor)
+        val from = event.fromCornerIn ?: Garages.centeredOffsetIn(probe, fp, inch, wall)
+        val symbol = probe.copy(
+            center = Garages.centerFor(probe, fp, inch, wall, from, 0f), layerId = Building.FLOOR1_PLAN,
+            properties = Wings.defaults() + mapOf(Wings.FOUND to event.foundation.toFloat(), Wings.END to event.end.toFloat(),
+                Wings.JOISTS to event.joists.toFloat(), "widthInches" to size.width / inch, "depthInches" to size.height / inch)
+        )
+        pushUndoSnapshot()
+        _state.value = st.copy(elements = st.elements + symbol, selectedElementId = symbol.id)
         triggerAutoSave()
     }
 
@@ -2833,9 +3091,16 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                         // Cabinet fronts, door count and island overhang: small codes (see PlanSymbols).
                         PlanSymbols.PROP_FRONT, PlanSymbols.PROP_DOORS, PlanSymbols.PROP_OVERHANG, PlanSymbols.PROP_OVERHANG_IN,
                         PlanSymbols.PROP_SINKS, PlanSymbols.PROP_TOP_IN, PlanSymbols.PROP_STYLE, PlanSymbols.PROP_HARDWARE,
-                        PlanSymbols.PROP_HINGE_RIGHT -> {
+                        PlanSymbols.PROP_HINGE_RIGHT, PlanSymbols.PROP_WINDOW_TYPE -> {
                             val v = parseInches(value) ?: return@map element
                             if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
+                        }
+                        // The supplier's rough opening for a door or window (Schedules): blank goes back to Dan's rule.
+                        Schedules.PROP_RO_W, Schedules.PROP_RO_H -> {
+                            if (element !is DrawingElement.Symbol) return@map element
+                            if (value.isBlank()) return@map element.copy(properties = element.properties - property)
+                            val v = parseInches(value) ?: return@map element
+                            if (v > 0f) element.copy(properties = element.properties + (property to v)) else element
                         }
                         // A door's or window's own height / a window's sill, in inches ("6 1/2" welcome).
                         PlanSymbols.PROP_SILL_IN, PlanSymbols.PROP_HEIGHT_IN -> {
@@ -2892,6 +3157,45 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             val spec = element.spec.copy(islandFace = v)
                             element.copy(spec = spec, size = Elevation.sizePx(island, spec, _state.value))
                         }
+                        // What a callout points to: the targets' bits (Callouts).
+                        // Put a garage on a house wall at a distance from the corner, or centre it there (Garages).
+                        Garages.CENTER, Garages.PLACE -> {
+                            if (element !is DrawingElement.Symbol || !(Garages.isGarage(element) || Wings.isWing(element))) return@map element
+                            val fp = RoofPlan.footprint(_state.value) ?: return@map element
+                            val inch = _state.value.inchesToPx(1f)
+                            val now = Garages.placement(element, fp, inch) ?: return@map element
+                            val parts = value.split(",")
+                            val wall = if (property == Garages.PLACE) parts.getOrNull(0)?.trim()?.toIntOrNull() ?: now.first else now.first
+                            val gap = (if (property == Garages.PLACE) parts.getOrNull(2)?.trim()?.toFloatOrNull() else null) ?: now.third
+                            val from = if (property == Garages.CENTER) Garages.centeredOffsetIn(element, fp, inch, wall.coerceIn(0, 3))
+                                else parts.getOrNull(1)?.trim()?.toFloatOrNull() ?: now.second
+                            element.copy(center = Garages.centerFor(element, fp, inch, wall.coerceIn(0, 3), from, gap.coerceAtLeast(0f)))
+                        }
+                        in Wings.keys -> {
+                            val v = value.trim().toIntOrNull() ?: return@map element
+                            if (element !is DrawingElement.Symbol || v < 0 || v > 2) return@map element
+                            element.copy(properties = element.properties + (property to v.toFloat()))
+                        }
+                        in Garages.keys -> {
+                            val v = value.trim().toIntOrNull() ?: return@map element
+                            if (element !is DrawingElement.Symbol || v < 0 || v > 3) return@map element
+                            element.copy(properties = element.properties + (property to v.toFloat()))
+                        }
+                        Porches.PITCH -> {
+                            val v = value.trim().toFloatOrNull() ?: return@map element
+                            if (element !is DrawingElement.Symbol || v <= 0f || v > 24f) return@map element
+                            element.copy(properties = element.properties + (property to v))
+                        }
+                        in Porches.keys -> {
+                            val v = value.trim().toIntOrNull() ?: return@map element
+                            if (element !is DrawingElement.Symbol || v < 0 || v > 2) return@map element
+                            element.copy(properties = element.properties + (property to v.toFloat()))
+                        }
+                        in Callouts.keys -> {
+                            val v = value.trim().toIntOrNull() ?: return@map element
+                            if (element !is DrawingElement.Symbol || v < 0) return@map element
+                            element.copy(properties = element.properties + (property to v.toFloat()))
+                        }
                         // Foundation and framing settings (Structure.kt) and a wall's bearing flag.
                         in Structure.keys -> {
                             val v = parseInches(value) ?: return@map element
@@ -2919,7 +3223,9 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                         in Stairs.keys -> {
                             val v = parseInches(value) ?: return@map element
                             if (element !is DrawingElement.Symbol || v < 0f) return@map element
-                            val updated = element.copy(properties = element.properties + (property to v))
+                            // A rise typed by hand stops following the building (Stairs.RISE_SET).
+                            val typed = if (property == Stairs.RISE) mapOf(Stairs.RISE_SET to 1f) else emptyMap()
+                            val updated = element.copy(properties = element.properties + (property to v) + typed)
                             val (wIn, dIn) = Stairs.footprintIn(updated)
                             val st = _state.value
                             updated.copy(size = Size(st.inchesToPx(wIn), st.inchesToPx(dIn)))
@@ -3284,13 +3590,27 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             val projectData = storage.read(projectFileName(name)) ?: return
             val loadedState = json.decodeFromString(CanvasState.serializer(), projectData)
             // When loading, preserve the available projects list from current session
-            _state.replace(loadedState.copy(availableProjects = _state.value.availableProjects, selectedElementId = null, selectedElementIds = emptySet()))
+            _state.replace(Layers.reconcile(loadedState).let { it.copy(availableProjects = _state.value.availableProjects, selectedElementId = null, selectedElementIds = emptySet(), sheets = Sheets.renumbered(it.sheets, it)) })
             storage.write(LAST_PROJECT_FILE, name)
+            // Stairs placed by the connector (or saved before Nov 24): up or down and the rise from
+            // the building, before the framing opens the floor for them.
+            val stairs = Stairs.sync(_state.value)
+            val stairsChanged = stairs !== _state.value
+            if (stairsChanged) _state.value = stairs
             // Walls the connector (or another device) drew since: build the layers under them now.
             if (loadedState.building.autoLayers) {
-                val synced = DerivedLayers.sync(_state.value)
-                if (synced !== _state.value) { _state.value = synced; triggerAutoSave() }
-            }
+                val before = _state.value
+                val synced = DerivedLayers.sync(before)
+                if (synced !== before) _state.value = synced
+                if (synced !== before || stairsChanged) triggerAutoSave()
+            } else if (stairsChanged) triggerAutoSave()
+            // The roof, the exterior elevations and elevation frames the connector set up since: build them now
+            // too, so they show without another edit first (Dan, Nov 23: voice drawing through the connector).
+            val beforeSync = _state.value
+            syncElevationViews()
+            syncRoof()
+            syncExteriorElevations()
+            if (_state.value !== beforeSync) triggerAutoSave()
         } catch (e: Exception) {
             platform.log("SiteDraft", "load failed: ${e.message}")
         }
@@ -3442,6 +3762,7 @@ sealed class DrawingEvent {
     /** Selects exactly these elements (one = single selection, several = group). */
     data class SelectElements(val ids: Set<String>) : DrawingEvent()
     data class UpdateElementProperty(val id: String, val property: String, val value: String) : DrawingEvent()
+    data class AddWing(val widthIn: Float, val depthIn: Float, val wall: Int, val fromCornerIn: Float?, val foundation: Int, val end: Int = 0, val joists: Int = 0) : DrawingEvent()
     data class UpdateScale(val ratio: Float, val label: String) : DrawingEvent()
     data class SelectUnitSystem(val unit: UnitSystem) : DrawingEvent()
     data class ImportImage(val bitmap: ImageBitmap) : DrawingEvent()
@@ -3449,6 +3770,12 @@ sealed class DrawingEvent {
     data class AddLine(val start: Offset, val end: Offset) : DrawingEvent()
     // Laser wall mode.
     data class SetWallMode(val active: Boolean) : DrawingEvent()
+    data class SetRemodelPhase(val phase: RemodelPhase) : DrawingEvent()
+    data class SetWallDrawStatus(val status: WallStatus) : DrawingEvent()
+    /** Sets the status of the selected wall(s) (single or box selection). */
+    data class SetWallStatus(val status: WallStatus) : DrawingEvent()
+    /** Demo part of the selected wall: [fromIn] inches from its start end (left/top when [fromStart]), [lengthIn] long. */
+    data class DemoWallPart(val wallId: String, val fromIn: Float, val lengthIn: Float, val fromStart: Boolean) : DrawingEvent()
     data class SetWallDirection(val direction: WallDirection) : DrawingEvent()
     data class SetWallCursor(val offset: Offset) : DrawingEvent()
     data class AddWall(val lengthPx: Float) : DrawingEvent()
@@ -3494,12 +3821,16 @@ sealed class DrawingEvent {
     data class PositionOpening(val id: String, val fromEnd: Boolean, val toCenter: Boolean, val outside: Boolean, val distance: String? = null) : DrawingEvent()
     /** The project's print sheets, as edited in the Print dialog. */
     data class UpdateSheets(val sheets: List<SheetLayout>) : DrawingEvent()
+    /** A notes layer that only viewport [viewId] on sheet [sheetId] shows, made the drawing layer. */
+    data class AddSheetNotesLayer(val sheetId: String, val viewId: String) : DrawingEvent()
     /** Every sheet: as one PDF, or [separate] a PDF per sheet. */
     data class ExportSheetSet(val density: Float, val separate: Boolean = false) : DrawingEvent()
     /** Puts the typical wall section in model space (or selects the one there). */
     object PlaceWallSection : DrawingEvent()
     /** Adds the typical wall section view to sheet [sheetId], placing the section in model space first if needed. */
     data class AddWallSectionToSheet(val sheetId: String) : DrawingEvent()
+    /** A construction detail (DetailKit.Detail ordinal) on a sheet, placed in model space first if it isn't there. */
+    data class AddDetailToSheet(val sheetId: String, val kind: Int) : DrawingEvent()
     /** The job's details for the title block (Projects / Jobs > Project info). */
     data class UpdateProjectInfo(val info: ProjectInfo) : DrawingEvent()
     /** Levels and layers (Building.kt): the layer new drawing goes on, shown or hidden, the user's own layers. */
@@ -3522,6 +3853,8 @@ sealed class DrawingEvent {
     data class MoveSelectionToLayer(val layerId: String) : DrawingEvent()
     /** Cabinet codes (W2430, BD18...) on the plan, on or off. */
     data class ShowCabinetLabels(val show: Boolean) : DrawingEvent()
+    /** Door and window marks (D1, W1...) on the plan, for the schedules. */
+    data class ShowOpeningMarks(val show: Boolean) : DrawingEvent()
     object DeleteSelectedElement : DrawingEvent()
     object DeselectElement : DrawingEvent()
     object ExplodeSelectedElement : DrawingEvent()

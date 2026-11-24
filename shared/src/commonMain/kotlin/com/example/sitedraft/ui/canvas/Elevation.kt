@@ -539,8 +539,32 @@ object Elevation {
                         val sill = item.symbol.properties[PlanSymbols.PROP_SILL_IN] ?: spec.sillIn
                         val top = sill + (item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.windowHeightIn)
                         rect(from, to, sill, top, medium)
-                        line(xc, sill, xc, top)
-                        line(from, (sill + top) / 2f, to, (sill + top) / 2f)
+                        // Drawn the way it opens (PlanSymbols.windowType).
+                        val mid = (sill + top) / 2f
+                        val win = item.symbol
+                        when (PlanSymbols.windowType(win)) {
+                            PlanSymbols.WINDOW_SLIDER -> line(xc, sill, xc, top)
+                            PlanSymbols.WINDOW_CASEMENT -> {
+                                // The swing lines meet at the hinge side: find which end of this view it is.
+                                val vertical = win.size.height > win.size.width
+                                val half = (if (vertical) win.size.height else win.size.width) / 2f
+                                val edge = if (PlanSymbols.hingeRight(win)) half else -half
+                                val hinge = win.center + if (vertical) Offset(0f, edge) else Offset(edge, 0f)
+                                val wb = FloorPlan.bounds(wall)
+                                val hingeAtTo = alongOf(wb, spec.side, hinge) > alongOf(wb, spec.side, win.center)
+                                val hx = if (hingeAtTo) to else from
+                                val lx = if (hingeAtTo) from else to
+                                line(lx, top, hx, mid)
+                                line(lx, sill, hx, mid)
+                            }
+                            PlanSymbols.WINDOW_AWNING -> {
+                                // Hinged at the top: the swing lines meet there.
+                                line(from, sill, xc, top)
+                                line(to, sill, xc, top)
+                            }
+                            PlanSymbols.WINDOW_FIXED -> {}
+                            else -> line(from, mid, to, mid) // double hung: the meeting rail
+                        }
                         if (!spec.trimOn) rect(from - inch, to + inch, sill - 1.5f, sill, light) // sill (the trim brings its own stool)
                     }
                     PlanSymbols.isOpening(name) -> {
@@ -779,6 +803,11 @@ object Elevation {
                     // ---- Closet parts ----
                     // Every closet unit is 84" tall with a pilaster at each end (closetUnit);
                     // rods sit at the standard heights: single hang 66", double hang 40" and 80".
+                    name.startsWith("Rod ") -> {
+                        // A hanging rod alone at the single-hang height, no shelf or pilasters.
+                        val p = 0.75f * inch
+                        line(from + p, SINGLE_ROD_IN, to - p, SINGLE_ROD_IN, medium)
+                    }
                     name.startsWith("Shelf & Rod") -> {
                         closetUnit(from, to)
                         shelfAndRod(from, to, SINGLE_ROD_IN)

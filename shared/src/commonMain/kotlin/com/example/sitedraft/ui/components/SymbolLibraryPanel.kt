@@ -82,13 +82,21 @@ fun SymbolLibraryPanel(
                 Text("Drawing on the foundation layer", style = MaterialTheme.typography.labelLarge)
                 Button(onClick = { onEvent(DrawingEvent.MatchFloorPlan) }, modifier = Modifier.fillMaxWidth()) { Text("Match floor plan") }
                 SymbolCategory(Structure.FOUNDATION, Icons.Default.Foundation, Structure.foundationLibrary, onEvent, startExpanded = true)
-                SymbolCategory("Foundation walls", Icons.Default.Fence, listOf("8\" Block Wall", "8\" Concrete Wall"), onEvent, startExpanded = true, category = PlanSymbols.WALLS)
+                SymbolCategory("Foundation walls", Icons.Default.Fence, listOf("12\" Block Wall", "10\" Concrete Wall", "8\" Block Wall", "8\" Concrete Wall"), onEvent, startExpanded = true, category = PlanSymbols.WALLS)
             }
             if (onFraming) {
                 Text("Drawing on a floor structural layer", style = MaterialTheme.typography.labelLarge)
                 Button(onClick = { onEvent(DrawingEvent.MatchFloorPlan) }, modifier = Modifier.fillMaxWidth()) { Text("Match floor plan") }
                 SymbolCategory(Structure.FRAMING, Icons.Default.ViewWeek, Structure.framingLibrary, onEvent, startExpanded = true)
             }
+            // Garages (Nov 23): against the house (attached) or apart (detached); the foundation layer follows.
+            SymbolCategory(com.example.sitedraft.ui.canvas.Garages.CATEGORY, Icons.Default.Foundation, com.example.sitedraft.ui.canvas.Garages.library, onEvent)
+            // Wings (Nov 23): against a house wall, the plan becomes an L (also in the Floor plan panel).
+            SymbolCategory(com.example.sitedraft.ui.canvas.Wings.CATEGORY, Icons.Default.Foundation, com.example.sitedraft.ui.canvas.Wings.library, onEvent)
+            // Porches (Nov 23): drag against an exterior wall; the foundation layer follows.
+            SymbolCategory(com.example.sitedraft.ui.canvas.Porches.CATEGORY, Icons.Default.Foundation, com.example.sitedraft.ui.canvas.Porches.library, onEvent)
+            // Section and detail callouts (Nov 23): numbered from the sheet set.
+            SymbolCategory(com.example.sitedraft.ui.canvas.Callouts.CATEGORY, Icons.Default.Layers, com.example.sitedraft.ui.canvas.Callouts.library, onEvent)
             SymbolCategory("Electrical", Icons.Default.ElectricBolt, listOf("Outlet", "Switch", "Light Fixture", "Junction Box"), onEvent)
             SymbolCategory("Plumbing", Icons.Default.WaterDrop, listOf("Valve", "Faucet"), onEvent)
             SymbolCategory(PlanSymbols.FIXTURES, Icons.Default.Bathtub, PlanSymbols.fixtures, onEvent)

@@ -1,0 +1,318 @@
+{
+    "projectName": "Voice",
+    "elements": [
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Rectangle",
+            "id": "c2432930-1b88-438c-9e2e-f04f9336d9a4",
+            "topLeft": "795.8333,27.0834",
+            "size": "1677.0833,1445.8333",
+            "color": -4294967296,
+            "strokeWidth": 0,
+            "fill": {
+                "pattern": "DOTS",
+                "spacing": 8.3333
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Rectangle",
+            "id": "892a98ea-4dfe-4715-8066-9085bbd18aee",
+            "topLeft": "27.0834,27.0834",
+            "size": "750.0,750.0",
+            "color": -4294967296,
+            "strokeWidth": 0,
+            "fill": {
+                "pattern": "TILE",
+                "spacing": 50
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "bc4268c1-1e7c-4fa6-8e45-57e66f66137e",
+            "symbolName": "2x6 Wall",
+            "category": "Walls",
+            "center": "1250.0,13.5417",
+            "size": "2500.0,27.0833",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 6.5,
+                "remodelStatus": 0
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "e3e3638b-f67a-474d-91a8-6bc52a377ed2",
+            "symbolName": "2x6 Wall",
+            "category": "Walls",
+            "center": "2486.4583,750.0",
+            "size": "27.0833,1445.8333",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 6.5,
+                "remodelStatus": 0
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "0ef00b73-be46-463b-a4b4-892ffa7ee24c",
+            "symbolName": "2x6 Wall",
+            "category": "Walls",
+            "center": "1250.0,1486.4583",
+            "size": "2500.0,27.0833",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 6.5,
+                "remodelStatus": 0
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "6ca3bf02-25b7-4c1a-82bd-5c592529d6b7",
+            "symbolName": "2x6 Wall",
+            "category": "Walls",
+            "center": "13.5417,750.0",
+            "size": "27.0833,1445.8333",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 6.5,
+                "remodelStatus": 0
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "e287f132-455c-4a31-a94f-69949ce03347",
+            "symbolName": "2x4 Wall",
+            "category": "Walls",
+            "center": "411.4583,786.4583",
+            "size": "768.75,18.75",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 4.5,
+                "remodelStatus": 0
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "dc0a93fd-87ca-43ca-89b2-a9849e30bcdc",
+            "symbolName": "2x4 Wall",
+            "category": "Walls",
+            "center": "786.4583,402.0833",
+            "size": "18.75,750.0",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 48,
+                "depthInches": 4.5,
+                "remodelStatus": 0
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Text",
+            "id": "c4c6e8c1-d1e1-400b-8337-f8d3da49448f",
+            "text": "KITCHEN",
+            "topLeft": "250.0,375.0",
+            "fontSize": 25,
+            "color": -4294967296
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Text",
+            "id": "5e3eace4-4843-413a-b735-5d6b00e9b6bc",
+            "text": "BEDROOM",
+            "topLeft": "1250.0,375.0",
+            "fontSize": 25,
+            "color": -4294967296
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "5df88336-8414-40a6-952f-4c83b0a0b76b",
+            "symbolName": "Corner Base 36\"",
+            "category": "Cabinets",
+            "center": "102.0834,102.0834",
+            "size": "150.0,150.0",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 36,
+                "depthInches": 36
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "20fe9daa-7f16-4425-a09f-2a095f17162c",
+            "symbolName": "Base 30\"",
+            "category": "Cabinets",
+            "center": "237.5,77.0834",
+            "size": "120.8333,100.0",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 29,
+                "depthInches": 24,
+                "front": 2
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "d6898e6d-ce45-496c-9a0b-4d806468fffc",
+            "symbolName": "Base 24\"",
+            "category": "Cabinets",
+            "center": "2422.9166,77.0834",
+            "size": "100.0,100.0",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 24,
+                "depthInches": 24
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "1c3754bb-88fd-4c52-979c-a439b8803e68",
+            "symbolName": "Base 36\"",
+            "category": "Cabinets",
+            "center": "625.0,77.0833",
+            "size": "150.0,100.0",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 36,
+                "depthInches": 24,
+                "front": 3,
+                "doorStyle": 1,
+                "hardware": 1
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "5fa32447-50b0-4087-b81a-d4d5cd839ed8",
+            "symbolName": "Washer",
+            "category": "Fixtures",
+            "center": "83.3333,1250.0",
+            "size": "112.5,112.5",
+            "color": -4294967296,
+            "rotation": 90,
+            "properties": {
+                "widthInches": 27,
+                "depthInches": 27
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "c7b4c13d-fbe4-44ca-b1fd-eca8df73bcd0",
+            "symbolName": "Rod 48\"",
+            "category": "Closet",
+            "center": "1250.0,1041.6667",
+            "size": "293.75,50.0",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 70.5,
+                "depthInches": 12
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.ElevationView",
+            "id": "51da575f-78d8-429e-80e1-281bb163ea73",
+            "spec": {
+                "wallId": "bc4268c1-1e7c-4fa6-8e45-57e66f66137e",
+                "side": "BELOW",
+                "crownIn": 3,
+                "tileFromIn": 36,
+                "tileToIn": 54,
+                "tileExtent": 1,
+                "tilePattern": 1,
+                "tileSizeIn": 3,
+                "tileLengthIn": 6
+            },
+            "origin": "0.0,2200.0",
+            "size": "2500.0,400.0",
+            "color": -4294967296
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
+            "id": "6613dd07-180c-44dc-b98f-6f62ec1ff37f",
+            "symbolName": "Island 3'x6'",
+            "category": "Cabinets",
+            "center": "416.6667,458.3333",
+            "size": "300.0,150.0",
+            "color": -4294967296,
+            "properties": {
+                "widthInches": 72,
+                "depthInches": 36
+            }
+        },
+        {
+            "type": "com.example.sitedraft.ui.canvas.DrawingElement.ElevationView",
+            "id": "6ef5150b-a475-4b00-87a1-4c3e56d5c7dd",
+            "spec": {
+                "wallId": "6613dd07-180c-44dc-b98f-6f62ec1ff37f",
+                "side": "BELOW",
+                "islandFace": 1
+            },
+            "origin": "2700.0,2200.0",
+            "size": "300.0,400.0",
+            "color": -4294967296
+        }
+    ],
+    "layers": [
+        {
+            "id": "foundation",
+            "name": "Foundation and foundation walls",
+            "trade": "FOUNDATION",
+            "levelId": "foundation"
+        },
+        {
+            "id": "floor1-structural",
+            "name": "First floor structural",
+            "trade": "FLOOR_STRUCTURAL",
+            "levelId": "floor1-framing"
+        },
+        {
+            "id": "floor1-plan",
+            "name": "First floor plan",
+            "trade": "FLOOR_PLAN",
+            "levelId": "floor1"
+        },
+        {
+            "id": "floor1-cabinets",
+            "name": "First floor cabinets",
+            "trade": "CABINETS",
+            "levelId": "floor1"
+        },
+        {
+            "id": "floor1-furniture",
+            "name": "First floor furniture",
+            "trade": "FURNITURE",
+            "levelId": "floor1"
+        },
+        {
+            "id": "roof-structural",
+            "name": "Roof structural",
+            "trade": "ROOF_STRUCTURAL",
+            "levelId": "roof"
+        },
+        {
+            "id": "roof-plan",
+            "name": "Roof plan",
+            "trade": "ROOF_PLAN",
+            "levelId": "roof"
+        },
+        {
+            "id": "exterior",
+            "name": "Exterior elevation",
+            "trade": "EXTERIOR_ELEVATION"
+        },
+        {
+            "id": "site",
+            "name": "Site plan",
+            "trade": "SITE_PLAN"
+        }
+    ],
+    "building": {
+        "roof": {
+            "pitch": 8,
+            "overhangIn": 16,
+            "endA": "HIP",
+            "endB": "HIP"
+        },
+        "gradeExposureIn": 8
+    }
+}

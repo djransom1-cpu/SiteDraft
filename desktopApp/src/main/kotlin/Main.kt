@@ -13,6 +13,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.example.sitedraft.platform.DesktopPlatform
 import com.example.sitedraft.platform.LocalPlatform
+import com.example.sitedraft.platform.TestCopy
 import com.example.sitedraft.ui.cloud.SiteDraftApp
 import com.example.sitedraft.ui.canvas.DrawingManager
 import com.example.sitedraft.ui.theme.SiteDraftTheme
@@ -23,7 +24,8 @@ fun main() = application {
     DisposableEffect(Unit) { onDispose { manager.dispose() } }
     Window(
         onCloseRequest = ::exitApplication,
-        title = "SiteDraft",
+        // The test copy says so, so it is never mistaken for the installed app.
+        title = if (TestCopy.active) "SiteDraft TEST (not installed)" else "SiteDraft",
         // Title bar / taskbar icon (the installer's own icon comes from build.gradle.kts).
         icon = painterResource("icon.png"),
         // Open maximized: a fixed 1400x900 window was taller than a laptop screen at 125-150%

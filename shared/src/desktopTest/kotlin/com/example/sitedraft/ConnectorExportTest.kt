@@ -15,6 +15,7 @@ import com.example.sitedraft.ui.canvas.Shower
 import com.example.sitedraft.ui.canvas.Stairs
 import com.example.sitedraft.ui.canvas.UnitSystem
 import com.example.sitedraft.ui.canvas.ViewerSide
+import com.example.sitedraft.ui.canvas.inchesToPx
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -114,10 +115,74 @@ class ConnectorExportTest {
             }
             // Levels and layers (Building.kt): the defaults, and samples the connector's layers.js is checked against.
             put("building", buildBuilding())
+            // Stairs (Stairs.kt, Nov 24): their defaults and keys, and worked samples the connector's stairs.js is checked against.
+            put("stairs", buildStairs())
         }
         val f = File(outDir, "catalog.json")
         f.writeText(Json { prettyPrint = true }.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), catalog) + "\n")
         assertTrue(f.length() > 1000)
+    }
+
+    /**
+     * Stairs for the connector: each type's default settings, the property keys, and samples run
+     * through the app's own code (Stairs.sync, footprintIn, floorOpening) on a few buildings.
+     */
+    private fun buildStairs(): kotlinx.serialization.json.JsonObject {
+        val two = com.example.sitedraft.ui.canvas.BuildingSettings(upperFloors = listOf(com.example.sitedraft.ui.canvas.UpperFloor("Second floor", 1310f)), autoLayers = true)
+        val crawl = com.example.sitedraft.ui.canvas.BuildingSettings(foundation = com.example.sitedraft.ui.canvas.FoundationType.CRAWL, autoLayers = true)
+        val basement = com.example.sitedraft.ui.canvas.BuildingSettings(autoLayers = true)
+        val highSlab = com.example.sitedraft.ui.canvas.BuildingSettings(basementSlabIn = 0f, plateHeightIn = 109.125f, autoLayers = true)
+        val buildings = listOf("basement" to basement, "twoFloors" to two, "crawl" to crawl, "flushSlab" to highSlab)
+        // type, goes, floor, typed rise (0 = follows the building), rotation
+        val cases = listOf(
+            listOf(Stairs.STRAIGHT, 0, 1, 0, 0), listOf(Stairs.STRAIGHT, 1, 1, 0, 90), listOf(Stairs.STRAIGHT, 2, 1, 0, 180),
+            listOf(Stairs.L_STAIR, 0, 1, 0, 0), listOf(Stairs.U_STAIR, 0, 1, 0, 270), listOf(Stairs.SPIRAL, 0, 1, 0, 0),
+            listOf(Stairs.DECK, 0, 1, 0, 0), listOf(Stairs.STRAIGHT, 0, 2, 0, 0), listOf(Stairs.STRAIGHT, 0, 1, 100, 0),
+        )
+        val all = Json { encodeDefaults = true }
+        return buildJsonObject {
+            putJsonObject("defaults") {
+                for (name in Stairs.library) putJsonObject(name) { for ((k, v) in Stairs.defaults(name)) put(k, v) }
+            }
+            putJsonObject("keys") {
+                put("rise", Stairs.RISE); put("tread", Stairs.TREAD); put("width", Stairs.WIDTH); put("flight1", Stairs.FLIGHT1)
+                put("turn", Stairs.TURN); put("goes", Stairs.GOES); put("dir", Stairs.DIR); put("riseSet", Stairs.RISE_SET); put("showR", Stairs.SHOW_R)
+            }
+            put("headroomIn", Stairs.HEADROOM_IN)
+            putJsonArray("samples") {
+                for ((bName, b) in buildings) for (c in cases) {
+                    val name = c[0] as String
+                    val goes = c[1] as Int
+                    val floor = c[2] as Int
+                    val typed = c[3] as Int
+                    val rot = (c[4] as Int).toFloat()
+                    if (floor == 2 && b.upperFloors.isEmpty()) continue
+                    val st0 = CanvasState(building = b)
+                    val inch = st0.inchesToPx(1f)
+                    var props = Stairs.defaults(name) + (Stairs.GOES to goes.toFloat())
+                    if (typed > 0) props = props + (Stairs.RISE to typed.toFloat()) + (Stairs.RISE_SET to 1f)
+                    val stair = DrawingElement.Symbol(id = "st", symbolName = name, category = PlanSymbols.STAIRS, center = Offset(500f, 400f),
+                        size = Size(36f * inch, 120f * inch), color = Color.White, rotation = rot, properties = props, layerId = "floor$floor-plan")
+                    val synced = Stairs.sync(st0.copy(elements = listOf(stair)))
+                    val out = synced.elements.first() as DrawingElement.Symbol
+                    val l = Stairs.layout(out)
+                    val (fw, fd) = Stairs.footprintIn(out)
+                    val open = Stairs.floorOpening(out, synced)
+                    add(buildJsonObject {
+                        put("building", bName)
+                        put("settings", all.encodeToJsonElement(com.example.sitedraft.ui.canvas.BuildingSettings.serializer(), b))
+                        put("type", name); put("goes", goes); put("floor", floor); put("typedRise", typed); put("rotation", rot)
+                        put("down", Stairs.prop(out, Stairs.DIR) == 2f)
+                        put("riseIn", Stairs.prop(out, Stairs.RISE))
+                        put("risers", l.risers)
+                        put("footprintWIn", fw); put("footprintDIn", fd)
+                        put("openingLayer", open?.layerId)
+                        put("openingWIn", open?.let { it.size.width / inch }); put("openingLIn", open?.let { it.size.height / inch })
+                        put("openingCenterXIn", open?.let { (it.center.x - out.center.x) / inch }); put("openingCenterYIn", open?.let { (it.center.y - out.center.y) / inch })
+                    })
+                }
+            }
+        }
     }
 
     /** Defaults and samples of the levels and layers, for layers.js to be checked against. */

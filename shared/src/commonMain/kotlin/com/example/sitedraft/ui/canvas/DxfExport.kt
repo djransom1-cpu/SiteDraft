@@ -382,7 +382,8 @@ object DxfExport {
             }
             s.category in Structure.categories -> {
                 val openings = if (s.symbolName == Structure.JOIST_BAY) Structure.openingsOver(s, state) else emptyList()
-                for (part in Structure.planParts(s, w, h, inch, openings)) {
+                val origin = if (s.rotation % 360f == 0f) FramingLayout.origin(state)?.let { it - (s.center - androidx.compose.ui.geometry.Offset(w / 2f, h / 2f)) } else null
+                for (part in Structure.planParts(s, w, h, inch, openings, origin)) {
                     val pen = if (part.inkIsDashed()) p.dashed() else p
                     when (part) {
                         is Shower.Part.Seg -> pen.line(part.a, part.b)
@@ -663,9 +664,9 @@ object DxfExport {
         val hw = w / 2f
         val hh = h / 2f
         val textSize = (inch * 3.5f).coerceAtLeast(6f)
-        p.rect(Offset(-hw, -hh), Size(w, h))
+        if (!name.startsWith("Rod ")) p.rect(Offset(-hw, -hh), Size(w, h))
         when {
-            name.startsWith("Shelf & Rod") || name.startsWith("Double Hang") -> {
+            name.startsWith("Shelf & Rod") || name.startsWith("Double Hang") || name.startsWith("Rod ") -> {
                 val rodY = -hh + inch * 10.5f
                 p.dashed().line(Offset(-hw + inch, rodY), Offset(hw - inch, rodY))
                 p.line(Offset(-hw + inch, rodY - inch), Offset(-hw + inch, rodY + inch))

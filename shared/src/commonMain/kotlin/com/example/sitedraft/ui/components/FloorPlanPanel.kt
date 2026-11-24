@@ -68,11 +68,18 @@ fun FloorPlanPanel(
 ) {
     val unit = if (state.unitSystem == UnitSystem.IMPERIAL) "ft" else "m"
     val metric = state.unitSystem == UnitSystem.METRIC
-    val wallChoices = listOf(FloorPlan.EXTERIOR_WALL, FloorPlan.INTERIOR_WALL, "8\" Block Wall", "8\" Concrete Wall")
+    val wallChoices = listOf(FloorPlan.EXTERIOR_WALL, FloorPlan.INTERIOR_WALL, "12\" Block Wall", "10\" Concrete Wall", "8\" Block Wall", "8\" Concrete Wall")
 
     var shellWidth by rememberSaveable { mutableStateOf(if (metric) "9" else "30") }
     var shellDepth by rememberSaveable { mutableStateOf(if (metric) "18" else "60") }
     var shellWall by rememberSaveable { mutableStateOf(FloorPlan.EXTERIOR_WALL) }
+    // A wing off the house (Wings, Nov 23): the plan becomes an L.
+    var wingWidth by rememberSaveable { mutableStateOf("14") }
+    var wingDepth by rememberSaveable { mutableStateOf("20") }
+    var wingWall by rememberSaveable { mutableStateOf(0) }
+    var wingFrom by rememberSaveable { mutableStateOf("") }
+    var wingFound by rememberSaveable { mutableStateOf(0) }
+    var wingJoists by rememberSaveable { mutableStateOf(0) }
 
     var roomName by rememberSaveable { mutableStateOf("Bedroom") }
     var roomWidth by rememberSaveable { mutableStateOf(if (metric) "3.6" else "12") }
@@ -137,6 +144,50 @@ fun FloorPlanPanel(
                 enabled = sw != null && sd != null && sw > 0f && sd > 0f,
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Place outline") }
+
+            // --- A wing: the house becomes an L ---
+            Spacer(Modifier.height(12.dp))
+            Text("Add a wing (L-shape)", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Outside dimensions: width along the house wall, how far it comes out. The house wall where it joins comes out " +
+                    "(draw an interior wall there if the layout wants one). Its foundation, floor, roof and elevations follow.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NumberField("Width ($unit)", wingWidth, Modifier.weight(1f), feetInches = !metric) { wingWidth = it }
+                NumberField("Out from house ($unit)", wingDepth, Modifier.weight(1f), feetInches = !metric) { wingDepth = it }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("North wall", "South wall", "West wall", "East wall").forEachIndexed { i, l ->
+                    FilterChip(selected = wingWall == i, onClick = { wingWall = i }, label = { Text(l) })
+                }
+            }
+            NumberField(if (wingWall <= 1) "From the west corner (blank = centered)" else "From the north corner (blank = centered)",
+                wingFrom, Modifier.fillMaxWidth(), feetInches = !metric) { wingFrom = it }
+            Text("Foundation", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.example.sitedraft.ui.canvas.Wings.foundations.forEachIndexed { i, l ->
+                    FilterChip(selected = wingFound == i, onClick = { wingFound = i }, label = { Text(l) })
+                }
+            }
+            Text("Floor joists", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.example.sitedraft.ui.canvas.Wings.joistChoices.forEachIndexed { i, l ->
+                    FilterChip(selected = wingJoists == i, onClick = { wingJoists = i }, label = { Text(l) })
+                }
+            }
+            val ww = if (metric) wingWidth.toFloatOrNull() else parseFeet(wingWidth)
+            val wd = if (metric) wingDepth.toFloatOrNull() else parseFeet(wingDepth)
+            val wf = if (wingFrom.isBlank()) null else if (metric) wingFrom.toFloatOrNull() else parseFeet(wingFrom)
+            val toIn = if (metric) 39.3701f else 12f
+            val hasHouse = com.example.sitedraft.ui.canvas.RoofPlan.footprint(state) != null
+            Button(
+                onClick = {
+                    if (ww != null && wd != null) onEvent(DrawingEvent.AddWing(ww * toIn, wd * toIn, wingWall, wf?.times(toIn), wingFound, 0, wingJoists))
+                },
+                enabled = hasHouse && ww != null && wd != null && ww > 0f && wd > 0f && (wingFrom.isBlank() || wf != null),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (hasHouse) "Add the wing" else "Add the wing (place the house outline first)") }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
@@ -262,6 +313,18 @@ fun FloorPlanPanel(
             ) { Text("Dimension one room and its elevations (then tap inside it)") }
             Text(
                 "With the Dimension tool: tap a wall, door, window, cabinet or room to dimension it in one tap. Draw one dimension, then start the next at its end going the same way: it continues the string on the same line, no third tap.",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // --- Door and window schedules ---
+            Text("Doors and windows", style = MaterialTheme.typography.titleMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = state.showOpeningMarks, onClick = { onEvent(DrawingEvent.ShowOpeningMarks(!state.showOpeningMarks)) }, label = { Text("Marks on the plan (D1, W1...)") })
+            }
+            Text(
+                "Each door and window gets a mark that stays with it. Put the door or window schedule on a sheet (Sheets > Add a viewport): it is read off the plan and keeps up with it.",
                 style = MaterialTheme.typography.bodySmall
             )
 

@@ -31,7 +31,6 @@ object WallSection {
     data class Mark(val text: String, val y: Float)
     data class Geometry(val parts: List<Shower.Part>, val notes: List<Note>, val marks: List<Mark>, val extent: Rect)
 
-    private const val BLOCK_IN = 7.625f
     private const val SHEATHING_IN = 0.4375f
     private const val SIDING_IN = 0.75f
     private const val DRYWALL_IN = 0.5f
@@ -113,7 +112,8 @@ object WallSection {
     /** Joist label and spacing: the first-floor bay's when there is one. */
     fun joist(state: CanvasState): Pair<String, Float> {
         val bay = state.elements.filterIsInstance<DrawingElement.Symbol>().firstOrNull {
-            it.category == Structure.FRAMING && it.symbolName == Structure.JOIST_BAY && Layers.layerOf(it, state).id == "${Building.FLOOR1}-structural"
+            it.category == Structure.FRAMING && it.symbolName == Structure.JOIST_BAY && Layers.layerOf(it, state).id == "${Building.FLOOR1}-structural" &&
+                !it.id.contains("pcf:")   // a porch's own joists aren't the house's
         }
         if (bay != null) return Structure.joistLabel(bay) to Structure.prop(bay, Structure.SPACING)
         val code = Structure.joistCodeFor(state.building.joistDepthIn)
@@ -122,6 +122,7 @@ object WallSection {
 
     fun geometry(state: CanvasState): Geometry {
         val s = state.building
+        val BLOCK_IN = Building.foundationWallIn(s)   // the foundation wall's thickness (12" block unless picked)
         val parts = mutableListOf<Shower.Part>()
         val notes = mutableListOf<Note>()
         val marks = mutableListOf<Mark>()
@@ -131,6 +132,11 @@ object WallSection {
         fun line(x1: Float, e1: Float, x2: Float, e2: Float, ink: Shower.Ink = Shower.Ink.THIN) =
             parts.add(Shower.Part.Seg(Offset(x1, y(e1)), Offset(x2, y(e2)), ink))
         fun note(text: String, x: Float, e: Float, outside: Boolean) { notes += Note(text, Offset(x, y(e)), outside) }
+        // A piece of lumber cut by the section shows its end with an X corner to corner (Dan, Nov 22).
+        fun cut(x1: Float, e1: Float, x2: Float, e2: Float, ink: Shower.Ink = Shower.Ink.LINE) {
+            rect(x1, e1, x2, e2, ink)
+            line(x1, e1, x2, e2); line(x1, e2, x2, e1)
+        }
 
         val stud = studDepthIn(state)
         val (joistLabel, joistOc) = joist(state)
@@ -146,15 +152,19 @@ object WallSection {
             val fTop = Building.footingTopIn(s)
             val fBot = Building.footingBottomIn(s)
             val wTop = Building.foundationTopIn(s)
-            val proj = s.footingProjectionIn
-            // Footing, 6" (or as set) past the outside face.
+            val proj = Building.footingProjections(s).first
+            // Footing, centred under the wall unless set (the code rule, Nov 23).
             rect(-proj, fBot, s.footingWidthIn - proj, fTop)
             note("${formatInches(s.footingWidthIn)}\" x ${formatInches(s.footingThicknessIn)}\" CONC. FOOTING", s.footingWidthIn - proj - 2f, (fTop + fBot) / 2f, false)
             // Block wall, a line at every course.
             rect(0f, fTop, BLOCK_IN, wTop)
-            var c = fTop + s.courseIn
-            while (c < wTop - 0.1f && s.courseIn > 0.5f) { line(0f, c, BLOCK_IN, c, Shower.Ink.FAINT); c += s.courseIn }
-            note("${s.blockCourses} COURSES 8\" BLOCK", BLOCK_IN, fTop + (wTop - fTop) * 0.55f, false)
+            if (!s.foundationWall.poured) {
+                var c = fTop + s.courseIn
+                while (c < wTop - 0.1f && s.courseIn > 0.5f) { line(0f, c, BLOCK_IN, c, Shower.Ink.FAINT); c += s.courseIn }
+                note("${s.blockCourses} COURSES ${s.foundationWall.callout}", BLOCK_IN, fTop + (wTop - fTop) * 0.55f, false)
+            } else {
+                note("${s.foundationWall.callout} WALL, ${Building.elevationText(wTop - fTop)} TALL", BLOCK_IN, fTop + (wTop - fTop) * 0.55f, false)
+            }
             // Foam outside, full height of the block.
             if (s.foundationFoamIn > 0f) {
                 val f = s.foundationFoamIn
@@ -168,13 +178,23 @@ object WallSection {
                 }
                 note("${formatInches(f)}\" RIGID FOAM", -f, fTop + (wTop - fTop) * 0.7f, true)
             }
-            // Drain tile beside the footing, outside, on its bottom.
-            val tileX = -proj - 4f
-            parts.add(Shower.Part.Ring(Offset(tileX, y(fBot + 2f)), 2f, Shower.Ink.LINE))
-            note("4\" DRAIN TILE IN STONE", tileX - 2f, fBot + 2f, true)
-            parts.add(Shower.Part.Poly(listOf(
-                Offset(tileX - 6f, y(fBot)), Offset(tileX + 3f, y(fBot)), Offset(tileX + 3f, y(fBot + 8f)), Offset(tileX - 6f, y(fBot + 8f))
-            ), true, Shower.Ink.FAINT_DASHED))
+            // Drain tile on both sides of the footing (Dan, Nov 22-23): Form-A-Drain (the forms stay) or
+            // perforated pipe in stone. The footing detail ([FootingDetail]) shows it full size.
+            val inFace = s.footingWidthIn - proj
+            if (s.drainTile == DrainTile.FORM_A_DRAIN) {
+                rect(-proj - 1.5f, fBot, -proj, fTop, Shower.Ink.THIN)
+                rect(inFace, fBot, inFace + 1.5f, fTop, Shower.Ink.THIN)
+                note("FORM-A-DRAIN BOTH SIDES OF FOOTING", -proj - 1.5f, (fTop + fBot) / 2f, true)
+            } else {
+                for ((tileX, dir) in listOf(-proj - 4f to -1f, inFace + 4f to 1f)) {
+                    parts.add(Shower.Part.Ring(Offset(tileX, y(fBot + 2f)), 2f, Shower.Ink.LINE))
+                    val a = tileX - dir * 3f; val b = tileX + dir * 6f
+                    parts.add(Shower.Part.Poly(listOf(
+                        Offset(minOf(a, b), y(fBot)), Offset(maxOf(a, b), y(fBot)), Offset(maxOf(a, b), y(fBot + 8f)), Offset(minOf(a, b), y(fBot + 8f))
+                    ), true, Shower.Ink.FAINT_DASHED))
+                }
+                note("4\" DRAIN TILE IN STONE, BOTH SIDES", -proj - 6f, fBot + 2f, true)
+            }
             // Grade outside, 8" below the top of the foundation.
             val grade = wTop - 8f
             line(-NOTE_GAP_IN - 6f, grade, -s.foundationFoamIn, grade, Shower.Ink.LINE)
@@ -190,7 +210,7 @@ object WallSection {
             }
             // Sill seal, treated sill (as wide as the studs), anchor bolt.
             line(0f, wTop + 0.15f, stud, wTop + 0.15f, Shower.Ink.ACCENT)
-            rect(0f, wTop + 0.25f, stud, sillTop)
+            cut(0f, wTop + 0.25f, stud, sillTop)
             note("TREATED ${wallLabel(state)} SILL ON SILL SEAL", stud, wTop + 0.75f, false)
             val bx = stud / 2f
             line(bx, wTop - 7f, bx, sillTop + 1f, Shower.Ink.ACCENT)
@@ -198,7 +218,7 @@ object WallSection {
             rect(bx - 0.75f, sillTop, bx + 0.75f, sillTop + 0.5f, Shower.Ink.ACCENT)
             note("1/2\" A.B. ${formatInches(s.anchorBoltEndIn)}\" FROM CORNERS, ${formatInches(s.anchorBoltSpacingIn)}\" O.C.", bx, wTop - 4f, false)
             // Rim, joist running into the house, subfloor.
-            rect(0f, sillTop, 1.5f, joistTop)
+            cut(0f, sillTop, 1.5f, joistTop)
             note("RIM JOIST", 0.75f, sillTop + (joistTop - sillTop) * 0.8f, false)
             rect(1.5f, sillTop, run, joistTop, Shower.Ink.THIN)
             note("$joistLabel FLOOR JOISTS @ ${formatInches(joistOc)}\" O.C.", run - 6f, (sillTop + joistTop) / 2f, false)
@@ -219,7 +239,7 @@ object WallSection {
             rect(0f, joistTop, run, subTop, Shower.Ink.THIN)
             note("${formatInches(s.subfloorIn)}\" SUBFLOOR", run - 2f, (joistTop + subTop) / 2f, false)
         }
-        rect(0f, datum, stud, datum + 1.5f)
+        cut(0f, datum, stud, datum + 1.5f)
         note("${wallLabel(state)} PLATE", stud, datum + 0.75f, false)
         line(0f, datum + 1.5f, 0f, wallTop, Shower.Ink.LINE)
         line(stud, datum + 1.5f, stud, wallTop, Shower.Ink.LINE)
@@ -238,7 +258,7 @@ object WallSection {
         // Outside: sheathing from the sill (covering the rim) up, wrap, siding.
         val sheathBottom = if (slab) datum else sillTop - 0.5f
         rect(-SHEATHING_IN, sheathBottom, 0f, wallTop, Shower.Ink.THIN)
-        note("7/16\" SHEATHING", -SHEATHING_IN, datum + WALL_SHOWN_IN * 0.75f, true)
+        note("7/16\" OSB SHEATHING", -SHEATHING_IN, datum + WALL_SHOWN_IN * 0.75f, true)
         line(-SHEATHING_IN - 0.15f, sheathBottom + 1f, -SHEATHING_IN - 0.15f, wallTop, Shower.Ink.DASHED)
         note("HOUSE WRAP", -SHEATHING_IN - 0.15f, datum + WALL_SHOWN_IN * 0.5f, true)
         val sx = -SHEATHING_IN - 0.3f
@@ -324,7 +344,7 @@ object WallSection {
         val rowGap = text * 1.5f
         val inside = g.notes.filter { !it.outside }.sortedBy { it.at.y }
         val outside = g.notes.filter { it.outside }.sortedBy { it.at.y }
-        val rightCol = map(Offset(BLOCK_IN + RUN_IN + NOTE_GAP_IN, 0f)).x
+        val rightCol = map(Offset(Building.foundationWallIn(state.building) + RUN_IN + NOTE_GAP_IN, 0f)).x
         val leftCol = map(Offset(-NOTE_GAP_IN - 4f, 0f)).x
         fun place(list: List<Note>, colX: Float, onRight: Boolean) {
             var lastY = Float.NEGATIVE_INFINITY

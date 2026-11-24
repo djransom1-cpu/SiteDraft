@@ -91,7 +91,9 @@ async function changeProject(db, uid, name, tool, change, { create = null, mustB
     const updatedAt = Math.max(now, (got && got.data.updatedAt ? got.data.updatedAt : 0) + 1);
     if (got) {
       const h = history(db, uid).doc();
-      writeChunked(tx, h, { project: name, tool, at: now, updatedAt: got.data.updatedAt || 0, device: got.data.device || null }, got.json);
+      // rev = this change's updatedAt: strictly increasing per project, so two changes in the same
+      // millisecond still undo in the right order (at alone can tie).
+      writeChunked(tx, h, { project: name, tool, at: now, rev: updatedAt, updatedAt: got.data.updatedAt || 0, device: got.data.device || null }, got.json);
     }
     writeChunked(tx, ref, { name, updatedAt, device: DEVICE }, json, got ? Number(got.data.chunkCount || 1) : 1);
     tx.set(stamps(db, uid).doc(encodeDocId(name)), { name, updatedAt, device: DEVICE });
@@ -101,7 +103,8 @@ async function changeProject(db, uid, name, tool, change, { create = null, mustB
 
 async function historyFor(db, uid, name) {
   const snap = await history(db, uid).where("project", "==", name).get();
-  return snap.docs.map((d) => ({ ref: d.ref, id: d.id, ...d.data() })).sort((a, b) => b.at - a.at);
+  const order = (h) => h.rev ?? h.at;
+  return snap.docs.map((d) => ({ ref: d.ref, id: d.id, ...d.data() })).sort((a, b) => order(b) - order(a));
 }
 
 async function pruneHistory(db, uid, name) {

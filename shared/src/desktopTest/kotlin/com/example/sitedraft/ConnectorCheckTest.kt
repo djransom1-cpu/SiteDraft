@@ -127,4 +127,38 @@ class ConnectorCheckTest {
         // Hidden layers are left out of what the app draws and picks.
         assertTrue(com.example.sitedraft.ui.canvas.Layers.visibleElements(state).size <= state.elements.size)
     }
+
+    @Test
+    fun `voice drawing - hatch, elevations, roof, fronts and the rod read the same in the app`() {
+        val state = load("connector-voice.json")
+        val ex = Json.parseToJsonElement(File(dir, "connector-voice-expect.json").readText()).jsonObject
+        fun id(k: String) = ex[k]!!.jsonPrimitive.content
+        // The cabinet run picked by room starts at the kitchen's inside corner (6 1/2" in from the outside of the 2x6 wall).
+        val first = state.symbol(ex["kitchenRun"]!!.jsonArray.first().jsonPrimitive.content)
+        assertEquals(state.inchesToPx(6.5f), FloorPlan.bounds(first).left, 0.5f)
+        assertEquals(2f, state.symbol(id("drawerBase")).properties["front"])
+        assertEquals(3f, state.symbol(id("base")).properties["front"])
+        assertEquals(70.5f, state.symbol(id("rod")).properties["widthInches"])
+        assertTrue("the rod is a closet part", state.symbol(id("rod")).category == PlanSymbols.CLOSET && "Rod 48\"" in PlanSymbols.closet)
+        // Floor hatches: outline-free rectangles with a fill, as Hatch an area makes them.
+        val hatches = state.elements.filterIsInstance<DrawingElement.Rectangle>()
+        assertEquals(2, hatches.size)
+        assertEquals(setOf("TILE", "DOTS"), hatches.map { it.fill.pattern.name }.toSet())
+        // The wall elevation looks north from the room and is the wall's length; the island one shows its back.
+        val wallView = state.elements.filterIsInstance<DrawingElement.ElevationView>().first { it.id == id("wallElevation") }
+        assertEquals(com.example.sitedraft.ui.canvas.ViewerSide.BELOW, wallView.spec.side)
+        assertEquals(3f, wallView.spec.crownIn)
+        val wall = state.symbol(id("northWall"))
+        assertEquals(Elevation.sizePx(wall, wallView.spec, state).width, wallView.size.width, 0.5f)
+        val islandView = state.elements.filterIsInstance<DrawingElement.ElevationView>().first { it.id == id("islandElevation") }
+        assertEquals(1, islandView.spec.islandFace)
+        // The roof and the exterior elevations the app builds from the building inputs.
+        val roof = state.building.roof
+        assertNotNull(roof)
+        assertEquals(8f, roof!!.pitch)
+        assertEquals(com.example.sitedraft.ui.canvas.RoofEnd.HIP, roof.endA)
+        assertNotNull("roof geometry over the 2x6 walls", com.example.sitedraft.ui.canvas.RoofPlan.geometry(state, roof))
+        assertEquals(8f, state.building.gradeExposureIn)
+        assertNotNull(com.example.sitedraft.ui.canvas.ExteriorElevation.worldSize(state, com.example.sitedraft.ui.canvas.ExteriorElevation.Face.SOUTH))
+    }
 }

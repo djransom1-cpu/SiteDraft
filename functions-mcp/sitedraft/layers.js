@@ -20,7 +20,7 @@ const FLOOR1_FURNITURE = B.floor1Furniture;
 
 const LABEL = {
   FOUNDATION: "Foundation and foundation walls", FLOOR_STRUCTURAL: "Floor structural", FLOOR_PLAN: "Floor plan",
-  CABINETS: "Cabinets", FURNITURE: "Furniture", ROOF_STRUCTURAL: "Roof structural",
+  CABINETS: "Cabinets", FURNITURE: "Furniture", ROOF_STRUCTURAL: "Roof structural", ROOF_PLAN: "Roof plan",
   EXTERIOR_ELEVATION: "Exterior elevation", SITE_PLAN: "Site plan", CUSTOM: "Custom",
 };
 const ORDINAL = ["First", "Second", "Third", "Fourth", "Fifth"];
@@ -86,6 +86,7 @@ function defaultLayers(s) {
   const floors = 1 + (s.upperFloors || []).length;
   for (let n = 1; n <= floors; n++) out.push(...floorLayers(n, floorName(s, n), s));
   out.push({ id: "roof-structural", name: LABEL.ROOF_STRUCTURAL, trade: "ROOF_STRUCTURAL", levelId: "roof", visible: true });
+  out.push({ id: "roof-plan", name: LABEL.ROOF_PLAN, trade: "ROOF_PLAN", levelId: "roof", visible: true });
   out.push({ id: "exterior", name: LABEL.EXTERIOR_ELEVATION, trade: "EXTERIOR_ELEVATION", levelId: null, visible: true });
   out.push({ id: "site", name: LABEL.SITE_PLAN, trade: "SITE_PLAN", levelId: null, visible: true });
   return out;
@@ -213,6 +214,9 @@ function describe(project) {
       sill: inchText(s.sillIn), blockCourses: s.blockCourses, courseHeight: inchText(s.courseIn), crawlClearance: inchText(s.crawlClearanceIn),
       footing: `${inchText(s.footingThicknessIn)} thick x ${inchText(s.footingWidthIn)} wide`,
       upperFloors: (s.upperFloors || []).map((f) => ({ name: f.name, topOfSubfloor: fmt(f.elevationIn) })),
+      roof: s.roof ? s.roof : "not set up",
+      exteriorElevationsGradeExposure: s.gradeExposureIn == null ? "not set up" : inchText(s.gradeExposureIn),
+      buildFromFloorPlan: !!s.autoLayers,
     },
     levels: levels(s).slice().reverse().map((l) => ({ id: l.id, name: l.name, elevation: l.elevationIn == null ? "not set" : fmt(l.elevationIn), note: l.note })),
     layers: effectiveLayers(project).map((l) => ({ id: l.id, name: l.name, trade: l.trade, level: l.levelId, visible: l.visible, active: l.id === active.id, elements: counts.get(l.id) || 0 })),
@@ -271,6 +275,7 @@ function setBuildingInputs(project, a) {
   if (a.footing_thickness != null) s.footingThicknessIn = len(a.footing_thickness, "Footing thickness");
   if (a.footing_width != null) s.footingWidthIn = len(a.footing_width, "Footing width");
   if (a.build_from_floor_plan != null) s.autoLayers = !!a.build_from_floor_plan;
+  if (a.show_existing_framing != null) s.showExistingFraming = !!a.show_existing_framing;
   if (a.upper_floors) s.upperFloors = a.upper_floors.map((f) => ({ name: String(f.name || "").trim(), elevationIn: len(f.top_of_subfloor, f.name || "Floor") }));
   const bad = validate(s);
   if (bad) throw new M.UserError(bad);
@@ -279,6 +284,70 @@ function setBuildingInputs(project, a) {
   reconcile(project);
   compact(project);
   return { state: project, result: describe(project) };
+}
+
+const COVERINGS = { shingles: "ARCH_SHINGLES", "architectural shingles": "ARCH_SHINGLES", "standing seam": "STANDING_SEAM", "standing seam metal": "STANDING_SEAM",
+  metal: "EXPOSED_FASTENER", "exposed fastener": "EXPOSED_FASTENER", "exposed-fastener metal": "EXPOSED_FASTENER", "cedar shakes": "CEDAR_SHAKES", shakes: "CEDAR_SHAKES",
+  "spanish tile": "SPANISH_TILE", tile: "SPANISH_TILE", slate: "SLATE" };
+
+/**
+ * The roof (Building.kt RoofSettings; RoofPlan draws it over the first-floor 2x6 exterior walls):
+ * trusses or rafters, pitch (rise per 12), eave overhang, rake at a gable end, heel, spacing,
+ * gable or hip at each end. The app builds the roof plan and framing from this when it next
+ * opens or reloads the project, and the exterior elevations show it. remove: true takes it away.
+ */
+function setRoof(project, a) {
+  const s = { ...settingsOf(project) };
+  const len = (v, what) => { const x = M.parseLength(v); if (x == null || isNaN(x)) throw new M.UserError(`${what}: "${v}" isn't a length.`); return x; };
+  if (a.remove) {
+    materialize(project); project.building = { ...s, roof: null }; reconcile(project); compact(project);
+    return { state: project, result: { roof: "removed" } };
+  }
+  const r = { ...(s.roof || {}) };
+  if (a.framing) r.framing = { trusses: "TRUSSES", rafters: "RAFTERS" }[String(a.framing).toLowerCase()];
+  if (a.pitch != null) { const p = Number(String(a.pitch).split("/")[0]); if (!(p > 0 && p <= 24)) throw new M.UserError("pitch: rise per 12, e.g. 6 for a 6/12."); r.pitch = p; }
+  if (a.overhang != null) r.overhangIn = len(a.overhang, "overhang");
+  if (a.rake != null) r.rakeIn = len(a.rake, "rake");
+  if (a.heel != null) r.heelIn = len(a.heel, "heel");
+  if (a.spacing != null) r.ocIn = len(a.spacing, "spacing");
+  if (a.rafter_size) r.rafterSize = String(a.rafter_size);
+  const end = (v, what) => { const x = { gable: "GABLE", hip: "HIP" }[String(v).toLowerCase()]; if (!x) throw new M.UserError(`${what}: gable or hip.`); return x; };
+  if (a.ends) { r.endA = end(a.ends, "ends"); r.endB = r.endA; }
+  if (a.end_a) r.endA = end(a.end_a, "end_a");
+  if (a.end_b) r.endB = end(a.end_b, "end_b");
+  if (a.turn_ridge != null) r.turnRidge = !!a.turn_ridge;
+  if (a.covering) {
+    const c = COVERINGS[String(a.covering).toLowerCase()];
+    if (!c) throw new M.UserError(`covering: ${Object.keys(COVERINGS).join(", ")}.`);
+    r.covering = c;
+  }
+  materialize(project);
+  project.building = { ...s, roof: r };
+  reconcile(project);
+  compact(project);
+  const shown = { framing: (r.framing || "TRUSSES").toLowerCase(), pitch: `${r.pitch ?? 6}/12`, overhang: inchText(r.overhangIn ?? 12), rake: inchText(r.rakeIn ?? 12),
+    heel: inchText(r.heelIn ?? 4), spacing: `${inchText(r.ocIn ?? 24)} o.c.`, ends: `${(r.endA || "GABLE").toLowerCase()} / ${(r.endB || "GABLE").toLowerCase()}`,
+    ridge: r.turnRidge ? "turned (runs the short way)" : "runs the long way", covering: (r.covering || "ARCH_SHINGLES").toLowerCase().replace(/_/g, " ") };
+  return { state: project, result: { roof: shown, note: "Site Draft builds the roof plan and framing over the first-floor 2x6 exterior walls when it reloads the project (within a few seconds if it's open)." } };
+}
+
+/**
+ * The four exterior elevations (ExteriorElevation): made by the app once the grade exposure (how
+ * much foundation shows above grade) is set, live from the plan, the openings and the roof.
+ */
+function setExteriorElevations(project, a) {
+  const s = { ...settingsOf(project) };
+  let g = null;
+  if (!a.remove) {
+    g = M.parseLength(a.grade_exposure);
+    if (g == null || isNaN(g) || g < 0) throw new M.UserError("grade_exposure: how much foundation shows above grade, e.g. 8\".");
+  }
+  materialize(project);
+  project.building = { ...s, gradeExposureIn: g };
+  reconcile(project);
+  compact(project);
+  return { state: project, result: a.remove ? { exteriorElevations: "removed" } : { exteriorElevations: "south, north, east and west", gradeExposure: inchText(g),
+    note: "Site Draft makes the four exterior elevations under the drawing when it reloads the project, on the Exterior elevation layer. They show the roof once set_roof is done." } };
 }
 
 /** Puts elements on a layer. Nothing moves. */
@@ -294,5 +363,5 @@ function moveToLayer(project, a) {
 module.exports = {
   FLOOR1_PLAN, settingsOf, levels, defaultLayers, effectiveLayers, activeLayer, defaultLayerId, layerOf, layerForNew,
   tagNew, materialize, reconcile, validate, findLayer, compact, compactSettings, inchText, fmt,
-  describe, setActiveLayer, showHideLayers, addLayer, setBuildingInputs, moveToLayer,
+  describe, setActiveLayer, showHideLayers, addLayer, setBuildingInputs, moveToLayer, setRoof, setExteriorElevations,
 };

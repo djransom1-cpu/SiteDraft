@@ -175,7 +175,8 @@ class ProjectSyncTest {
         platform.storage.write("sync_Kitchen.json", """{"updatedAt":3000,"pendingPush":true}""")
 
         sync.syncAll()
-        awaitUntil { cloud.store.projects["Kitchen"]?.updatedAt == 3000L }
+        // The cloud write lands a moment before the meta is cleared: wait for both (a race, Nov 22).
+        awaitUntil { cloud.store.projects["Kitchen"]?.updatedAt == 3000L && sync.readMeta("Kitchen")?.pendingPush == false }
         assertEquals("""{"local":true}""", cloud.store.projects["Kitchen"]!!.json)
         assertTrue(recorder.pulled.isEmpty())
         assertFalse(sync.readMeta("Kitchen")!!.pendingPush)

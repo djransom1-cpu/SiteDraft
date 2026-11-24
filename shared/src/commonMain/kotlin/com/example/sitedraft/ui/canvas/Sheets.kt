@@ -21,7 +21,11 @@ import kotlin.math.roundToInt
 @Serializable
 enum class SheetViewKind { PLAN, ELEVATION,
     /** The typical wall section (WallSection), drawn from the building inputs and the plan. */
-    SECTION }
+    SECTION,
+    /** The door and window schedules (Schedules), read off the plan. */
+    DOOR_SCHEDULE, WINDOW_SCHEDULE,
+    /** The structural calc summary (StructuralDesign): loads, spans, members, footings, for the S sheets. */
+    STRUCTURAL_CALCS }
 
 /** One view on a sheet. [xIn], [yIn]: the view's centre on the paper, inches from the sheet's top-left corner. */
 @Serializable
@@ -40,7 +44,11 @@ data class SheetView(
      * A cropped viewport (Dan, Nov 22): only this window of the model (world px) shows, at the
      * view's own scale, e.g. the kitchen at 1/2" beside the whole plan at 1/4". Null = the whole subject.
      */
-    val crop: ViewCrop? = null
+    val crop: ViewCrop? = null,
+    /** A schedule's size on the paper: 1 = normal (1/8" lettering), see Schedules.sizeChoices. */
+    val tableSize: Float = 1f,
+    /** A plan view's remodel phase (Remodel.kt): Existing, Demo or Proposed plan; All shows every wall in its own style. */
+    val phase: RemodelPhase = RemodelPhase.ALL
 )
 
 /** A viewport's window on the model, world px. */
@@ -61,13 +69,25 @@ data class SheetLayout(
     val paper: PaperSize = PaperSize.ARCH_D,
     val orientation: PageOrientation = PageOrientation.LANDSCAPE,
     val drawnBy: String = "",
-    val views: List<SheetView> = emptyList()
+    val views: List<SheetView> = emptyList(),
+    /** The number was typed by hand: the set's renumbering leaves it alone (cleared = automatic again). */
+    val numberManual: Boolean = false
 )
 
 object Sheets {
     const val MARGIN_IN = 0.5f
     /** The title block strip down the right edge. */
     fun stripIn(sheet: SheetLayout): Float = if (paperIn(sheet).first < 20f) 1.75f else 2.5f
+    /**
+     * A drawing's number on its sheet (Nov 23): 1, 2, 3 in the sheet's order, tables (schedules,
+     * calcs) not counted. It goes in the bubble by the drawing's title, and callouts point to it.
+     */
+    fun viewNumber(sheet: SheetLayout, view: SheetView): Int? {
+        if (isTable(view)) return null
+        val i = sheet.views.filter { !isTable(it) }.indexOfFirst { it.id == view.id }
+        return if (i < 0) null else i + 1
+    }
+
     /** Room under each view for its title and scale. */
     const val TITLE_ROOM_IN = 0.55f
     /** Scales offered for a view (not "fit": a view on a sheet is always to scale). */
@@ -97,6 +117,14 @@ object Sheets {
             ?: WallSection.sectionIn(state)
     }
 
+    /**
+     * A sheet's own notes layer (Dan, Nov 22): notes and dimensions only one viewport shows, on
+     * top of the live layers (the foundation stays one layer, built from the plan). Shown only by
+     * a viewport that lists it, never by an "all layers" view.
+     */
+    const val SHEET_NOTES_PREFIX = "sheetnotes-"
+    fun isSheetNotes(layerId: String): Boolean = layerId.startsWith(SHEET_NOTES_PREFIX)
+
     /** The elements a view shows. */
     fun viewElements(view: SheetView, state: CanvasState): List<DrawingElement> = when (view.kind) {
         SheetViewKind.PLAN -> {
@@ -105,12 +133,27 @@ object Sheets {
             val layers = view.layerIds?.toSet()
             val of = Layers.resolver(state)
             state.elements.filter { e ->
+                val layerId = of(e).id
                 e !is DrawingElement.ElevationView && !(e is DrawingElement.Dimension && e.ownerId != null && e.ownerId in elevations) &&
-                    e.id !in sections && (layers == null || of(e).id in layers)
+                    e.id !in sections && !ExteriorElevation.isExterior(e) && !DetailKit.isDetail(e) &&
+                    Remodel.shows(e, view.phase) &&
+                    // "All layers" is the building's plan: the roof plans and the site plan have their own sheets (Nov 22).
+                    (if (layers == null) !isSheetNotes(layerId) && !RoofPlan.isRoof(e) && !RoofPlan.isRoofFinish(e) && !SiteLot.isLot(e) else layerId in layers)
             }
         }
         SheetViewKind.ELEVATION -> state.elements.filter { it.id == view.elementId || it.isOwnedBy(view.elementId) }
         SheetViewKind.SECTION -> sectionFor(view, state)?.let { sec -> listOf(sec) + WallSection.ownedBy(sec, state) } ?: emptyList()
+        SheetViewKind.DOOR_SCHEDULE, SheetViewKind.WINDOW_SCHEDULE, SheetViewKind.STRUCTURAL_CALCS -> emptyList()
+    }
+
+    /** The schedule a view is, if it is one. */
+    /** A table (a schedule or the structural calcs): its own size on paper, at no scale. */
+    fun isTable(view: SheetView): Boolean = scheduleKind(view) != null || view.kind == SheetViewKind.STRUCTURAL_CALCS
+
+    fun scheduleKind(view: SheetView): Schedules.Kind? = when (view.kind) {
+        SheetViewKind.DOOR_SCHEDULE -> Schedules.Kind.DOOR
+        SheetViewKind.WINDOW_SCHEDULE -> Schedules.Kind.WINDOW
+        else -> null
     }
 
     /** The view's extent in world px (null when it shows nothing, e.g. its elevation was deleted). A cropped view is its window. */
@@ -123,6 +166,8 @@ object Sheets {
     fun fullWorldBounds(view: SheetView, state: CanvasState): Rect? {
         val rects = viewElements(view, state).flatMap { e ->
             if (e is DrawingElement.ElevationView) listOf(e.frame) + Elevation.partsOf(e, state).map { it.boundingRect() }
+            // A roof plan reaches over the garage, wing and porch roofs drawn with it.
+            else if (RoofPlan.isRoof(e) || RoofPlan.isRoofFinish(e)) listOf(e.boundingRect()) + RoofPlan.addOnBounds(state)
             else listOf(e.boundingRect())
         }.filter { it.width > 0f || it.height > 0f }
         return rects.reduceOrNull { a, r -> Rect(minOf(a.left, r.left), minOf(a.top, r.top), maxOf(a.right, r.right), maxOf(a.bottom, r.bottom)) }
@@ -134,6 +179,15 @@ object Sheets {
 
     /** The view's drawing on the paper (inches), centred on its position. */
     fun viewRect(view: SheetView, state: CanvasState): Rect? {
+        if (view.kind == SheetViewKind.STRUCTURAL_CALCS) {
+            val sz = StructuralDesign.tableSizeIn(state, view.tableSize)
+            return Rect(view.xIn - sz.width / 2f, view.yIn - sz.height / 2f, view.xIn + sz.width / 2f, view.yIn + sz.height / 2f)
+        }
+        scheduleKind(view)?.let { kind ->
+            // A table: its own size on paper, whatever the scale.
+            val sz = Schedules.tableSizeIn(kind, state, view.tableSize)
+            return Rect(view.xIn - sz.width / 2f, view.yIn - sz.height / 2f, view.xIn + sz.width / 2f, view.yIn + sz.height / 2f)
+        }
         if (view.kind == SheetViewKind.SECTION && sectionFor(view, state) == null) {
             val (w, h) = WallSection.paperSizeIn(state, view.scale.denominator ?: 16)
             return Rect(view.xIn - w / 2f, view.yIn - h / 2f, view.xIn + w / 2f, view.yIn + h / 2f)
@@ -156,21 +210,148 @@ object Sheets {
      */
     fun planChoices(state: CanvasState): List<Pair<String, List<String>?>> {
         val layers = state.effectiveLayers
-        val out = mutableListOf<Pair<String, List<String>?>>("Floor plan (all layers)" to null)
+        val out = mutableListOf<Pair<String, List<String>?>>()
         for (level in state.levels) {
-            val on = layers.filter { it.levelId == level.id }
+            val on = layers.filter { it.levelId == level.id && !isSheetNotes(it.id) }
             if (on.isEmpty()) continue
+            if (level.kind == LevelKind.ROOF) {
+                // The roof framing (S sheets) and the roof plan with its roofing (A sheets) are separate views.
+                on.filter { it.trade != LayerTrade.ROOF_PLAN }.takeIf { it.isNotEmpty() }?.let { out += "Roof framing plan" to it.map { l -> l.id } }
+                on.filter { it.trade == LayerTrade.ROOF_PLAN }.takeIf { it.isNotEmpty() }?.let { out += "Roof plan" to it.map { l -> l.id } }
+                continue
+            }
             val title = when (level.kind) {
                 LevelKind.FOUNDATION -> "Foundation plan"
                 LevelKind.FLOOR_FRAMING -> "${level.name} plan"
                 LevelKind.FLOOR -> "${level.name} plan"
-                LevelKind.ROOF -> "Roof framing plan"
                 else -> "${level.name} plan"
             }
             out += title to on.map { it.id }
         }
-        layers.filter { it.levelId == null && it.trade != LayerTrade.EXTERIOR_ELEVATION }.forEach { out += "${it.name}" to listOf(it.id) }
+        layers.filter { it.levelId == null && it.trade != LayerTrade.EXTERIOR_ELEVATION && !isSheetNotes(it.id) }.forEach { out += "${it.name}" to listOf(it.id) }
+        // The floor plans first (a plan sheet shouldn't pick up the foundation and framing by
+        // accident, Dan Nov 22), then the rest up the stack, "all layers" last.
+        val plans = out.filter { (label, _) -> label.endsWith("floor plan") && !label.contains("framing") }
+        return plans + (out - plans.toSet()) + ("Floor plan (all layers)" to null)
+    }
+
+    /** The exterior elevations in model space (south, north, east, west), as views could be made of them. */
+    fun exteriorChoices(state: CanvasState): List<Pair<DrawingElement.Symbol, String>> =
+        ExteriorElevation.all(state).map { it to ExteriorElevation.faceOf(it).title }
+
+    /**
+     * Where a sheet goes in the set (Dan, Nov 22): its series and its place in that series.
+     * Series print in [SERIES_ORDER]:
+     *  - T: T-1 cover (with the legend and symbols), T-2 notes
+     *  - C: C-1 site plan
+     *  - S: foundation (always S-1), floor framing floor by floor, roof framing, sections, structural details
+ *    (beam pockets, column connections, headers, stairs)
+     *  - A: floor plans floor by floor, the roof plan, exterior elevations, wall details,
+     *    interior elevations, door and window schedules, finish schedules
+     *  - M, E, P: mechanical, electrical, plumbing (later)
+     */
+    data class Slot(val series: String, val rank: Int)
+
+    val SERIES_ORDER = listOf("T", "C", "S", "A", "M", "E", "P")
+
+    /** Floor number from a level id ("floor2", "floor2-framing"); 1 when it isn't a floor. */
+    private fun floorNo(levelId: String?): Int =
+        levelId?.removePrefix("floor")?.substringBefore("-")?.toIntOrNull() ?: 1
+
+    /** A view's place in the set. */
+    fun slotOf(view: SheetView, state: CanvasState): Slot = when (view.kind) {
+        SheetViewKind.SECTION -> Slot("S", 400)
+        SheetViewKind.STRUCTURAL_CALCS -> Slot("S", 450)
+        SheetViewKind.DOOR_SCHEDULE -> Slot("A", 700)
+        SheetViewKind.WINDOW_SCHEDULE -> Slot("A", 701)
+        SheetViewKind.ELEVATION -> {
+            val e = state.elements.firstOrNull { it.id == view.elementId }
+            if (e is DrawingElement.Symbol && ExteriorElevation.isExterior(e)) Slot("A", 400 + ExteriorElevation.faceOf(e).ordinal)
+            else if (e is DrawingElement.Symbol && DetailKit.isDetail(e)) DetailKit.kindOf(e).let { Slot(it.series, 500 + it.ordinal) }
+            else Slot("A", 600)
+        }
+        SheetViewKind.PLAN -> {
+            val layers = state.effectiveLayers.associateBy { it.id }
+            val shown = view.layerIds?.filter { !isSheetNotes(it) }?.mapNotNull { layers[it] }
+            when {
+                shown.isNullOrEmpty() -> Slot("A", 101)
+                shown.all { it.trade == LayerTrade.SITE_PLAN } -> Slot("C", 0)
+                shown.all { it.trade == LayerTrade.FOUNDATION } -> Slot("S", 0)
+                shown.all { it.trade == LayerTrade.FOUNDATION || it.trade == LayerTrade.FLOOR_STRUCTURAL } ->
+                    Slot("S", 100 + floorNo(shown.firstOrNull { it.trade == LayerTrade.FLOOR_STRUCTURAL }?.levelId))
+                shown.all { it.trade in setOf(LayerTrade.FOUNDATION, LayerTrade.FLOOR_STRUCTURAL, LayerTrade.ROOF_STRUCTURAL) } -> Slot("S", 300)
+                else -> {
+                    val level = shown.firstOrNull { it.trade == LayerTrade.FLOOR_PLAN || it.trade == LayerTrade.CABINETS || it.trade == LayerTrade.FURNITURE }?.levelId
+                        ?: shown.first().levelId
+                    if (level == Building.ROOF) Slot("A", 200) else Slot("A", 100 + floorNo(level))
+                }
+            }
+        }
+    }
+
+    /** A sheet's place: its first view's, or for a sheet with no view yet, read from its title. */
+    fun slotOf(sheet: SheetLayout, state: CanvasState): Slot {
+        sheet.views.firstOrNull { v -> !(v.kind == SheetViewKind.PLAN && v.layerIds?.isNotEmpty() == true && v.layerIds.all { isSheetNotes(it) }) }
+            ?.let { return slotOf(it, state) }
+        val t = sheet.title.lowercase()
+        return when {
+            // The legend and symbols go on the cover (Dan, Nov 22).
+            "cover" in t || "legend" in t || "symbol" in t -> Slot("T", 0)
+            "note" in t -> Slot("T", 1)
+            "site" in t -> Slot("C", 0)
+            "section" in t -> Slot("S", 400)
+            // Wall details are architectural (after the elevations); other details (beam pockets,
+            // column connections, headers) are structural, after the sections.
+            "wall detail" in t || "overhang" in t || "eave" in t -> Slot("A", 500)
+            "detail" in t || "stair" in t -> Slot("S", 500)
+            "interior elevation" in t -> Slot("A", 600)
+            "schedule" in t && "finish" !in t -> Slot("A", 700)
+            "finish" in t -> Slot("A", 800)
+            "mechanical" in t || "hvac" in t -> Slot("M", 0)
+            "electrical" in t -> Slot("E", 0)
+            "plumbing" in t -> Slot("P", 0)
+            else -> Slot("A", 900)
+        }
+    }
+
+    /** The series a view's sheet goes in ("S", "A"...). */
+    fun disciplineOf(view: SheetView, state: CanvasState): String = slotOf(view, state).series
+
+    /**
+     * The set in order and numbered (Dan, Nov 22): series by series, each sheet in its place, numbered
+     * 1, 2, 3 in its series, so adding the foundation after the roof framing makes it S-1 and moves the
+     * roof down. A number typed by hand stays as typed, and the others number around it.
+     */
+    fun renumbered(sheets: List<SheetLayout>, state: CanvasState): List<SheetLayout> {
+        val slots = sheets.associate { it.id to slotOf(it, state) }
+        fun seriesIndex(sh: SheetLayout) = SERIES_ORDER.indexOf(slots.getValue(sh.id).series).let { if (it < 0) SERIES_ORDER.size else it }
+        val order = sheets.withIndex().sortedWith(
+            compareBy<IndexedValue<SheetLayout>>({ seriesIndex(it.value) }, { slots.getValue(it.value.id).rank }, { it.index })
+        ).map { it.value }
+        val out = mutableListOf<SheetLayout>()
+        for ((series, group) in order.groupBy { slots.getValue(it.id).series }) {
+            val taken = group.filter { it.numberManual }.mapNotNull { numberIn(series, it.number) }.toSet()
+            var n = 1
+            for (sh in group) {
+                if (sh.numberManual) { out += sh; continue }
+                while (n in taken) n++
+                out += if (sh.number == "$series-$n") sh else sh.copy(number = "$series-$n")
+                n++
+            }
+        }
         return out
+    }
+
+    /** 3 for "S-3" in series "S"; null for another series or no number. */
+    private fun numberIn(series: String, number: String): Int? =
+        number.trim().takeIf { it.startsWith("$series-", ignoreCase = true) }?.substringAfter("-")?.trim()?.toIntOrNull()
+
+    /** The next number in [prefix]'s series: one past the highest there ("S-3" after S-1 and S-2). */
+    fun nextNumber(prefix: String, sheets: List<SheetLayout>): String {
+        val used = sheets.mapNotNull { sh ->
+            sh.number.trim().takeIf { it.startsWith("$prefix-", ignoreCase = true) }?.substringAfter("-")?.trim()?.toIntOrNull()
+        }
+        return "$prefix-${(used.maxOrNull() ?: 0) + 1}"
     }
 
     /** The elevations in the drawing, numbered in placement order, as views could be made of them. */
@@ -213,6 +394,71 @@ object Sheets {
         return view.copy(xIn = area.center.x, yIn = area.center.y)
     }
 
+    // --- Working inside a viewport, as in AutoCAD's paper space (Dan, Nov 22) ---
+
+    enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+
+    /** Smallest viewport a corner drag can make, paper inches. */
+    const val MIN_VIEWPORT_IN = 0.5f
+
+    /**
+     * The model slid inside the viewport by [dIn] paper inches, as if dragged with the pointer:
+     * the viewport stays where it is on the paper, at its scale; its window on the model moves the
+     * other way. A whole view becomes a cropped one. Null when the view shows nothing.
+     */
+    fun slid(view: SheetView, dIn: Offset, state: CanvasState): SheetView? {
+        val wr = worldBounds(view, state) ?: return null
+        val k = inchesPerWorldPx(view, state)
+        return view.copy(crop = ViewCrop.of(wr.translate(-dIn.x / k, -dIn.y / k)))
+    }
+
+    /** The corner of [view]'s viewport within [tolIn] paper inches of [pIn], if any. */
+    fun cornerAt(view: SheetView, pIn: Offset, tolIn: Float, state: CanvasState): Corner? {
+        val r = viewRect(view, state) ?: return null
+        return listOf(
+            Corner.TOP_LEFT to r.topLeft, Corner.TOP_RIGHT to r.topRight,
+            Corner.BOTTOM_LEFT to r.bottomLeft, Corner.BOTTOM_RIGHT to r.bottomRight
+        ).filter { (_, c) -> (c - pIn).getDistance() <= tolIn }.minByOrNull { (_, c) -> (c - pIn).getDistance() }?.first
+    }
+
+    /**
+     * The viewport resized by dragging [corner] to [toIn] (paper inches): the opposite corner stays
+     * put on the paper, the scale stays, and the window on the model grows or shrinks with it, so it
+     * shows more or less of the model. Null when the view shows nothing.
+     */
+    fun resized(view: SheetView, corner: Corner, toIn: Offset, state: CanvasState): SheetView? {
+        val pr = viewRect(view, state) ?: return null
+        val wr = worldBounds(view, state) ?: return null
+        val k = inchesPerWorldPx(view, state)
+        val fixed = when (corner) {
+            Corner.TOP_LEFT -> pr.bottomRight
+            Corner.TOP_RIGHT -> pr.bottomLeft
+            Corner.BOTTOM_LEFT -> pr.topRight
+            Corner.BOTTOM_RIGHT -> pr.topLeft
+        }
+        val right = corner == Corner.TOP_RIGHT || corner == Corner.BOTTOM_RIGHT
+        val bottom = corner == Corner.BOTTOM_LEFT || corner == Corner.BOTTOM_RIGHT
+        val nx = if (right) maxOf(toIn.x, fixed.x + MIN_VIEWPORT_IN) else minOf(toIn.x, fixed.x - MIN_VIEWPORT_IN)
+        val ny = if (bottom) maxOf(toIn.y, fixed.y + MIN_VIEWPORT_IN) else minOf(toIn.y, fixed.y - MIN_VIEWPORT_IN)
+        val npr = Rect(minOf(fixed.x, nx), minOf(fixed.y, ny), maxOf(fixed.x, nx), maxOf(fixed.y, ny))
+        fun toWorld(p: Offset) = Offset(wr.left + (p.x - pr.left) / k, wr.top + (p.y - pr.top) / k)
+        val nwr = Rect(toWorld(npr.topLeft), toWorld(npr.bottomRight))
+        return view.copy(crop = ViewCrop.of(nwr), xIn = npr.center.x, yIn = npr.center.y)
+    }
+
+    /** Viewports whose footprints overlap another's (1/8" of grace). */
+    fun overlapping(sheet: SheetLayout, state: CanvasState): List<SheetView> {
+        val fps = sheet.views.map { it to footprint(it, state)?.deflate(0.0625f) }
+        return fps.filter { (v, f) -> f != null && fps.any { (o, g) -> o.id != v.id && g != null && f.overlaps(g) } }.map { it.first }
+    }
+
+    /** Every viewport laid out again in free spots, in order, from the top-left (Arrange). Sizes, scales and crops stay. */
+    fun arranged(sheet: SheetLayout, state: CanvasState): SheetLayout {
+        var out = sheet.copy(views = emptyList())
+        for (v in sheet.views) out = out.copy(views = out.views + placed(out, v, state))
+        return out
+    }
+
     /** Snaps a dragged position to 1/8". */
     fun snap(v: Float): Float = (v * 8f).roundToInt() / 8f
 
@@ -225,20 +471,44 @@ object Sheets {
  * Draws [sheet] at [dpi] page pixels per paper inch: white paper, each view to its own scale
  * clipped to its own extent, its title and scale under it, the border and the title block.
  */
+/** The drawing's number bubble left of its title (Nov 23); returns where the title text starts. */
+private fun DrawScope.drawNumberBubble(sheet: SheetLayout, view: SheetView, left: Float, top: Float, dpi: Float, lineW: Float): Float {
+    val n = Sheets.viewNumber(sheet, view) ?: return left
+    with(Callouts) { drawTitleBubble(n, sheet.number, Offset(left, top - 0.04f * dpi), 0.42f * dpi, lineW) }
+    return left + 0.52f * dpi
+}
+
 fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, project: String, date: String, highlightId: String? = null) {
     val (wIn, hIn) = Sheets.paperIn(sheet)
     val lineW = max(1f, dpi / 100f)
     drawRect(Color.White, size = Size(wIn * dpi, hIn * dpi))
     val metric = state.unitSystem == UnitSystem.METRIC
     for (view in sheet.views) {
+        if (Sheets.isTable(view)) {
+            // A table (a door or window schedule, or the structural calcs): the table, its title under it (no scale: it isn't drawn to one).
+            val rIn = Sheets.viewRect(view, state) ?: continue
+            val kind = Sheets.scheduleKind(view)
+            if (kind != null) with(Schedules) { drawTable(kind, state, Offset(rIn.left * dpi, rIn.top * dpi), dpi, view.tableSize) }
+            else with(StructuralDesign) { drawCalcTable(state, Offset(rIn.left * dpi, rIn.top * dpi), dpi, view.tableSize) }
+            val titleTop = rIn.bottom * dpi + 0.12f * dpi
+            val titleSize = 0.2f * dpi
+            drawPageText(view.title.uppercase(), Offset(rIn.left * dpi, titleTop), titleSize, Color.Black, bold = true, maxWidth = max(rIn.width * dpi, 3f * dpi))
+            drawLine(Color.Black, Offset(rIn.left * dpi, titleTop + titleSize * 1.3f), Offset((rIn.left + minOf(max(rIn.width, 2f), 6f)) * dpi, titleTop + titleSize * 1.3f), strokeWidth = lineW * 1.5f)
+            if (view.id == highlightId) {
+                val fp = Sheets.footprint(view, state)!!
+                drawRect(Color(0xFFFF8F00), topLeft = Offset(fp.left * dpi, fp.top * dpi), size = Size(fp.width * dpi, fp.height * dpi), style = Stroke(lineW * 2f))
+            }
+        }
+        if (Sheets.isTable(view)) continue
         if (view.kind == SheetViewKind.SECTION && Sheets.sectionFor(view, state) == null) {
             // No section in model space yet: drawn straight from the building inputs, at its scale, with its title under it.
             val rIn = Sheets.viewRect(view, state) ?: continue
             with(WallSection) { drawSection(state, Offset(view.xIn * dpi, view.yIn * dpi), dpi, view.scale.denominator ?: 16) }
             val titleTop = rIn.bottom * dpi + 0.12f * dpi
             val titleSize = 0.2f * dpi
-            drawPageText(view.title.uppercase(), Offset(rIn.left * dpi, titleTop), titleSize, Color.Black, bold = true, maxWidth = max(rIn.width * dpi, 3f * dpi))
-            drawLine(Color.Black, Offset(rIn.left * dpi, titleTop + titleSize * 1.3f), Offset((rIn.left + minOf(max(rIn.width, 2f), 6f)) * dpi, titleTop + titleSize * 1.3f), strokeWidth = lineW * 1.5f)
+            val tx = drawNumberBubble(sheet, view, rIn.left * dpi, titleTop, dpi, lineW)
+            drawPageText(view.title.uppercase(), Offset(tx, titleTop), titleSize, Color.Black, bold = true, maxWidth = max(rIn.width * dpi, 3f * dpi))
+            drawLine(Color.Black, Offset(tx, titleTop + titleSize * 1.3f), Offset(tx + minOf(max(rIn.width, 2f), 6f) * dpi, titleTop + titleSize * 1.3f), strokeWidth = lineW * 1.5f)
             drawPageText("SCALE: ${PrintPage.scaleText(view.scale, metric)}", Offset(rIn.left * dpi, titleTop + titleSize * 1.5f), 0.12f * dpi, Color.Black, bold = false, maxWidth = 6f * dpi)
             if (view.id == highlightId) {
                 val fp = Sheets.footprint(view, state)!!
@@ -263,14 +533,20 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
         val shown = Sheets.viewElements(view, state).flatMap { e ->
             if (e is DrawingElement.ElevationView) Elevation.partsOf(e, state.copy(backgroundColor = Color.White)) else listOf(e)
         }
-        val pageState = PrintPage.pageState(state, shown, page).copy(background = DrawingBackground.PLAIN)
+        // The roof, section and exterior elevations are built from the whole drawing: drawn apart, with it.
+        val live = shown.filter { isLiveSymbol(it) }.filterIsInstance<DrawingElement.Symbol>()
+        val paperState = state.copy(backgroundColor = Color.White)
+        val pageState = PrintPage.pageState(state, shown.filter { !isLiveSymbol(it) }, page).copy(background = DrawingBackground.PLAIN, remodelPhase = view.phase)
         // A cropped viewport is cut exactly at its window; a whole view gets a little room for line ends and labels.
         val pad = if (view.crop != null) 0f else 0.1f * dpi
         clipRect(rIn.left * dpi - pad, rIn.top * dpi - pad, rIn.right * dpi + pad, rIn.bottom * dpi + pad) {
             withTransform({
                 translate(pan.x, pan.y)
                 scale(zoom, zoom, Offset.Zero)
-            }) { drawDocumentContents(pageState) }
+            }) {
+                drawDocumentContents(pageState)
+                live.forEach { drawLiveSymbol(it, paperState, Color.Black) }
+            }
         }
         if (view.crop != null) {
             drawRect(Color.Black, topLeft = Offset(rIn.left * dpi, rIn.top * dpi), size = Size(rIn.width * dpi, rIn.height * dpi), style = Stroke(lineW * 0.8f))
@@ -278,9 +554,10 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
         // Title, underlined, and the scale under it.
         val titleTop = rIn.bottom * dpi + 0.12f * dpi
         val titleSize = 0.2f * dpi
-        drawPageText(view.title.uppercase(), Offset(rIn.left * dpi, titleTop), titleSize, Color.Black, bold = true, maxWidth = max(rIn.width * dpi, 3f * dpi))
-        drawLine(Color.Black, Offset(rIn.left * dpi, titleTop + titleSize * 1.3f), Offset((rIn.left + minOf(max(rIn.width, 2f), 6f)) * dpi, titleTop + titleSize * 1.3f), strokeWidth = lineW * 1.5f)
-        drawPageText("SCALE: ${page.scaleText}", Offset(rIn.left * dpi, titleTop + titleSize * 1.5f), 0.12f * dpi, Color.Black, bold = false, maxWidth = 6f * dpi)
+        val tx = drawNumberBubble(sheet, view, rIn.left * dpi, titleTop, dpi, lineW)
+        drawPageText(view.title.uppercase(), Offset(tx, titleTop), titleSize, Color.Black, bold = true, maxWidth = max(rIn.width * dpi, 3f * dpi))
+        drawLine(Color.Black, Offset(tx, titleTop + titleSize * 1.3f), Offset(tx + minOf(max(rIn.width, 2f), 6f) * dpi, titleTop + titleSize * 1.3f), strokeWidth = lineW * 1.5f)
+        drawPageText("SCALE: ${page.scaleText}", Offset(tx, titleTop + titleSize * 1.5f), 0.12f * dpi, Color.Black, bold = false, maxWidth = 6f * dpi)
         if (view.id == highlightId) {
             val fp = Sheets.footprint(view, state)!!
             drawRect(Color(0xFFFF8F00), topLeft = Offset(fp.left * dpi, fp.top * dpi), size = Size(fp.width * dpi, fp.height * dpi), style = Stroke(lineW * 2f))

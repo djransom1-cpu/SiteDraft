@@ -437,6 +437,8 @@ fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String
         val f = ArrayList<DrawingElement>()
         val u = ArrayList<DrawingElement>()
         state.elements.forEach { e ->
+            // Remodel phase toggle: walls not in this plan (new on the existing plan, demo on the proposed) are left out.
+            if (!Remodel.shows(e, state.remodelPhase)) return@forEach
             when (display[of(e).id]) {
                 Layers.Display.FULL -> u += e
                 Layers.Display.FAINT -> f += e
@@ -444,7 +446,7 @@ fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String
             }
         }
         Layers.inStackOrder(f, state) to Layers.inStackOrder(u, state)
-    } else emptyList<DrawingElement>() to Layers.inStackOrder(state.elements, state)
+    } else emptyList<DrawingElement>() to Layers.inStackOrder(state.elements.filter { Remodel.shows(it, state.remodelPhase) }, state)
     if (faint.isNotEmpty()) {
         val b = faint.map { it.boundingRect() }.reduce { a, r -> Rect(minOf(a.left, r.left), minOf(a.top, r.top), maxOf(a.right, r.right), maxOf(a.bottom, r.bottom)) }
             .inflate(200f)
@@ -457,6 +459,8 @@ fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String
     (rest + uppers).forEach { element ->
         drawElement(element, isSelected = element.id == selectedElementId, state = state)
     }
+    // Door and window marks for the schedules, on top of everything (Schedules).
+    if (state.showOpeningMarks) with(Schedules) { drawMarks(state, full) }
 }
 
 /** How strongly a faint layer (the floor plan under the active layer, or one turned on) shows (0..1). */
@@ -570,13 +574,9 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                 // Use the standard stroke weight for parametric symbols
                 val stroke = Stroke(width = element.strokeWidth, cap = StrokeCap.Round)
                 
-                if (WallSection.isSection(element)) {
-                    // The typical wall section, true size in model space (WallSection): drawn at
-                    // its own scale's paper text size, so a sheet at that scale matches exactly.
-                    val denominator = WallSection.denominatorOf(element)
-                    with(WallSection) {
-                        drawSection(state, element.center, PrintPage.worldPxPerInch(state) * denominator, denominator, ink = whiteColor)
-                    }
+                if (isLiveSymbol(element)) {
+                    // The roof, the wall section and the exterior elevations: built from the drawing when drawn.
+                    drawLiveSymbol(element, state, whiteColor)
                 } else if (element.category in PlanSymbols.categories) {
                     drawPlanSymbol(element, state, lineColor = whiteColor, accentColor = cyanColor)
                 } else if (element.category == "Lumber" || element.category == "Plywood") {
@@ -1360,6 +1360,9 @@ private class DocumentLayerCache {
     private var shownLayerIds: Set<String>? = null
     private var layerDisplay = true
     private var building: BuildingSettings? = null
+    private var showOpeningMarks = false
+    // Remodel phase (Remodel.kt): without it the All/Existing/Demo/Proposed toggle only showed after a zoom.
+    private var remodelPhase = RemodelPhase.ALL
     private var size = Size.Zero
 
     fun matches(state: CanvasState, size: Size): Boolean =
@@ -1370,7 +1373,8 @@ private class DocumentLayerCache {
             preciseMoveFromPoint == state.preciseMoveFromPoint && this.size == size &&
             layers == state.layers && activeLayerId == state.activeLayerId &&
             shownLayerIds == state.shownLayerIds && layerDisplay == state.layerDisplay &&
-            building == state.building
+            building == state.building && showOpeningMarks == state.showOpeningMarks &&
+            remodelPhase == state.remodelPhase
 
     fun update(state: CanvasState, size: Size) {
         elements = state.elements
@@ -1388,6 +1392,8 @@ private class DocumentLayerCache {
         shownLayerIds = state.shownLayerIds
         layerDisplay = state.layerDisplay
         building = state.building
+        showOpeningMarks = state.showOpeningMarks
+        remodelPhase = state.remodelPhase
         this.size = size
     }
 }
@@ -1486,4 +1492,40 @@ fun dimensionScale(state: CanvasState, zoom: Float): Float {
     if (state.labelScale != 1f) return screen
     val cap = state.inchesToPx(DIMENSION_TEXT_MAX_IN) / 36f
     return minOf(screen, cap)
+}
+
+
+/**
+ * The roof plan, the typical wall section and the exterior elevations are not drawn from their own
+ * symbol but built from the rest of the drawing (the walls, the openings, the building inputs) when
+ * drawn. A sheet draws them with the whole drawing's state for that reason, not the page's few elements.
+ */
+fun isLiveSymbol(e: DrawingElement): Boolean = RoofPlan.isRoof(e) || RoofPlan.isRoofFinish(e) || WallSection.isSection(e) || ExteriorElevation.isExterior(e) || SiteLot.isLot(e) || DetailKit.isDetail(e) || Callouts.isCallout(e) || Porches.isPorch(e) || Garages.isGarage(e) || Wings.isWing(e)
+
+internal fun DrawScope.drawLiveSymbol(element: DrawingElement.Symbol, state: CanvasState, ink: Color) {
+    when {
+        // The roof framing plan, drawn from the building's roof settings (RoofPlan).
+        RoofPlan.isRoof(element) -> with(RoofPlan) { drawRoof(state, ink = ink) }
+        // The roof plan (finish) with its roofing, for the A sheets.
+        RoofPlan.isRoofFinish(element) -> with(RoofPlan) { drawRoofFinish(state, ink = ink) }
+        // The typical wall section, true size in model space (WallSection): drawn at its own
+        // scale's paper text size, so a sheet at that scale matches exactly.
+        WallSection.isSection(element) -> {
+            val denominator = WallSection.denominatorOf(element)
+            with(WallSection) { drawSection(state, element.center, PrintPage.worldPxPerInch(state) * denominator, denominator, ink = ink) }
+        }
+        ExteriorElevation.isExterior(element) -> with(ExteriorElevation) { drawExterior(element, state, ink) }
+        // The lot from the survey, with the setbacks and the house's distances (SiteLot).
+        SiteLot.isLot(element) -> with(SiteLot) { drawLot(element, state, ink) }
+        // Construction details (DetailKit): true size at their own scale.
+        DetailKit.isDetail(element) -> with(DetailKit) { drawDetailSymbol(element, state, ink) }
+        // Section and detail callouts, numbered from the sheet set (Callouts).
+        Callouts.isCallout(element) -> with(Callouts) { drawCallout(element, state, ink) }
+        // A porch on the plan: outline, kind and the roof's columns (Porches).
+        Porches.isPorch(element) -> with(Porches) { drawPorch(element, state, ink) }
+        // A garage on the plan: its walls, overhead doors, name and size (Garages).
+        Garages.isGarage(element) -> with(Garages) { drawGarage(element, state, ink) }
+        // A wing on the plan: the house wall out at the joint, its walls, name and foundation (Wings).
+        Wings.isWing(element) -> with(Wings) { drawWing(element, state, ink) }
+    }
 }

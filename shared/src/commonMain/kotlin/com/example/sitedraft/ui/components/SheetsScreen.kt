@@ -51,9 +51,11 @@ fun SheetsScreen(
     onEvent: (DrawingEvent) -> Unit,
     density: Float,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** The sheet to open on (a tab tapped on the drawing); null = the first, or a new one when there are none. */
+    initialSelected: String? = null
 ) {
-    var selected by remember { mutableStateOf(state.sheets.firstOrNull()?.id ?: NEW_SHEET) }
+    var selected by remember(initialSelected) { mutableStateOf(initialSelected ?: state.sheets.firstOrNull()?.id ?: NEW_SHEET) }
     val prefs = com.example.sitedraft.platform.LocalPlatform.current.prefs
     var separate by remember { mutableStateOf(prefs.getString(PREF_SEPARATE) == "true") }
     val current = state.sheets.firstOrNull { it.id == selected }
@@ -83,7 +85,7 @@ fun SheetsScreen(
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Back to the drawing") }
             }
-            Row(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().weight(1f)) {
                 // The set.
                 Column(
                     Modifier.width(220.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(end = 8.dp),
@@ -121,6 +123,14 @@ fun SheetsScreen(
                     )
                 }
             }
+            // Model and sheet tabs, as on the drawing: Model goes back to it.
+            SpaceTabs(
+                sheets = state.sheets,
+                current = if (current == null) NEW_SHEET else current.id,
+                onModel = onClose,
+                onSheet = { selected = it },
+                onNewSheet = { selected = NEW_SHEET }
+            )
         }
     }
 }

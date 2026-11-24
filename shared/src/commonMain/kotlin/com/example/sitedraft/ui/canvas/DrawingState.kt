@@ -398,6 +398,13 @@ data class CanvasState(
     val dimensionFormat: DimensionFormat = DimensionFormat.ARCHITECTURAL,
     // Cabinet codes (W2430, BD18...) drawn on the plan's cabinets.
     val showCabinetLabels: Boolean = true,
+    // Door and window marks (D1, W1...) on the plan, for the schedules (Schedules.kt). Off until
+    // asked for or a schedule goes on a sheet, so plans without schedules look as before. New in 1.0.37.
+    val showOpeningMarks: Boolean = false,
+    // Remodel (Remodel.kt, new in 1.0.38): which plan the walls show for (All, Existing, Demo,
+    // Proposed), and the status new walls are drawn as. Older versions skip these when reading.
+    val remodelPhase: RemodelPhase = RemodelPhase.ALL,
+    val wallDrawStatus: WallStatus = WallStatus.NEW,
     // Large-format print sheets of views (Print > Sheet with views).
     val sheets: List<SheetLayout> = emptyList(),
     // The job's details for the title block (client, address, dates, revisions). New in 1.0.36.

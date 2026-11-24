@@ -1,6 +1,7 @@
 name: Web app
 
-# Builds the SiteDraft web app (Kotlin/Wasm) on every push to main and keeps the result as a
+# Builds the SiteDraft web app (Kotlin/Wasm) on a release tag (v*, with the Android and desktop
+# builds, Dan Nov 24: all three on the same version; daily pushes are backups) and keeps the result as a
 # downloadable artifact. When the repository variable DEPLOY_PAGES is "true" (and GitHub Pages
 # is set to deploy from Actions under Settings > Pages), it also publishes the build to Pages.
 #
@@ -11,7 +12,8 @@ name: Web app
 #                                "not configured" on its sign-in screen and lets nobody in.
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:

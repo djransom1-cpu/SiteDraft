@@ -79,6 +79,161 @@ fun PropertiesPanel(
                     Column(Modifier.padding(12.dp)) {
                         PropertyRow("Type", selectedElement::class.simpleName ?: "Unknown")
                         // The typical wall section (model space): what it is drawn from, edited right here.
+                        if (com.example.sitedraft.ui.canvas.RoofPlan.isRoof(selectedElement)) {
+                            Text("Roof", style = MaterialTheme.typography.titleSmall)
+                            Text("Built over the first-floor exterior walls from these inputs.", style = MaterialTheme.typography.bodySmall)
+                            RoofInputs(state) { onEvent(DrawingEvent.SetBuilding(it)) }
+                        }
+                        if (com.example.sitedraft.ui.canvas.RoofPlan.isRoofFinish(selectedElement)) {
+                            Text("Roof plan", style = MaterialTheme.typography.titleSmall)
+                            Text("The roof from the Roof framing layer, with its roofing. Pick the roofing here.", style = MaterialTheme.typography.bodySmall)
+                            RoofCoveringInputs(state) { onEvent(DrawingEvent.SetBuilding(it)) }
+                        }
+                        if (com.example.sitedraft.ui.canvas.Garages.isGarage(selectedElement)) {
+                            val ga = com.example.sitedraft.ui.canvas.Garages
+                            val sym = selectedElement as com.example.sitedraft.ui.canvas.DrawingElement.Symbol
+                            val attached = ga.attachment(sym, com.example.sitedraft.ui.canvas.RoofPlan.footprint(state), state.inchesToPx(1f)) != null
+                            Text(if (attached) "Attached garage" else "Detached garage", style = MaterialTheme.typography.titleSmall)
+                            Text("Attached when it's against an exterior wall, detached otherwise. Size it with the handles or Width/Depth. " +
+                                "The foundation layer gets 12\" block frost walls on a footing at 42\" frost depth" +
+                                (if (attached) ", butting the house footing (stepping down to a basement footing with lead walls)" else "") +
+                                "; the framing layer gets the 4\" slab.", style = MaterialTheme.typography.bodySmall)
+                            // Where it goes: a house wall, the distance from its corner, the gap (0 = attached).
+                            val fpG = com.example.sitedraft.ui.canvas.RoofPlan.footprint(state)
+                            val inchG = state.inchesToPx(1f)
+                            val now = ga.placement(sym, fpG, inchG)
+                            if (now != null) {
+                                Text("Location", style = MaterialTheme.typography.labelLarge)
+                                var wall by remember(sym.center, sym.size) { mutableStateOf(now.first) }
+                                var from by remember(sym.center, sym.size) { mutableStateOf(com.example.sitedraft.ui.canvas.Building.elevationText(now.second.coerceAtLeast(0f))) }
+                                var gap by remember(sym.center, sym.size) { mutableStateOf(com.example.sitedraft.ui.canvas.Building.elevationText(now.third.coerceAtLeast(0f))) }
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                    listOf("North wall", "South wall", "West wall", "East wall").forEachIndexed { i, l -> FilterChip(selected = wall == i, onClick = { wall = i }, label = { Text(l) }) }
+                                }
+                                androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                    OutlinedTextField(from, { from = it }, singleLine = true, modifier = Modifier.weight(1f),
+                                        label = { Text(if (wall <= 1) "From the west corner" else "From the north corner") })
+                                    OutlinedTextField(gap, { gap = it }, singleLine = true, modifier = Modifier.weight(1f), label = { Text("Gap from house (0 = attached)") })
+                                }
+                                val fromIn = com.example.sitedraft.ui.canvas.parseFeet(from)?.times(12f)
+                                val gapIn = com.example.sitedraft.ui.canvas.parseFeet(gap)?.times(12f)
+                                androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                    Button(onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, ga.PLACE, "$wall,$fromIn,$gapIn")) },
+                                        enabled = fromIn != null && gapIn != null) { Text("Move it there") }
+                                    OutlinedButton(onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, ga.CENTER, "1")) }) { Text("Center on the house wall") }
+                                }
+                            }
+                            Text("Overhead door wall", style = MaterialTheme.typography.labelLarge)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                ga.doorSides.forEachIndexed { i, l -> FilterChip(selected = ga.prop(sym, ga.DOOR_SIDE) == i, onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, ga.DOOR_SIDE, "$i")) }, label = { Text(l) }) }
+                            }
+                            Text("Doors", style = MaterialTheme.typography.labelLarge)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                ga.doorChoices.forEachIndexed { i, l -> FilterChip(selected = ga.prop(sym, ga.DOOR) == i, onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, ga.DOOR, "$i")) }, label = { Text(l) }) }
+                            }
+                            val hdr = ga.header(sym, state)
+                            val dh = ga.doorHeightIn(sym, state)
+                            Text("Doors ${if (dh >= ga.TALL_DOOR_IN) "8'" else "7'"} high" + (if (dh < ga.TALL_DOOR_IN) " (8' doesn't fit under the header and plate)" else "") +
+                                ". Header: ${hdr.name}, sized for ${com.example.sitedraft.ui.canvas.formatFeetInches(hdr.spanFt)} span, ${hdr.wPlf.toInt()} plf (snow and roof dead).",
+                                style = MaterialTheme.typography.bodySmall)
+                            Text("Roof", style = MaterialTheme.typography.labelLarge)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                ga.roofStyles.forEachIndexed { i, l -> FilterChip(selected = ga.prop(sym, ga.ROOF_STYLE) == i, onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, ga.ROOF_STYLE, "$i")) }, label = { Text(l) }) }
+                            }
+                        }
+                        if (com.example.sitedraft.ui.canvas.Wings.isWing(selectedElement)) {
+                            val wg = com.example.sitedraft.ui.canvas.Wings
+                            val ga = com.example.sitedraft.ui.canvas.Garages
+                            val sym = selectedElement as com.example.sitedraft.ui.canvas.DrawingElement.Symbol
+                            val fpW = com.example.sitedraft.ui.canvas.RoofPlan.footprint(state)
+                            val inchW = state.inchesToPx(1f)
+                            Text("Wing", style = MaterialTheme.typography.titleSmall)
+                            Text("Against a house wall the plan becomes an L: the house wall at the joint comes out, the wing's walls, " +
+                                "foundation, floor, roof and elevations follow. Size it with the handles or Width/Depth.", style = MaterialTheme.typography.bodySmall)
+                            val now = ga.placement(sym, fpW, inchW)
+                            if (now != null) {
+                                Text("Location", style = MaterialTheme.typography.labelLarge)
+                                var wall by remember(sym.center, sym.size) { mutableStateOf(now.first) }
+                                var from by remember(sym.center, sym.size) { mutableStateOf(com.example.sitedraft.ui.canvas.Building.elevationText(now.second.coerceAtLeast(0f))) }
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                    listOf("North wall", "South wall", "West wall", "East wall").forEachIndexed { i, l -> FilterChip(selected = wall == i, onClick = { wall = i }, label = { Text(l) }) }
+                                }
+                                OutlinedTextField(from, { from = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                                    label = { Text(if (wall <= 1) "From the west corner" else "From the north corner") })
+                                val fromIn = com.example.sitedraft.ui.canvas.parseFeet(from)?.times(12f)
+                                androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                    Button(onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, ga.PLACE, "$wall,$fromIn,0")) }, enabled = fromIn != null) { Text("Move it there") }
+                                    OutlinedButton(onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, ga.CENTER, "1")) }) { Text("Center on the house wall") }
+                                }
+                            }
+                            @Composable
+                            fun wingChoice(title: String, key: String, labels: List<String>) {
+                                Text(title, style = MaterialTheme.typography.labelLarge)
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                    labels.forEachIndexed { i, l -> FilterChip(selected = wg.prop(sym, key) == i, onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, key, "$i")) }, label = { Text(l) }) }
+                                }
+                            }
+                            wingChoice("Foundation", wg.FOUND, wg.foundations)
+                            Text(when (wg.foundationOf(sym, state.building)) {
+                                com.example.sitedraft.ui.canvas.FoundationType.BASEMENT -> "Basement: the house basement wall turns and follows the wing."
+                                else -> "Footings at ${ga.FROST_IN.toInt()}\" frost depth; the house basement wall stays" +
+                                    (if (state.building.foundation == com.example.sitedraft.ui.canvas.FoundationType.BASEMENT) ", the side footings step down to it with 4' lead walls." else ".")
+                            }, style = MaterialTheme.typography.bodySmall)
+                            wingChoice("Floor joists", wg.JOISTS, wg.joistChoices)
+                            wingChoice("Roof, far end", wg.END, wg.ends)
+                        }
+                        if (com.example.sitedraft.ui.canvas.Porches.isPorch(selectedElement)) {
+                            val pc = com.example.sitedraft.ui.canvas.Porches
+                            val sym = selectedElement as com.example.sitedraft.ui.canvas.DrawingElement.Symbol
+                            Text("Porch", style = MaterialTheme.typography.titleSmall)
+                            Text("Put it against an exterior wall; the foundation layer builds what holds it up (with Build from the floor plan on). " +
+                                "Framed and masonry porches get a continuous footing at basement footing level, tied into the house footing; " +
+                                "wood deck posts go to frost depth (${pc.FROST_IN.toInt()}\").", style = MaterialTheme.typography.bodySmall)
+                            @Composable
+                            fun choice(title: String, key: String, labels: List<String>) {
+                                Text(title, style = MaterialTheme.typography.labelLarge)
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                    labels.forEachIndexed { i, l ->
+                                        FilterChip(selected = pc.prop(sym, key) == i, onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, key, "$i")) }, label = { Text(l) })
+                                    }
+                                }
+                            }
+                            choice("Kind", pc.TYPE, pc.types)
+                            choice("Roof", pc.ROOF, listOf("No roof", "Roof on columns"))
+                            if (pc.prop(sym, pc.ROOF) == 1) {
+                                choice("Roof style", pc.ROOF_STYLE, pc.roofStyles)
+                                val pitch = pc.pitchOf(sym, state.building)
+                                Text("Pitch", style = MaterialTheme.typography.labelLarge)
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                    listOf(2f, 3f, 4f, 5f, 6f, 8f, 10f, 12f).forEach { pv ->
+                                        FilterChip(selected = pitch == pv, onClick = { onEvent(DrawingEvent.UpdateElementProperty(sym.id, pc.PITCH, "$pv")) },
+                                            label = { Text("${pv.toInt()}/12") })
+                                    }
+                                }
+                                Text("The roof shows on the Roof framing and Roof plan layers, tied into the house wall, past the columns by the house roof's overhang.",
+                                    style = MaterialTheme.typography.bodySmall)
+                                choice("Columns", pc.COLUMNS, pc.columnTypes)
+                            }
+                            if (pc.typeOf(sym) == 2) choice("Posts", pc.PIER, pc.pierTypes)
+                        }
+                        if (com.example.sitedraft.ui.canvas.Callouts.isCallout(selectedElement)) {
+                            val co = com.example.sitedraft.ui.canvas.Callouts
+                            val sym = selectedElement as com.example.sitedraft.ui.canvas.DrawingElement.Symbol
+                            val on = co.targets(sym).toSet()
+                            Text(sym.symbolName, style = MaterialTheme.typography.titleSmall)
+                            Text("Points to (pick one or more). The bubble reads the drawing numbers over the sheet, from the sheet set: " +
+                                co.bubbles(sym, state).joinToString("  ") { "${it.first} / ${it.second}" } +
+                                (if (sym.symbolName == co.SECTION) ". Turn it to point the triangle the way the section looks." else "."),
+                                style = MaterialTheme.typography.bodySmall)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+                                com.example.sitedraft.ui.canvas.Callouts.Target.entries.forEach { t ->
+                                    FilterChip(selected = t in on, onClick = {
+                                        val next = if (t in on) on - t else on + t
+                                        onEvent(DrawingEvent.UpdateElementProperty(sym.id, co.TARGETS, next.sumOf { it.bit }.toString()))
+                                    }, label = { Text(t.label) })
+                                }
+                            }
+                        }
                         if (com.example.sitedraft.ui.canvas.WallSection.isSection(selectedElement)) {
                             Text("Typical wall section", style = MaterialTheme.typography.titleSmall)
                             Text(
@@ -86,7 +241,7 @@ fun PropertiesPanel(
                                     "Change them here: the section, the levels and the foundation all follow. Text and dimensions you add inside its frame print with it on the sheet.",
                                 style = MaterialTheme.typography.bodySmall
                             )
-                            BuildingInputs(state.building) { onEvent(DrawingEvent.SetBuilding(it)) }
+                            BuildingInputs(state.building, com.example.sitedraft.ui.canvas.FootingCode.houseWidthFt(state)) { onEvent(DrawingEvent.SetBuilding(it)) }
                         }
                         
                         if (selectedElement !is DrawingElement.Image && selectedElement !is DrawingElement.Pdf) {
@@ -595,6 +750,11 @@ fun PropertiesPanel(
                             }
                             if (selectedElement.category in Structure.categories) {
                                 StructureSection(selectedElement, state, onEvent)
+                                RemodelFramingSection(selectedElement, onEvent)
+                            }
+                            // Remodel: the wall's status (Existing / Demo / New) and demo part of it.
+                            if (selectedElement.category == PlanSymbols.WALLS && !DerivedLayers.isGenerated(selectedElement)) {
+                                RemodelWallSection(selectedElement, state, onEvent)
                             }
                             // A wall on a floor plan can be marked bearing: the layer builder carries it down to a footing.
                             if (selectedElement.category == PlanSymbols.WALLS && Layers.layerOf(selectedElement, state).trade == LayerTrade.FLOOR_PLAN) {
@@ -705,6 +865,27 @@ fun PropertiesPanel(
                                 }
                                 val isWindow = PlanSymbols.isWindow(selectedElement.symbolName)
                                 if (isWindow) {
+                                    // How it opens: shown in the window schedule and on elevations.
+                                    Text(text = "Window type", style = MaterialTheme.typography.labelLarge)
+                                    val wType = PlanSymbols.windowType(selectedElement)
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        PlanSymbols.windowTypeLabels.forEachIndexed { i, label ->
+                                            FilterChip(selected = wType == i, onClick = {
+                                                onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_WINDOW_TYPE, i.toString()))
+                                            }, label = { Text(label) })
+                                        }
+                                    }
+                                    if (wType == PlanSymbols.WINDOW_CASEMENT) {
+                                        Text(text = "Hinge side (as drawn on the plan)", style = MaterialTheme.typography.labelLarge)
+                                        val right = PlanSymbols.hingeRight(selectedElement)
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            listOf("Left", "Right").forEachIndexed { i, label ->
+                                                FilterChip(selected = right == (i == 1), onClick = {
+                                                    onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_HINGE_RIGHT, i.toString()))
+                                                }, label = { Text(label) })
+                                            }
+                                        }
+                                    }
                                     val sill = selectedElement.properties[PlanSymbols.PROP_SILL_IN] ?: 36f
                                     EditableProperty("Sill height (in)", formatInches(sill)) {
                                         onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_SILL_IN, it))
@@ -713,6 +894,17 @@ fun PropertiesPanel(
                                 val h = selectedElement.properties[PlanSymbols.PROP_HEIGHT_IN] ?: (if (isWindow) 48f else 80f)
                                 EditableProperty(if (isWindow) "Window height (in)" else "Opening height (in)", formatInches(h)) {
                                     onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_HEIGHT_IN, it))
+                                }
+                                // The schedule's mark and rough opening (Schedules): Dan's rule unless the supplier's is entered.
+                                if (com.example.sitedraft.ui.canvas.Schedules.kindOf(selectedElement) != null) {
+                                    com.example.sitedraft.ui.canvas.Schedules.mark(selectedElement)?.let { PropertyRow("Schedule mark", it) }
+                                    Text("Rough opening from the supplier, inches (blank = your rule):", style = MaterialTheme.typography.bodySmall)
+                                    EditableProperty("R.O. width", selectedElement.properties[com.example.sitedraft.ui.canvas.Schedules.PROP_RO_W]?.let { formatInches(it) } ?: "") {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, com.example.sitedraft.ui.canvas.Schedules.PROP_RO_W, it))
+                                    }
+                                    EditableProperty("R.O. height", selectedElement.properties[com.example.sitedraft.ui.canvas.Schedules.PROP_RO_H]?.let { formatInches(it) } ?: "") {
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, com.example.sitedraft.ui.canvas.Schedules.PROP_RO_H, it))
+                                    }
                                 }
                             }
                         }
@@ -1398,7 +1590,18 @@ private fun StairSection(stair: DrawingElement.Symbol, onEvent: (DrawingEvent) -
         text = "Risers aim for 7 1/2\", never under 6 1/4\" or over 8 1/4\".",
         style = MaterialTheme.typography.bodySmall
     )
+    // Up or down from this floor, and the rise from the building unless typed (Nov 24).
+    chips("Goes", Stairs.GOES, Stairs.goesLabels)
+    if (type != Stairs.Type.DECK) {
+        val follows = Stairs.code(stair, Stairs.RISE_SET) == 0
+        Text(
+            text = if (follows) "Rise follows the building (floor heights, basement slab)." else "Rise typed by hand.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        if (!follows) TextButton(onClick = { set(Stairs.RISE_SET, "0") }) { Text("Follow the building") }
+    }
     inches("Total rise, floor to floor", Stairs.RISE)
+    chips("Riser count on the plan", Stairs.SHOW_R, listOf("Off", "On"))
     inches("Tread depth", Stairs.TREAD)
     inches("Nosing", Stairs.NOSING)
     if (type == Stairs.Type.CURVED) {
@@ -1477,7 +1680,7 @@ private fun StructureSection(s: DrawingElement.Symbol, state: CanvasState, onEve
             chips("Joist", Structure.JOIST, Structure.joistSizes.map { it.first })
             chips("Joists run", Structure.DIRECTION, Structure.directionLabels)
             EditableProperty("Beams across the joists", Structure.code(s, Structure.BEAMS).toString()) { set(Structure.BEAMS, it) }
-            Text("Openings: place a Floor Opening over the bay; its joists are cut and the trimmers and headers framed (doubled over 4', hangers over 6').", style = MaterialTheme.typography.bodySmall)
+            Text("Openings: place a Floor Opening over the bay; its joists are cut, the trimmers doubled, and the headers framed (doubled over 4', hangers over 6').", style = MaterialTheme.typography.bodySmall)
         }
         Structure.LADDER -> {
             inches("Blocks, on center", Structure.BLOCKS)

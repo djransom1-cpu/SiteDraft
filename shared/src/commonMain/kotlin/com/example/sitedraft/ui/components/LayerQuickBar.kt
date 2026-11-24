@@ -23,6 +23,8 @@ import com.example.sitedraft.ui.canvas.DrawingEvent
 import com.example.sitedraft.ui.canvas.Layer
 import com.example.sitedraft.ui.canvas.LayerTrade
 import com.example.sitedraft.ui.canvas.Layers
+import com.example.sitedraft.ui.canvas.Remodel
+import com.example.sitedraft.ui.canvas.RemodelPhase
 import com.example.sitedraft.ui.canvas.activeLayer
 import com.example.sitedraft.ui.canvas.effectiveLayers
 
@@ -66,6 +68,11 @@ fun LayerQuickBar(state: CanvasState, onEvent: (DrawingEvent) -> Unit, modifier:
                     } else null
                 )
             }
+            // Remodel phase (Remodel.kt), once the drawing has existing or demo walls.
+            if (Remodel.isRemodel(state) || state.remodelPhase != RemodelPhase.ALL) {
+                Text("|", color = MaterialTheme.colorScheme.outline)
+                RemodelPhaseChips(state, onEvent)
+            }
         }
     }
 }
@@ -80,7 +87,8 @@ private fun shortName(layer: Layer, floors: Int): String {
         LayerTrade.FLOOR_PLAN -> prefix + "Plan"
         LayerTrade.CABINETS -> prefix + "Cabinets"
         LayerTrade.FURNITURE -> prefix + "Furniture"
-        LayerTrade.ROOF_STRUCTURAL -> "Roof"
+        LayerTrade.ROOF_STRUCTURAL -> "Roof framing"
+        LayerTrade.ROOF_PLAN -> "Roof plan"
         LayerTrade.EXTERIOR_ELEVATION -> "Exterior"
         LayerTrade.SITE_PLAN -> "Site"
         LayerTrade.CUSTOM -> layer.name

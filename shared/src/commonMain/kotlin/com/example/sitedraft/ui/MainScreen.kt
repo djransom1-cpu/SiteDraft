@@ -66,6 +66,10 @@ fun MainScreen(
     var sheetsOnly by remember { mutableStateOf(false) }
     // Paper space: the Sheets screen (SheetsScreen), over the drawing.
     var showSheets by remember { mutableStateOf(false) }
+    var showJobSpecs by remember { mutableStateOf(false) }
+    var jobSpecsNew by remember { mutableStateOf(false) }
+    // The sheet the Sheets screen opens on (a tab tapped on the drawing); null = the first.
+    var sheetsStart by remember { mutableStateOf<String?>(null) }
 
 
 
@@ -183,6 +187,7 @@ fun MainScreen(
                         .fillMaxHeight()
                         .safeDrawingPadding()
                         .padding(8.dp),
+                    onOpenJobSpecs = { jobSpecsNew = it; showJobSpecs = true },
                     onClose = { currentNav = "Drawing" }
                 )
             }
@@ -224,6 +229,18 @@ fun MainScreen(
                             .align(Alignment.TopCenter)
                             .padding(16.dp),
                         hasLockedPlans = state.elements.any { it.isLockedPlan }
+                    )
+
+                    // Model and sheet tabs along the bottom, like AutoCAD's Model / Layout tabs.
+                    SpaceTabs(
+                        sheets = state.sheets,
+                        current = null,
+                        onModel = {},
+                        onSheet = { sheetsStart = it; showSheets = true },
+                        onNewSheet = { sheetsStart = NEW_SHEET; showSheets = true },
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 16.dp, bottom = 16.dp, end = 200.dp)
                     )
 
                     // Quick layer on/off under the toolbar. Hidden while a symbol waits for its
@@ -328,6 +345,7 @@ fun MainScreen(
                                 modifier = Modifier
                                     .safeDrawingPadding()
                                     .padding(16.dp),
+                                onOpenJobSpecs = { jobSpecsNew = it; showJobSpecs = true },
                                 onClose = { currentNav = "Drawing" }
                             )
                         }
@@ -426,7 +444,7 @@ fun MainScreen(
                     BuildingPanel(
                         state = state,
                         onEvent = viewModel::onEvent,
-                        onOpenSheets = { showSheets = true },
+                        onOpenSheets = { sheetsStart = null; showSheets = true },
                         onOpenTools = { currentNav = "Symbols" },
                         modifier = Modifier
                             .width(340.dp)
@@ -510,9 +528,24 @@ fun MainScreen(
             onExportPdf = { viewModel.onEvent(DrawingEvent.ExportPdf(it, density)) },
             onSheetsChange = { viewModel.onEvent(DrawingEvent.UpdateSheets(it)) },
             startOnSheets = sheetsOnly,
-            onOpenSheets = { showSheets = true },
+            onOpenSheets = { sheetsStart = null; showSheets = true },
             onDismiss = { printDialog = null; sheetsOnly = false }
         )
+    }
+
+    if (showJobSpecs) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showJobSpecs = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            JobSpecsWizard(
+                state = state,
+                onEvent = viewModel::onEvent,
+                onClose = { showJobSpecs = false },
+                modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+                newJob = jobSpecsNew
+            )
+        }
     }
 
     if (showSheets) {
@@ -525,7 +558,8 @@ fun MainScreen(
                 onEvent = viewModel::onEvent,
                 density = density,
                 onClose = { showSheets = false },
-                modifier = Modifier.fillMaxSize().safeDrawingPadding()
+                modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+                initialSelected = sheetsStart
             )
         }
     }

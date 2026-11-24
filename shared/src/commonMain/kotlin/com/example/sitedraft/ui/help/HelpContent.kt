@@ -42,7 +42,7 @@ object HelpContent {
                 "Building outline:",
                 "1. Tap Plan on the left rail.",
                 "2. Under Building outline, type the outside Width (ft) and Depth (ft).",
-                "3. Pick the wall: 2x6 Wall, 2x4 Wall, 8\" Block Wall or 8\" Concrete Wall.",
+                "3. Pick the wall: 2x6 Wall, 2x4 Wall, 12\" Block Wall, 10\" Concrete Wall, or 8\" block or concrete (above grade).",
                 "4. Tap Place outline, then tap the canvas where the top-left corner goes.",
                 "Rooms:",
                 "1. Tap a preset (Bedroom, Bathroom, Kitchen, Living Room, Dining, Office, Laundry, Closet, Hall, Garage) or type a Room name.",

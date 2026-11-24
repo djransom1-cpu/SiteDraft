@@ -19,6 +19,8 @@ import com.example.sitedraft.ui.canvas.BuildingSettings
 import com.example.sitedraft.ui.canvas.CanvasState
 import com.example.sitedraft.ui.canvas.DrawingEvent
 import com.example.sitedraft.ui.canvas.FoundationType
+import com.example.sitedraft.ui.canvas.FoundationWall
+import com.example.sitedraft.ui.canvas.DrainTile
 import com.example.sitedraft.ui.canvas.LayerTrade
 import com.example.sitedraft.ui.canvas.Layers
 import com.example.sitedraft.ui.canvas.UpperFloor
@@ -100,6 +102,31 @@ fun BuildingPanel(
                 }
             }
 
+            // The roof: set up and edited here when its layer is active (RoofPlan).
+            if (active.trade == LayerTrade.ROOF_STRUCTURAL) {
+                Text("Roof", style = MaterialTheme.typography.titleMedium)
+                Text("Built over the first-floor exterior walls and kept up with them.", style = MaterialTheme.typography.bodySmall)
+                RoofInputs(state) { onEvent(DrawingEvent.SetBuilding(it)) }
+            }
+
+            // The roofing: picked on the Roof plan layer (the roof itself is set on Roof framing).
+            if (active.trade == LayerTrade.ROOF_PLAN) {
+                Text("Roofing", style = MaterialTheme.typography.titleMedium)
+                RoofCoveringInputs(state) { onEvent(DrawingEvent.SetBuilding(it)) }
+            }
+
+            // The lot from the survey: typed in here when the Site layer is active (SiteLot).
+            if (active.trade == LayerTrade.SITE_PLAN) {
+                Text("Site plan", style = MaterialTheme.typography.titleMedium)
+                SiteInputs(state) { onEvent(DrawingEvent.SetBuilding(it)) }
+            }
+
+            // The exterior elevations: made and edited here when their layer is active (ExteriorElevation).
+            if (active.trade == LayerTrade.EXTERIOR_ELEVATION) {
+                Text("Exterior elevations", style = MaterialTheme.typography.titleMedium)
+                ExteriorInputs(state) { onEvent(DrawingEvent.SetBuilding(it)) }
+            }
+
             // What can be drawn on the active layer, one tap away.
             val tools = when (active.trade) {
                 LayerTrade.FOUNDATION -> "Footings, pad footings, piers, slabs and 8\" block or concrete walls"
@@ -120,6 +147,10 @@ fun BuildingPanel(
                     }
                 }
             }
+
+            // --- Remodel: existing, demo and new walls (Remodel.kt) ---
+            HorizontalDivider()
+            RemodelControls(state, onEvent)
 
             // --- Layers built from the floor plan (DerivedLayers) ---
             HorizontalDivider()
@@ -184,7 +215,7 @@ fun BuildingPanel(
                     Text(lv.elevationIn?.let { Building.elevationText(it) } ?: "not set", fontWeight = FontWeight.Bold)
                 }
             }
-            BuildingInputs(state.building) { onEvent(DrawingEvent.SetBuilding(it)) }
+            BuildingInputs(state.building, com.example.sitedraft.ui.canvas.FootingCode.houseWidthFt(state)) { onEvent(DrawingEvent.SetBuilding(it)) }
 
             // The typical wall section lives in model space: placed once, edited there, shown on sheets.
             HorizontalDivider()
@@ -203,7 +234,7 @@ fun BuildingPanel(
 /** The building inputs, edited as text and applied together (Apply), so a half-typed number never moves a level. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSettings) -> Unit) {
+internal fun BuildingInputs(settings: BuildingSettings, houseWidthFt: Float? = null, onApply: (BuildingSettings) -> Unit) {
     fun ft(inches: Float) = Building.elevationText(inches)
     fun inch(v: Float) = formatInches(v)
     var foundation by remember(settings) { mutableStateOf(settings.foundation) }
@@ -214,9 +245,18 @@ internal fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSettin
     var courses by remember(settings) { mutableStateOf(settings.blockCourses.toString()) }
     var course by remember(settings) { mutableStateOf(inch(settings.courseIn)) }
     var crawl by remember(settings) { mutableStateOf(inch(settings.crawlClearanceIn)) }
+    var slab by remember(settings) { mutableStateOf(inch(settings.basementSlabIn)) }
     var footT by remember(settings) { mutableStateOf(inch(settings.footingThicknessIn)) }
     var footW by remember(settings) { mutableStateOf(inch(settings.footingWidthIn)) }
-    var footP by remember(settings) { mutableStateOf(inch(settings.footingProjectionIn)) }
+    // Blank = centred under the wall (the code rule, Nov 23).
+    var footP by remember(settings) { mutableStateOf(settings.footingOutsideIn?.let { inch(it) } ?: "") }
+    var wallType by remember(settings) { mutableStateOf(settings.foundationWall) }
+    var edition by remember(settings) { mutableStateOf(settings.codeEdition) }
+    var drain by remember(settings) { mutableStateOf(settings.drainTile) }
+    var rebar by remember(settings) { mutableStateOf(settings.rebarSize.toString()) }
+    var barsTop by remember(settings) { mutableStateOf(settings.footingBarsTop.toString()) }
+    var barsBot by remember(settings) { mutableStateOf(settings.footingBarsBottom.toString()) }
+    var dowelOc by remember(settings) { mutableStateOf(inch(settings.dowelSpacingIn)) }
     var boltEnd by remember(settings) { mutableStateOf(inch(settings.anchorBoltEndIn)) }
     var boltOc by remember(settings) { mutableStateOf(inch(settings.anchorBoltSpacingIn)) }
     var foam by remember(settings) { mutableStateOf(inch(settings.foundationFoamIn)) }
@@ -224,6 +264,10 @@ internal fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSettin
     var floorElev by remember(settings) { mutableStateOf("") }
 
     Text("Building inputs", style = MaterialTheme.typography.titleMedium)
+    Text("Code the job is drawn to", style = MaterialTheme.typography.labelLarge)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.example.sitedraft.ui.canvas.CodeEdition.entries.forEach { e -> FilterChip(selected = edition == e, onClick = { edition = e }, label = { Text(e.label) }) }
+    }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FoundationType.entries.forEach { t -> FilterChip(selected = foundation == t, onClick = { foundation = t }, label = { Text(t.label) }) }
     }
@@ -240,11 +284,52 @@ internal fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSettin
         field("Block courses", courses, Modifier.weight(1f)) { courses = it }
         field("Course height", course, Modifier.weight(1f)) { course = it }
         if (foundation == FoundationType.CRAWL) field("Crawl clearance", crawl, Modifier.weight(1f)) { crawl = it }
+        // Top of the basement slab above the top of the footing: basement stairs size to it (Nov 24).
+        if (foundation == FoundationType.BASEMENT) field("Slab above footing", slab, Modifier.weight(1f)) { slab = it }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         field("Footing thick", footT, Modifier.weight(1f)) { footT = it }
         field("Footing wide", footW, Modifier.weight(1f)) { footW = it }
-        field("Past the wall", footP, Modifier.weight(1f)) { footP = it }
+        field("Outside (blank = centered)", footP, Modifier.weight(1f)) { footP = it }
+    }
+    // The code's footing size (2015 IRC Table R403.1(1)) for these inputs, wide enough for the wall (Nov 23).
+    run {
+        val draft = settings.copy(foundation = foundation, foundationWall = wallType, codeEdition = edition)
+        val code = com.example.sitedraft.ui.canvas.FootingCode.minimum(draft, houseWidthFt)
+        val sug = com.example.sitedraft.ui.canvas.FootingCode.suggested(draft, houseWidthFt)
+        Text(
+            if (code.widthIn == null) code.note
+            else "Code minimum ${inch(code.widthIn)}\" x ${inch(code.thickIn ?: 6f)}\" (${code.note}). Snow load and soil are in Structure." +
+                (sug?.let { if (it.first > code.widthIn) " With the ${wallType.callout.lowercase()} wall it needs ${inch(it.first)}\" wide to stick out 2\" each side." else "" } ?: ""),
+            style = MaterialTheme.typography.bodySmall
+        )
+        val w = parseInches(footW); val t = parseInches(footT)
+        if (sug != null && w != null && t != null) {
+            if (w < sug.first - 0.01f || t < sug.second - 0.01f)
+                Text("This footing is under the code size.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = { footW = inch(sug.first); footT = inch(maxOf(sug.second, t)); footP = "" }) {
+                Text("Use the code size: ${inch(sug.first)}\" x ${inch(maxOf(sug.second, t))}\", centered")
+            }
+        }
+    }
+    if (foundation != FoundationType.SLAB) {
+        Text("Foundation wall", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FoundationWall.entries.forEach { t -> FilterChip(selected = wallType == t, onClick = { wallType = t }, label = { Text(t.label) }) }
+        }
+        if (wallType == FoundationWall.BLOCK_8 && foundation == FoundationType.BASEMENT)
+            Text("8\" block is for above grade; a basement with earth against it is 12\" block.", color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall)
+    }
+    Text("Footing rebar and drain tile", style = MaterialTheme.typography.labelLarge)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        field("Bar size #", rebar, Modifier.weight(1f)) { rebar = it }
+        field("Bars top", barsTop, Modifier.weight(1f)) { barsTop = it }
+        field("Bars bottom", barsBot, Modifier.weight(1f)) { barsBot = it }
+        field("Dowels o.c.", dowelOc, Modifier.weight(1f)) { dowelOc = it }
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        DrainTile.entries.forEach { t -> FilterChip(selected = drain == t, onClick = { drain = t }, label = { Text(t.label) }) }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         field("Bolts from corner", boltEnd, Modifier.weight(1f)) { boltEnd = it }
@@ -263,13 +348,25 @@ internal fun BuildingInputs(settings: BuildingSettings, onApply: (BuildingSettin
             blockCourses = courses.trim().toIntOrNull() ?: return@run null,
             courseIn = parseInches(course) ?: return@run null,
             crawlClearanceIn = parseInches(crawl) ?: return@run null,
+            basementSlabIn = parseInches(slab) ?: return@run null,
             footingThicknessIn = parseInches(footT) ?: return@run null,
             footingWidthIn = parseInches(footW) ?: return@run null,
-            footingProjectionIn = parseInches(footP) ?: return@run null,
+            footingOutsideIn = if (footP.isBlank()) null else parseInches(footP) ?: return@run null,
+            foundationWall = wallType,
+            codeEdition = edition,
+            drainTile = drain,
+            rebarSize = rebar.trim().toIntOrNull()?.takeIf { it in 3..8 } ?: return@run null,
+            footingBarsTop = barsTop.trim().toIntOrNull()?.takeIf { it >= 0 } ?: return@run null,
+            footingBarsBottom = barsBot.trim().toIntOrNull()?.takeIf { it >= 0 } ?: return@run null,
+            dowelSpacingIn = parseInches(dowelOc)?.takeIf { it > 0f } ?: return@run null,
             anchorBoltEndIn = parseInches(boltEnd) ?: return@run null,
             anchorBoltSpacingIn = parseInches(boltOc)?.takeIf { it > 0f } ?: return@run null,
             foundationFoamIn = parseInches(foam) ?: return@run null
         )
+    }
+    // The footing against the code's projection rule (at least 2" each side, no more than its thickness).
+    (parsed ?: settings).let { Building.footingCodeIssues(it) }.forEach {
+        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     }
     Button(onClick = { parsed?.let(onApply) }, enabled = parsed != null && parsed != settings, modifier = Modifier.fillMaxWidth()) {
         Text(if (parsed == null) "Check the numbers" else "Apply")

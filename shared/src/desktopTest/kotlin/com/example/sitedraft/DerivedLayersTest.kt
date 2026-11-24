@@ -51,16 +51,31 @@ class DerivedLayersTest {
         // The top foundation wall's outside face is flush with the top wall's outside face.
         val fw = gen(s, "fw:top").single() as DrawingElement.Symbol
         assertEquals(0f, (fw.center.y - fw.size.height / 2f) / inch, 0.01f)
-        assertEquals(7.625f, fw.size.height / inch, 0.01f)
-        // Footing 18" wide, 6" past the wall's outside face all the way round (corners too).
+        assertEquals(11.625f, fw.size.height / inch, 0.01f)   // 12" block by default (Dan, Nov 23)
+        // Footing 18" wide, centred under the 12" block (3 3/16" each side), all the way round (corners too).
         val ftg = gen(s, "ftg:top").single() as DrawingElement.Symbol
         assertEquals(18f, ftg.size.height / inch, 0.01f)
-        assertEquals(-6f, (ftg.center.y - ftg.size.height / 2f) / inch, 0.01f)
-        assertEquals(492f, ftg.size.width / inch, 0.01f)
-        assertEquals(-6f, (ftg.center.x - ftg.size.width / 2f) / inch, 0.01f)
-        // The right-hand footing: 6" past the right wall's outside face.
+        assertEquals(-3.1875f, (ftg.center.y - ftg.size.height / 2f) / inch, 0.01f)
+        assertEquals(486.375f, ftg.size.width / inch, 0.01f)
+        // One continuous footing (Nov 23): top and bottom run to the outside corners, the sides stop
+        // against them: 288" deep + 2 x 3 3/16" past the wall - 2 x 18" = 258 3/8", no overlaps.
+        val left = gen(s, "ftg:left").single() as DrawingElement.Symbol
+        assertEquals(258.375f, left.size.height / inch, 0.01f)
+        assertEquals(-3.1875f + 18f, (left.center.y - left.size.height / 2f) / inch, 0.01f)
+        assertEquals((Structure.JOIN_OWN + 3 * Structure.JOIN_OWN).toFloat(), Structure.prop(ftg, Structure.JOIN), 0.01f)
+        assertEquals((Structure.JOIN_BUTT + 3 * Structure.JOIN_BUTT).toFloat(), Structure.prop(left, Structure.JOIN), 0.01f)
+        // The side piece draws no end lines: just its outside and inside edges (plus drain lines).
+        val leftDashes = Structure.planParts(left, left.size.width, left.size.height, inch)
+            .filterIsInstance<com.example.sitedraft.ui.canvas.Shower.Part.Seg>().filter { it.ink == com.example.sitedraft.ui.canvas.Shower.Ink.DASHED }
+        assertEquals(2, leftDashes.size)
+        // Form-A-Drain both sides on a basement footing (Nov 23), drawn with cross pipes every 20'.
+        assertEquals(1f, Structure.prop(ftg, Structure.DRAIN), 0.01f)
+        val drainParts = Structure.planParts(ftg, ftg.size.width, ftg.size.height, inch)
+        assertTrue(drainParts.count { it is com.example.sitedraft.ui.canvas.Shower.Part.Seg } >= 2 + 2)
+        assertEquals(-3.1875f, (ftg.center.x - ftg.size.width / 2f) / inch, 0.01f)
+        // The right-hand footing: 3 3/16" past the right wall's outside face.
         val right = gen(s, "ftg:right").single() as DrawingElement.Symbol
-        assertEquals(486f, (right.center.x + right.size.width / 2f) / inch, 0.01f)
+        assertEquals(483.1875f, (right.center.x + right.size.width / 2f) / inch, 0.01f)
     }
 
     @Test
@@ -71,9 +86,10 @@ class DerivedLayersTest {
         assertEquals(1, Structure.code(bay, Structure.BEAMS))     // 24' span: one beam, 12' spans
         assertEquals(16f, Structure.prop(bay, Structure.SPACING), 0.01f)
         assertEquals("2x10", Structure.joistLabel(bay))
-        // The 40' beam on posts at no more than 8': four posts, each on a pad.
-        assertEquals(4, gen(s, "post:b0").size)
-        assertEquals(4, gen(s, "pad:b0").size)
+        // Dan (Nov 22): columns no more than 12' apart (the set spacing). 38'-9" between the foundation
+        // walls makes four spans of 9'-8": three posts, each on a pad.
+        assertEquals(3, gen(s, "post:b0").size)
+        assertEquals(3, gen(s, "pad:b0").size)
     }
 
     @Test
@@ -163,14 +179,15 @@ class DerivedLayersTest {
         val off = on.copy(building = BuildingSettings())
         val parts = DerivedLayers.matchLayer(off, "foundation")
         // 4 walls + 4 footings + 4 posts and 4 pads under the centre beam, + the bearing wall's posts and pads.
-        assertTrue(parts.count { it.symbolName == "8\" Block Wall" } == 4)
+        assertTrue(parts.count { it.symbolName == "12\" Block Wall" } == 4)
         assertTrue(parts.count { it.symbolName == Structure.FOOTING } == 4)
         assertTrue(parts.none { DerivedLayers.isGenerated(it) })
         assertTrue(parts.all { it.layerId == "foundation" })
         // Framing for the first floor's structural layer.
         val framing = DerivedLayers.matchLayer(off, "floor1-structural")
         assertEquals(1, framing.count { it.symbolName == Structure.JOIST_BAY })
-        assertEquals(1, framing.count { it.symbolName == Structure.LADDER })
+        // The interior wall's ladder, and blocking at the rim along both outside walls that run with the joists (Dan, Nov 23).
+        assertEquals(3, framing.count { it.symbolName == Structure.LADDER })
     }
 
     @Test

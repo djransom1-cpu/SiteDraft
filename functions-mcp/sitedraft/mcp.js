@@ -20,6 +20,7 @@ const T = require("./tools");
 const S = require("./store");
 const P = require("./pdf");
 const L = require("./layers");
+const X = require("./extras");
 const { buildProvider, OWNER_EMAIL } = require("./oauth");
 
 const UPLOAD_TTL_MS = 60 * 60 * 1000;
@@ -42,7 +43,12 @@ function buildServer(ctx) {
       "then place doors and windows with place_opening and cabinets with place_cabinets. Always read_drawing first to get wall ids. " +
       "Every change is saved to the cloud with a backup, and Site Draft reloads the open project by itself within a few seconds; " +
       "undo_last_change puts back the drawing as it was before your last change. " +
-      "The building has levels (footing to roof, elevations from its inputs; first floor top of subfloor 100'-0\") and layers by trade; whatever you draw goes on the active layer (set_active_layer), e.g. the foundation walls on Foundation. " + COORDS,
+      "The building has levels (footing to roof, elevations from its inputs; first floor top of subfloor 100'-0\") and layers by trade; whatever you draw goes on the active layer (set_active_layer), e.g. the foundation walls on Foundation. " +
+      "Floors: hatch_area (tile, planks, hardwood...). Elevations: add_elevation for a wall's cabinets, set_exterior_elevations for the four outside ones. Roof: set_roof. " +
+      "Beam and posts: set_structure. Siding, stone or brick wainscot: set_exterior_finish. Porches and garages: place_porch, place_garage. Sheets: build_sheets, list_sheets. " +
+      "Stairs: place_stairs (sized to the floor heights, up or down), edit_stairs. " +
+      "Remodels: walls measured in a house as it stands are draw_walls status existing; mark walls coming out with edit_element status demo or demo_wall_part for part of one; new work is status new. set_remodel_view shows the existing, demo or proposed plan. " +
+      "Every symbol's back is the side against the wall; read_drawing and the place/edit results say which way its front faces, so check that instead of asking Dan. " + COORDS,
   });
 
   const reg = (name, description, schema, handler) => {
@@ -82,7 +88,8 @@ function buildServer(ctx) {
 
   reg("read_drawing",
     "The walls (with ids, length, ends, which side the room is on), doors and windows (wall, position, hinge, swing), cabinets and appliances " +
-    "(shop code like B24/SB36/W3030, wall, distance from the corner), other symbols and room labels of a project. " + COORDS,
+    "(shop code like B24/SB36/W3030, wall, distance from the corner, which way the front faces, drawer/door front), other symbols, room labels, " +
+    "floor hatches, elevations, the exterior elevations and the roof of a project. " + COORDS,
     { project: Project, raw: z.boolean().optional().describe("Also return the raw element list (large)") },
     async (a) => {
       const p = await S.readProject(ctx.db, ctx.uid, a.project);
@@ -132,6 +139,7 @@ function buildServer(ctx) {
       room_name: z.string().optional(),
       room_side: z.enum(["left", "right"]).optional().describe("For an open run of walls: which side of the walking direction the room is on"),
       wall_type: z.string().optional().describe("2x4 Wall (default), 2x6 Wall, 2x4 Framing, 2x6 Framing, 8\" Block Wall, 8\" Concrete Wall"),
+      status: z.enum(["existing", "demo", "new"]).optional().describe("Remodel: existing for walls measured in a house as it stands (outline), demo for walls coming out (dashed), new (default) for new work"),
     },
     change("draw_walls", T.drawWalls));
 
@@ -153,7 +161,8 @@ function buildServer(ctx) {
   reg("place_cabinets",
     "Places a run of cabinets and appliances with their backs against one face of a wall, in order from the chosen end (inside corner by default) plus an offset. " +
     "Items: shop codes (B15, BD18, SB36 adds a sink, LS36, W3030, W1530, WDC2430, P2484, V30, VD18, BF3, WF3, DW), exact catalog names " +
-    "(\"Range 30\\\"\", \"Refrigerator 36\\\" French Door\"), \"GAP 30\" for empty space, or {code, width, front}. Base and wall cabinets go in separate calls.",
+    "(\"Range 30\\\"\", \"Refrigerator 36\\\" French Door\"), \"GAP 30\" for empty space, or {code, width, front} ({code: \"BD\", width: 29} for an odd size). Base and wall cabinets go in separate calls. " +
+    "A wall that borders several rooms (an exterior wall the length of the house) has several sets of inside corners: give room (its label) or near (a point in the room) so the run starts at that room's corner.",
     {
       project: Project, wall_id: z.string(),
       items: z.array(z.union([z.string(), z.object({ code: z.string().optional(), name: z.string().optional(), width: Len.optional(), depth: Len.optional(), front: z.union([z.string(), z.number()]).optional(), sink: z.boolean().optional() })])).min(1),
@@ -162,22 +171,83 @@ function buildServer(ctx) {
       style: z.union([z.string(), z.number()]).optional().describe("slab, shaker, raised panel, glass"),
       hardware: z.union([z.string(), z.number()]).optional().describe("knobs, bar pulls, knobs + drawer pulls"),
       front: z.union([z.string(), z.number()]).optional().describe("Base fronts: doors, drawer + doors, 3 drawers, 4 drawers"),
+      room: z.string().optional().describe("The room the cabinets are in, by its label (e.g. Kitchen): its inside corners are the ones measured from"),
+      near: z.object({ x: Len, y: Len }).optional().describe("Or a point inside that room, inches"),
     },
     change("place_cabinets", T.placeCabinets));
 
-  reg("place_symbol", "Places any library symbol (island, appliance, fixture, furniture...) by its exact catalog name, centred at x, y (inches). " + COORDS,
-    { project: Project, name: z.string(), x: Len, y: Len, rotation: z.number().optional().describe("Degrees clockwise"), width: Len.optional(), depth: Len.optional() },
+  const Fronts = {
+    front: z.union([z.string(), z.number()]).optional().describe("Cabinets: doors, drawer + doors, 3 drawers, 4 drawers"),
+    style: z.union([z.string(), z.number()]).optional().describe("Cabinets: slab, shaker, raised panel, glass"),
+    hardware: z.union([z.string(), z.number()]).optional().describe("Cabinets: knobs, bar pulls, knobs + drawer pulls"),
+  };
+  reg("place_symbol", "Places any library symbol (island, appliance, fixture, furniture...) by its exact catalog name, centred at x, y (inches). " +
+    "Symbols are drawn back at the top: rotation 0 faces south, 90 west, 180 north, 270 east; the result says which way it faces and which wall it's against. " + COORDS,
+    { project: Project, name: z.string(), x: Len, y: Len, rotation: z.number().optional().describe("Degrees clockwise"), width: Len.optional(), depth: Len.optional(), ...Fronts },
     change("place_symbol", T.placeSymbol));
 
   reg("add_label", "Adds text at x, y (top-left, inches).", { project: Project, text: z.string(), x: Len, y: Len, size: Len.optional() },
     change("add_label", T.addLabel));
 
-  reg("edit_element", "Moves, turns, resizes or re-labels one element by id, or merges symbol properties (e.g. {\"hingeRight\": 1}).",
+  reg("edit_element", "Moves, turns, resizes or re-labels one element by id, sets a cabinet's front, style or hardware, or merges symbol properties (e.g. {\"hingeRight\": 1}). " +
+    "The result says which way a symbol now faces and which wall it's against.",
     { project: Project, id: z.string(), move_by: z.object({ x: Len.optional(), y: Len.optional() }).optional(), rotation: z.number().optional(),
-      width: Len.optional(), depth: Len.optional(), text: z.string().optional(), properties: z.record(z.string(), z.number()).optional() },
+      width: Len.optional(), depth: Len.optional(), text: z.string().optional(), properties: z.record(z.string(), z.number()).optional(), ...Fronts,
+      status: z.enum(["existing", "demo", "new"]).optional().describe("A wall's remodel status: existing, demo (the whole wall comes out) or new") },
     change("edit_element", T.editElement));
 
-  reg("delete_elements", "Deletes elements by id.", { project: Project, ids: z.array(z.string()).min(1) }, change("delete_elements", T.deleteElements));
+  // ------------------------------------------------------------------ stairs (app: Stairs.kt)
+  reg("place_stairs",
+    "Places a stair sized to the building: goes up to the floor above or down to the floor below / the basement slab (auto: up when there is a floor above, " +
+    "otherwise down), the rise from the floor heights unless rise is given, risers as close to 7 1/2\" as it allows (6 1/4\" to 8 1/4\"). " +
+    "climbs = the way you walk going UP it. Say where with top (the middle of its top edge, where it meets the upper floor; straight and deck stairs) or center. " +
+    "It goes on the active layer's floor. With Build from the floor plan on, Site Draft opens the floor framing over it (headroom 6'-8\") when it reloads. " +
+    "The plan shows UP or DN with the riser count (e.g. DN 13R).",
+    { project: Project, type: z.enum(["straight", "l", "u", "spiral", "deck"]).optional().describe("Default straight"),
+      goes: z.enum(["auto", "up", "down"]).optional(), climbs: Compass.optional().describe("Default north (up the page)"),
+      top: z.object({ x: Len, y: Len }).optional().describe("Middle of the top edge, inches. " + COORDS), center: z.object({ x: Len, y: Len }).optional(),
+      width: Len.optional().describe("Default 36\""), tread: Len.optional().describe("Tread depth, default 10\""),
+      rise: Len.optional().describe("Only to override the building (typed by hand)"), turn: z.enum(["left", "right"]).optional().describe("L stair: which way it turns"),
+      show_risers: z.boolean().optional().describe("Riser count on the plan (default on)") },
+    change("place_stairs", T.placeStairs));
+  reg("edit_stairs",
+    "Changes a stair: goes (auto, up, down), rise (a length typed by hand, or \"building\" to follow the floor heights again), width, tread, show_risers. The footprint follows.",
+    { project: Project, id: z.string(), goes: z.enum(["auto", "up", "down"]).optional(), rise: z.union([Len, z.literal("building")]).optional(),
+      width: Len.optional(), tread: Len.optional(), show_risers: z.boolean().optional() },
+    change("edit_stairs", T.editStairs));
+
+  // ------------------------------------------------------------------ remodel (app: Remodel.kt)
+  reg("demo_wall_part",
+    "Remodel: marks part of a wall to come out. The wall is split; the piece coming out is demo (dashed), the rest keeps its status (existing). " +
+    "from = where the demo starts, measured from measured_from (left/right end of an east-west wall, top/bottom = north/south end of a north-south one); length = how much comes out. " +
+    "For a whole wall use edit_element with status demo. read_drawing first for the wall id; the result gives the new pieces' ids.",
+    { project: Project, wall_id: z.string(), from: Len.describe("Distance from the end to where the demo starts (0 = at the end)"), length: Len,
+      measured_from: z.enum(["left", "right", "top", "bottom", "west", "east", "north", "south"]).optional().describe("Default left (east-west wall) or top (north-south wall)") },
+    change("demo_wall_part", T.demoWallPart));
+  reg("set_remodel_view",
+    "Remodel: which plan Site Draft shows (all = every wall in its own style; existing = the house as it stands; demo = what comes out, dashed; proposed = existing plus new, demo gone) " +
+    "and what walls drawn in the app are drawn as (existing, demo, new).",
+    { project: Project, show: z.enum(["all", "existing", "demo", "proposed"]).optional(), draw_new_walls_as: z.enum(["existing", "demo", "new"]).optional() },
+    change("set_remodel_view", T.setRemodel));
+
+  reg("delete_elements", "Deletes elements by id (walls, symbols, labels, hatches, elevations...).", { project: Project, ids: z.array(z.string()).min(1) }, change("delete_elements", T.deleteElements));
+  reg("hatch_area",
+    "Floor finish for a room, as the app's Hatch an area: fills the room (between the nearest walls on each side) with a pattern at a tile or plank size. " +
+    "pattern: tile, planks (plank tile, hardwood, LVP, laminate), herringbone, hex, brick/subway, concrete, carpet... size = the tile or plank width (up the page), " +
+    "length = its length (across the page) for planks, brick and herringbone. ASK Dan the size if he hasn't said. A hatch already in that room is replaced; delete one with delete_elements.",
+    { project: Project, room: z.string().optional().describe("The room's label, e.g. Master Bath"), near: z.object({ x: Len, y: Len }).optional().describe("Or a point inside the area, inches"),
+      pattern: z.string(), size: Len, length: Len.optional() },
+    change("hatch_area", T.hatchArea));
+  reg("add_elevation",
+    "A live elevation of one wall (or an island face): it shows the cabinets with their fronts, appliances, openings and closet parts against that face, and follows the plan. " +
+    "looking = the way the viewer looks at the wall (default: from the room). Placed in a row under the plan; put it on a sheet in the app.",
+    { project: Project, wall_id: z.string().describe("A wall id, or an island's id"), looking: Compass.optional(),
+      island_face: z.enum(["front", "back", "left end", "right end"]).optional(),
+      wall_height: Len.optional().describe("Default 8'"), crown: Len.optional().describe("Crown on the uppers, its height"), base_molding: Len.optional().describe("Baseboard height"),
+      casing: z.boolean().optional().describe("Door and window casing"),
+      backsplash: z.object({ from: Len.optional(), to: Len.optional(), pattern: z.enum(["grid", "subway", "herringbone", "hex"]).optional(), size: Len.optional(), length: Len.optional(),
+        whole_wall: z.boolean().optional() }).optional().describe("Wall tile: from/to heights (default 36\" to 54\"), only over the counters unless whole_wall") },
+    change("add_elevation", T.addElevation));
 
   // ------------------------------------------------------------------ levels and layers (app: Building.kt)
 
@@ -213,12 +283,80 @@ function buildServer(ctx) {
       block_courses: z.number().int().optional(), course_height: Len.optional(), crawl_clearance: Len.optional(),
       footing_thickness: Len.optional(), footing_width: Len.optional(),
       upper_floors: z.array(z.object({ name: z.string(), top_of_subfloor: Len })).optional(),
+      show_existing_framing: z.boolean().optional().describe(
+        "Remodels: when every exterior wall is existing, the existing house gets no floor framing unless this is true; then it shows the simple way " +
+        "an existing-conditions plan does (joist direction and size, EXIST. STEEL BEAM, posts). Off by default."),
       build_from_floor_plan: z.boolean().optional().describe(
         "true: Site Draft builds the foundation (block walls and footings under the exterior 2x6 walls), the first-floor framing " +
         "(joists the short way at 16\" o.c., beams so no span is over 14', posts on pad footings) and a ladder under every wall " +
         "that runs with the joists, from the first-floor plan; it rebuilds when the plan changes, the app does the building when the project is next opened"),
     },
     change("set_building_inputs", L.setBuildingInputs));
+
+  reg("set_roof",
+    "Sets up the roof over the first-floor 2x6 exterior walls (the app's Roof structural layer and roof plan): trusses or rafters, pitch, overhangs, heel, spacing, " +
+    "gable or hip ends, roofing. Only what is given changes; Dan's defaults are trusses, 6/12, 12\" eave and rake overhang, 4\" heel, 24\" o.c., gable both ends, architectural shingles. " +
+    "Site Draft builds the roof plan and framing when it reloads the project; the exterior elevations show it. remove: true takes it away. Ask Dan rather than guess.",
+    { project: Project, framing: z.enum(["trusses", "rafters"]).optional(), pitch: z.union([z.number(), z.string()]).optional().describe("Rise per 12, e.g. 6 or \"6/12\""),
+      overhang: Len.optional().describe("Eave overhang, level, past the wall"), rake: Len.optional().describe("Overhang at a gable end"), heel: Len.optional(),
+      spacing: Len.optional().describe("Truss or rafter spacing"), rafter_size: z.string().optional().describe("e.g. 2x8 (rafters)"),
+      ends: z.enum(["gable", "hip"]).optional().describe("Both ends"), end_a: z.enum(["gable", "hip"]).optional().describe("The west (or north) end"),
+      end_b: z.enum(["gable", "hip"]).optional().describe("The east (or south) end"), turn_ridge: z.boolean().optional().describe("Run the ridge the short way"),
+      covering: z.string().optional().describe("shingles, standing seam, metal (exposed fastener), cedar shakes, spanish tile, slate"), remove: z.boolean().optional() },
+    change("set_roof", L.setRoof));
+  reg("set_exterior_elevations",
+    "Makes the four exterior elevations (south, north, east, west): live from the plan, the exterior doors and windows, the foundation and the roof, on the Exterior elevation layer. " +
+    "grade_exposure = how much foundation shows above grade (per job: ASK Dan). Site Draft builds them when it reloads the project. remove: true takes them away.",
+    { project: Project, grade_exposure: Len.optional(), remove: z.boolean().optional() },
+    change("set_exterior_elevations", L.setExteriorElevations));
+  reg("set_structure",
+    "The basement beam and posts (the app's Structure inputs): a steel beam shape like W10x15 (\"10 by 15\"), or auto to let Site Draft size it; " +
+    "the most post spacing allowed (posts are spaced evenly, e.g. 12' gives 11'-7 3/8\" on a 58' run); lally or HSS posts; loads. Turns on Build from the floor plan. " +
+    "Site Draft rebuilds the beam, posts and pad footings when it reloads the project.",
+    { project: Project, beam: z.string().optional().describe("Steel W shape, e.g. W10x15; 'auto' to let the app size it"), post_spacing: Len.optional().describe("Most allowed between posts, e.g. 12'"),
+      post_type: z.enum(["lally", "hss"]).optional(), max_joist_span: Len.optional(), live_load_psf: z.number().optional(), dead_load_psf: z.number().optional(),
+      soil_bearing_psf: z.number().optional(), roof_snow_psf: z.number().optional(), build_from_floor_plan: z.boolean().optional() },
+    change("set_structure", X.setStructure));
+
+  reg("set_exterior_finish",
+    "The house's siding: the main finish, a wainscot of stone or brick from the top of the foundation up to a height (e.g. 4' of stone), a different finish in the gables, corner trim. " +
+    "Finishes: lap siding, board and batten, shake, brick, stone. Only what is given changes. The exterior elevations show it.",
+    { project: Project, main: z.string().optional(), wainscot: z.string().optional().describe("stone, brick... or none"), wainscot_height: Len.optional().describe("Above the top of the foundation"),
+      gable: z.string().optional(), corner_trim: Len.optional() },
+    change("set_exterior_finish", X.setExteriorFinish));
+
+  const sideArgs = {
+    side: Compass.describe("The side of the house it's on (the 2x6 exterior walls)"),
+    centered_on: z.string().optional().describe("Centre it on this element (a door id from read_drawing)"),
+    from_corner: Len.optional().describe("Or: from the house's left (west) / top (north) outside corner to its near edge"),
+  };
+  reg("place_porch",
+    "A porch against the house, as the app's Porch symbol: width along the wall (default 8'), depth out (default 5'), centred on the wall unless centered_on (a door) or from_corner is given. " +
+    "type: framed (skirt), masonry (cap, veneer) or wood deck on posts; roof: shed, gable (facing out; a return gable), hip or none; columns: wood, masonry or mix; pier: pier to grade or cookie. " +
+    "Site Draft builds its footings or piers, posts and roof when it reloads the project.",
+    { project: Project, ...sideArgs, width: Len.optional(), depth: Len.optional(), type: z.string().optional(), roof: z.string().optional(), columns: z.string().optional(),
+      pier: z.string().optional(), pitch: z.union([z.number(), z.string()]).optional().describe("Porch roof rise per 12; default 4/12 shed, the house's pitch otherwise") },
+    change("place_porch", X.placePorch));
+
+  reg("place_garage",
+    "A garage against the house (or detached_gap away from it), as the app's Garage symbol: default 24' x 24', doors on the side away from the house unless door_side, one 16' door or two 9' doors, " +
+    "roof: continue (the house roof), gable (turned 90) or hip. Site Draft builds its walls, slab, footings and roof when it reloads the project.",
+    { project: Project, ...sideArgs, width: Len.optional(), depth: Len.optional(), detached_gap: Len.optional(), door_side: Compass.optional(), doors: z.string().optional(), roof: z.string().optional() },
+    change("place_garage", X.placeGarage));
+
+  reg("build_sheets",
+    "Builds the sheet set in Dan's order, one sheet per subject: T-1 cover/legend, T-2 notes, C-1 site plan (if any), S-1 foundation plan, S framing plan per floor, S roof framing, " +
+    "S wall section and structural calcs, S details, A floor plan per floor, A roof plan, A exterior elevations, A interior elevations, A door and window schedules. " +
+    "Views sit centred on each sheet (the app numbers the set). Sheets already there are kept unless replace: true.",
+    { project: Project, paper: z.string().optional().describe("Arch D (24x36, default), Arch C, Arch E1, 11x17"), scale: z.string().optional().describe("Plan and elevation scale: 1/4 (default), 1/8, 3/8, 1/2"),
+      replace: z.boolean().optional() },
+    change("build_sheets", X.buildSheets));
+
+  reg("list_sheets", "The project's sheets: number, title, paper and the views on each.", { project: Project }, async (a) => {
+    const p = await S.readProject(ctx.db, ctx.uid, a.project);
+    if (!p) throw new M.UserError(`No project named "${a.project}".`);
+    return json(X.listSheets(p.state));
+  });
 
   reg("move_to_layer", "Puts elements (by id, from read_drawing) on a layer. Nothing moves on the drawing.",
     { project: Project, ids: z.array(z.string()).min(1), layer: z.string() }, change("move_to_layer", L.moveToLayer));

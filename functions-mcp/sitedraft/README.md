@@ -2,6 +2,11 @@
 
 Lets Claude work in Site Draft: list and read projects, create projects, import PDF plans,
 draw walls from measured lengths, place doors, windows and cabinets, edit, delete and undo.
+Since Nov 23 (voice drawing): cabinet runs pick their room on a long wall (`room` / `near`), cabinet
+fronts/style/hardware on single cabinets, which way every symbol faces in the readback, a plain
+"Rod 48\"", floor hatches (`hatch_area`), live wall and island elevations (`add_elevation`), the roof
+(`set_roof`) and the four exterior elevations (`set_exterior_elevations`). The roof and exterior
+elevations are building inputs: the app builds them when it reloads the project (DrawingManager.reloadFromStorage).
 Deployed as the Cloud Function `sitedraftMcp` in the `sitedraft-djransom` Firebase project, in its own
 codebase `mcp` (folder `functions-mcp`, so it never needs the Stripe functions' secrets);
 built the same way as Crewsync's `crewsyncMcp`.

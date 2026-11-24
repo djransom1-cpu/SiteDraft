@@ -27,6 +27,8 @@ fun ProjectManagerPanel(
     state: CanvasState,
     viewModel: DrawingManager,
     modifier: Modifier = Modifier,
+    /** Opens the job specs (setup wizard); [newJob] when a job was just made. */
+    onOpenJobSpecs: (newJob: Boolean) -> Unit = {},
     onClose: () -> Unit
 ) {
     
@@ -91,6 +93,11 @@ fun ProjectManagerPanel(
                 }
             }
 
+            // Everything the drawing is built from, on one set of pages (Dan, Nov 22).
+            OutlinedButton(onClick = { onOpenJobSpecs(false) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                Text("Job specs: foundation, roof, roofing, siding, grade")
+            }
+
             // The job's details for the title block on every sheet.
             ProjectInfoCard(
                 info = state.projectInfo,
@@ -102,6 +109,7 @@ fun ProjectManagerPanel(
                 onClick = { 
                     viewModel.onEvent(DrawingEvent.NewProject)
                     onClose()
+                    onOpenJobSpecs(true)
                 },
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
             ) {

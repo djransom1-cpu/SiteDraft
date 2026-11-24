@@ -51,7 +51,8 @@ actual fun randomId(): String = UUID.randomUUID().toString()
 
 /** Projects live in the user's Documents/SiteDraft folder; settings in the Java preferences store. */
 class DesktopPlatform(
-    private val root: File = File(System.getProperty("user.home"), "Documents/SiteDraft")
+    // The test copy (TestCopy) keeps its own files, so testing never touches the real projects on disk.
+    private val root: File = File(System.getProperty("user.home"), if (TestCopy.active) "Documents/SiteDraft Test" else "Documents/SiteDraft")
 ) : Platform {
     override val name = "desktop"
     override val storage: ProjectStorage = object : ProjectStorage {
@@ -183,7 +184,10 @@ class DesktopPlatform(
         return "Saved ${file.absolutePath}"
     }
 
-    override val cloud: CloudService by lazy { DesktopCloudService() }
+    override val cloud: CloudService by lazy {
+        // The test copy signs in and caches on its own, so it can run beside the installed app.
+        if (TestCopy.active) DesktopCloudService(File(System.getProperty("user.home"), ".sitedraft-test")) else DesktopCloudService()
+    }
 
     override fun openUrl(url: String): Boolean = runCatching {
         if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
@@ -228,4 +232,19 @@ internal fun sheetPageFormat(base: PageFormat, page: PageSpec): PageFormat {
     base.paper = paper
     base.orientation = if (page.landscape) PageFormat.LANDSCAPE else PageFormat.PORTRAIT
     return base
+}
+
+/**
+ * The test copy: Site Draft run from a "SiteDraft Test" folder (made by build-test-copy.bat), or
+ * started with -Dsitedraft.test=true. It keeps its own project files (Documents\SiteDraft Test)
+ * and sign-in (.sitedraft-test) and says TEST in its title, so a build can be tried on the
+ * desktop without installing it or touching the real copy's files. Cloud projects are the same
+ * account's: test on a test project.
+ */
+object TestCopy {
+    val active: Boolean by lazy {
+        if (System.getProperty("sitedraft.test") == "true") return@lazy true
+        val command = runCatching { ProcessHandle.current().info().command().orElse("") }.getOrDefault("")
+        command.contains("SiteDraft Test", ignoreCase = true)
+    }
 }

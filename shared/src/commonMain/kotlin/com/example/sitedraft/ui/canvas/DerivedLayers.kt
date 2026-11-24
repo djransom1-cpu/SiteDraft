@@ -78,11 +78,33 @@ object DerivedLayers {
     /** Brings the generated layers in line with the plan. Returns [state] itself when nothing changes. */
     fun sync(state: CanvasState): CanvasState {
         if (!state.building.autoLayers) return state
-        val desired = build(state).map { stamped(it) }
+        // Stairs open the floor framing at their top (Stairs.floorOpening, Nov 24).
+        val desired = (asExisting(build(state), state) + Stairs.floorOpenings(state)).map { stamped(it) }
         val current = state.elements.filter { isGenerated(it) }
         val currentIds = current.map { it.id }.toSet()
         val suppressed = state.suppressedGenIds + (state.generatedIds - currentIds)
-        val edited = current.filter { !isUntouched(it) }
+        // Dan (Nov 22): a change that leaves hand-edited structure short updates it too. A beam set by
+        // hand that no longer passes takes the designed shape; a pad or post smaller than designed grows
+        // to the designed size. Everything else about the edit stays (it remains an edit).
+        val byId = desired.associateBy { it.id }
+        val edited = current.filter { !isUntouched(it) }.map { e ->
+            val want = byId[e.id]
+            if (e !is DrawingElement.Symbol || want == null) return@map e
+            when (e.symbolName) {
+                Structure.JOIST_BAY -> {
+                    val mine = SteelEngine.AISC_DATABASE.getOrNull((e.properties[Structure.BEAM_SECTION] ?: -1f).toInt())
+                    val designed = want.properties[Structure.BEAM_SECTION] ?: -1f
+                    if (mine != null && designed >= 0f && !StructuralDesign.beamPasses(state, mine))
+                        e.copy(properties = e.properties + (Structure.BEAM_SECTION to designed)) else e
+                }
+                Structure.PAD, Structure.POST ->
+                    if (e.size.width < want.size.width - 0.5f || e.size.height < want.size.height - 0.5f)
+                        e.copy(size = androidx.compose.ui.geometry.Size(maxOf(e.size.width, want.size.width), maxOf(e.size.height, want.size.height)),
+                            properties = e.properties + (want.properties[Structure.THICK]?.let { t -> mapOf(Structure.THICK to maxOf(t, e.properties[Structure.THICK] ?: 0f)) } ?: emptyMap()))
+                    else e
+                else -> e
+            }
+        }
         val editedIds = edited.map { it.id }.toSet()
         val fresh = desired.filter { it.id !in suppressed && it.id !in editedIds }
         // Generated parts draw first, under the plan.
@@ -98,7 +120,33 @@ object DerivedLayers {
      * no exterior walls or the layer isn't one the plan builds.
      */
     fun matchLayer(state: CanvasState, layerId: String): List<DrawingElement.Symbol> =
-        build(state).filter { it.layerId == layerId }.map { it.copy(id = randomId()) }
+        (asExisting(build(state), state) + Stairs.floorOpenings(state)).filter { it.layerId == layerId }.map { it.copy(id = randomId()) }
+
+    /**
+     * Remodel (Dan, Nov 24): when every exterior wall is Existing, the existing house gets no floor
+     * framing (framing plans are for new remodeled areas and new work): its joists, beams, posts,
+     * pads, ladders and anchor bolts are left out. Its foundation walls and footings stay, drawn
+     * Existing, for new work to tie into. Wings, garages and porches (additions) are built in full, New.
+     */
+    private fun asExisting(parts: List<DrawingElement.Symbol>, state: CanvasState): List<DrawingElement.Symbol> {
+        val ext = state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
+            it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL && !isGenerated(it) && Remodel.status(it) != WallStatus.DEMO
+        }
+        if (ext.isEmpty() || ext.any { Remodel.status(it) != WallStatus.EXISTING }) return parts
+        val additions = listOf("ga", "pc", "wg", "rim:wg")
+        // Kept and drawn Existing: the foundation always; with "Show existing framing" (Dan: an option,
+        // existing houses are laid out their own way) the joist bay, beams, posts and pads too.
+        val keptExisting = listOf("fw:", "ftg:") +
+            if (state.building.showExistingFraming) listOf("bay:", "bbeam", "jbeam", "post", "pad") else emptyList()
+        return parts.mapNotNull { p ->
+            val key = p.id.removePrefix(GEN_PREFIX)
+            when {
+                additions.any { key.startsWith(it) } -> p
+                keptExisting.any { key.startsWith(it) } -> p.copy(properties = p.properties + (Remodel.PROP_STATUS to WallStatus.EXISTING.code))
+                else -> null
+            }
+        }
+    }
 
     /** Throws away every generated part, edited or deleted ones included, and builds them again. */
     fun rebuild(state: CanvasState): CanvasState =
@@ -124,16 +172,19 @@ object DerivedLayers {
     /** Everything the plan calls for, before stamping. */
     fun build(state: CanvasState): List<DrawingElement.Symbol> {
         val s = state.building
-        if (s.foundation == FoundationType.SLAB) return emptyList()
+        val wingWalls = wingPlanWalls(state)
+        if (s.foundation == FoundationType.SLAB) return wingWalls
         val layers = state.effectiveLayers.map { it.id }.toSet()
         val foundationLayer = Building.FOUNDATION.takeIf { it in layers }
         val structuralLayer = "${Building.FLOOR1}-structural".takeIf { it in layers }
         val inch = state.inchesToPx(1f)
-        if (inch <= 0f) return emptyList()
+        if (inch <= 0f) return wingWalls
 
         val walls = state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
             it.category == PlanSymbols.WALLS && !isGenerated(it) && isSquare(it.rotation) &&
-                Layers.layerOf(it, state).id == Building.FLOOR1_PLAN
+                Layers.layerOf(it, state).id == Building.FLOOR1_PLAN &&
+                // A wall coming out (Remodel) gets no ladder, footing or framing of its own.
+                Remodel.status(it) != WallStatus.DEMO
         }
         // Exterior walls belong on the first-floor plan; ones moved to another layer by mistake
         // (Nov 19 2026: a plan's 2x6 walls ended up on Foundation) still count when the plan has none.
@@ -142,11 +193,12 @@ object DerivedLayers {
                 it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL && !isGenerated(it) && isSquare(it.rotation)
             }
         }
-        if (exterior.isEmpty()) return emptyList()
+        if (exterior.isEmpty()) return wingWalls
         val footprint = exterior.map { wallRect(it) }.reduce { a, r ->
             Rect(minOf(a.left, r.left), minOf(a.top, r.top), maxOf(a.right, r.right), maxOf(a.bottom, r.bottom))
         }
         val out = mutableListOf<DrawingElement.Symbol>()
+        out += wingWalls
         val color = exterior.first().color
 
         fun symbol(id: String, name: String, category: String, center: Offset, size: Size, layer: String?, props: Map<String, Float> = emptyMap()) =
@@ -157,11 +209,11 @@ object DerivedLayers {
 
         // ---- Foundation walls and footings under the exterior walls ----
         if (foundationLayer != null) {
-            val t = 7.625f * inch
+            val t = Building.foundationWallIn(s) * inch
             val f = s.footingWidthIn * inch
-            // Dan's footing: [footingProjectionIn] (6") past the wall's outside face all the way
-            // round, corners included, [footingWidthIn] (18") wide, the rest under and inside the wall.
-            val p = s.footingProjectionIn * inch
+            // The footing runs past the wall's outside face all the way round, corners included:
+            // centred under the wall unless set (Nov 23, the code rule), [footingWidthIn] wide.
+            val p = Building.footingProjections(s).first * inch
             for (ew in exterior) {
                 val r = wallRect(ew)
                 val vertical = r.height > r.width
@@ -169,24 +221,45 @@ object DerivedLayers {
                 val wallSize: Size
                 val footCenter: Offset
                 val footSize: Size
+                // One continuous footing round the house (Dan, Nov 22): the long sides run to the outside
+                // corners and own them; the short sides stop against them, no overlaps. An end away from a
+                // corner (a side built of several walls) just meets the next piece.
+                val tol = t + 2f * inch
+                val joinStart: Int
+                val joinEnd: Int
+                val innerSign: Float
                 if (!vertical) {
                     val outsideTop = r.center.y < footprint.center.y
                     val face = if (outsideTop) r.top else r.bottom
                     val inward = if (outsideTop) 1f else -1f
                     center = Offset(r.center.x, face + inward * t / 2f)
                     wallSize = Size(r.width, t)
-                    footCenter = Offset(r.center.x, face + inward * (f / 2f - p))
-                    footSize = Size(r.width + 2f * p, f)
+                    val atStart = abs(r.left - footprint.left) < tol
+                    val atEnd = abs(r.right - footprint.right) < tol
+                    val x1 = if (atStart) footprint.left - p else r.left
+                    val x2 = if (atEnd) footprint.right + p else r.right
+                    footCenter = Offset((x1 + x2) / 2f, face + inward * (f / 2f - p))
+                    footSize = Size(x2 - x1, f)
+                    joinStart = if (atStart) Structure.JOIN_OWN else 0
+                    joinEnd = if (atEnd) Structure.JOIN_OWN else 0
+                    innerSign = inward
                 } else {
                     val outsideLeft = r.center.x < footprint.center.x
                     val face = if (outsideLeft) r.left else r.right
                     val inward = if (outsideLeft) 1f else -1f
                     center = Offset(face + inward * t / 2f, r.center.y)
                     wallSize = Size(t, r.height)
-                    footCenter = Offset(face + inward * (f / 2f - p), r.center.y)
-                    footSize = Size(f, r.height + 2f * p)
+                    val atStart = abs(r.top - footprint.top) < tol
+                    val atEnd = abs(r.bottom - footprint.bottom) < tol
+                    val y1 = if (atStart) footprint.top - p + f else r.top
+                    val y2 = if (atEnd) footprint.bottom + p - f else r.bottom
+                    footCenter = Offset(face + inward * (f / 2f - p), (y1 + y2) / 2f)
+                    footSize = Size(f, (y2 - y1).coerceAtLeast(inch))
+                    joinStart = if (atStart) Structure.JOIN_BUTT else 0
+                    joinEnd = if (atEnd) Structure.JOIN_BUTT else 0
+                    innerSign = inward
                 }
-                out += symbol("fw:${ew.id}", FOUNDATION_WALL, PlanSymbols.WALLS, center, wallSize, foundationLayer)
+                out += symbol("fw:${ew.id}", s.foundationWall.symbol, PlanSymbols.WALLS, center, wallSize, foundationLayer)
                 // Anchor bolts down the middle of the wall: [anchorBoltEndIn] from each end, then
                 // evenly spaced no more than [anchorBoltSpacingIn] apart (Dan: 12", 32").
                 val len = if (vertical) wallSize.height else wallSize.width
@@ -196,7 +269,40 @@ object DerivedLayers {
                     out += symbol("ab:${ew.id}:$i", Structure.ANCHOR_BOLT, Structure.FOUNDATION, at, Size(3f * inch, 3f * inch), foundationLayer)
                 }
                 out += symbol("ftg:${ew.id}", Structure.FOOTING, Structure.FOUNDATION, footCenter, footSize, foundationLayer,
-                    mapOf(Structure.THICK to s.footingThicknessIn))
+                    mapOf(Structure.THICK to s.footingThicknessIn,
+                        Structure.JOIN to (joinStart + 3 * joinEnd).toFloat(), Structure.INNER to innerSign,
+                        // Drain tile on basement footings (Dan): Form-A-Drain unless picked otherwise.
+                        Structure.DRAIN to if (s.foundation != FoundationType.BASEMENT) 0f else if (s.drainTile == DrainTile.FORM_A_DRAIN) 1f else 2f))
+            }
+            // Porches on the first-floor plan (Porches, Nov 23): their footings, walls, piers and posts.
+            val porches = state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
+                Porches.isPorch(it) && !isGenerated(it) && Layers.layerOf(it, state).id == Building.FLOOR1_PLAN
+            }
+            for (pc in porches) for (part in Porches.foundation(pc, footprint, s, inch)) {
+                out += symbol("pc:${pc.id}:${part.key}", part.name, part.category, part.center, part.size, foundationLayer, part.props)
+            }
+            // Garages (Garages, Nov 23): frost walls and footings, lead walls down to a basement footing.
+            for (ga in state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
+                Garages.isGarage(it) && !isGenerated(it) && Layers.layerOf(it, state).id == Building.FLOOR1_PLAN
+            }) for (part in Garages.foundation(ga, footprint, s, inch)) {
+                out += symbol("ga:${ga.id}:${part.key}", part.name, part.category, part.center, part.size, foundationLayer, part.props)
+            }
+            // Wings (Wings, Nov 23): their foundation; a basement wing takes the house basement wall and footing out
+            // where it joins (Dan: the basement wall turns and follows the wing). Other kinds leave the house's as is.
+            for (wg in Wings.wings(state)) {
+                for (part in Wings.foundation(wg, footprint, s, inch)) {
+                    out += symbol("${Wings.genKey(wg)}fd:${part.key}", part.name, part.category, part.center, part.size, foundationLayer, part.props)
+                }
+                val cut = Wings.houseCut(wg, footprint, s, inch) ?: continue
+                val keep = out.filter { e -> !(e.id.startsWith(GEN_PREFIX + "fw:") || e.id.startsWith(GEN_PREFIX + "ftg:") || e.id.startsWith(GEN_PREFIX + "ab:")) }
+                val changed = out.filter { it !in keep }.flatMap { e ->
+                    val r = Rect(e.center.x - e.size.width / 2f, e.center.y - e.size.height / 2f, e.center.x + e.size.width / 2f, e.center.y + e.size.height / 2f)
+                    val c = if (e.id.startsWith(GEN_PREFIX + "ftg:")) cut.second else cut.first
+                    if (!r.overlaps(c)) return@flatMap listOf(e)
+                    if (e.id.startsWith(GEN_PREFIX + "ab:")) return@flatMap emptyList()
+                    cutOut(e, r, c, inch)
+                }
+                out.clear(); out += keep + changed
             }
         }
 
@@ -204,13 +310,19 @@ object DerivedLayers {
         if (structuralLayer == null) return out
         val joistsUpDown = footprint.width >= footprint.height // joists span the short way
         val spanIn = (if (joistsUpDown) footprint.height else footprint.width) / inch
-        val beams = (ceil(spanIn / MAX_SPAN_IN).toInt() - 1).coerceAtLeast(0)
+        // Dan's rule (Nov 22): as few beams as keep each joist span within his limit (15'): one
+        // center beam up to 30' deep. Sized, with the posts and pads, by StructuralDesign.
+        val beams = StructuralDesign.beamCount(spanIn, s.structure.maxJoistSpanFt)
+        val design = StructuralDesign.design(state)
+        val main = design?.beams?.firstOrNull()
+        val sectionIndex = main?.shape?.let { sh -> SteelEngine.AISC_DATABASE.indexOf(sh) } ?: -1
         val bay = symbol("bay:floor1", Structure.JOIST_BAY, Structure.FRAMING, footprint.center, footprint.size, structuralLayer,
             mapOf(
                 Structure.SPACING to 16f,
                 Structure.JOIST to Structure.joistCodeFor(s.joistDepthIn).toFloat(),
                 Structure.DIRECTION to if (joistsUpDown) 1f else 0f,
-                Structure.BEAMS to beams.toFloat()
+                Structure.BEAMS to beams.toFloat(),
+                Structure.BEAM_SECTION to sectionIndex.toFloat()
             ))
         out += bay
         val layout = Structure.bayLayout(bay, bay.size.width, bay.size.height, inch)
@@ -218,21 +330,54 @@ object DerivedLayers {
         fun page(along: Float, cross: Float) =
             if (layout.alongX) footprint.center + Offset(along, cross) else footprint.center + Offset(cross, along)
 
-        /** Posts on pads along a line across the joists at [along], from [c1] to [c2] (cross, bay frame). */
-        fun postsUnder(key: String, along: Float, c1: Float, c2: Float) {
+        /**
+         * Posts on pads along a line across the joists at [along], from [c1] to [c2] (cross, bay frame).
+         * [spans] given: that many equal spans (the main beam, Dan's 12'-apart rule), pads and posts as
+         * designed; otherwise the old 8'-apart rule with 24" pads (a beam under a bearing wall).
+         */
+        fun postsUnder(key: String, along: Float, c1: Float, c2: Float, spans: Int? = null) {
             if (foundationLayer == null) return
             val lenIn = (c2 - c1) / inch
-            val n = (ceil(lenIn / MAX_POST_SPACING_IN).toInt() - 1).coerceAtLeast(0)
+            val n = if (spans != null) spans - 1 else (ceil(lenIn / MAX_POST_SPACING_IN).toInt() - 1).coerceAtLeast(0)
+            val padIn = if (spans != null) main?.padIn ?: PAD_IN else PAD_IN
+            val thickIn = if (spans != null) main?.padThickIn ?: 12f else 12f
+            val postIn = if (spans != null) main?.post?.d?.toFloat() ?: 5.5f else 5.5f
             for (j in 1..n) {
                 val c = c1 + (c2 - c1) * j / (n + 1)
                 val at = page(along, c)
-                out += symbol("pad:$key:$j", Structure.PAD, Structure.FOUNDATION, at, Size(PAD_IN * inch, PAD_IN * inch), foundationLayer,
-                    mapOf(Structure.THICK to 12f))
-                out += symbol("post:$key:$j", Structure.POST, Structure.FRAMING, at, Size(5.5f * inch, 5.5f * inch), foundationLayer)
+                out += symbol("pad:$key:$j", Structure.PAD, Structure.FOUNDATION, at, Size(padIn * inch, padIn * inch), foundationLayer,
+                    mapOf(Structure.THICK to thickIn))
+                out += symbol("post:$key:$j", Structure.POST, Structure.FRAMING, at, Size(postIn * inch, postIn * inch), foundationLayer)
             }
         }
-        layout.beams.forEachIndexed { i, b -> postsUnder("b$i", b, -layout.width / 2f, layout.width / 2f) }
+        // The main beams run between the foundation walls (inside faces): the posts as designed, evenly spaced, and
+        // a pad under every post on the line, sized for its own load (posts moved or added by hand included).
+        val wallIn = Building.foundationWallIn(s) * inch
+        layout.beams.forEachIndexed { i, b ->
+            val db = design?.beams?.getOrNull(i)
+            if (db == null) {
+                postsUnder("b$i", b, -layout.width / 2f + wallIn, layout.width / 2f - wallIn,
+                    spans = StructuralDesign.postSpans((layout.width - 2f * wallIn) / inch / 12f, StructuralDesign.spacingFt(s.structure)))
+                return@forEachIndexed
+            }
+            if (foundationLayer == null) return@forEachIndexed
+            val c1 = -layout.width / 2f + wallIn
+            val c2 = layout.width / 2f - wallIn
+            val postIn = db.post?.d?.toFloat() ?: 5.5f
+            for (j in 1 until db.designedSpans) {
+                val at = page(b, c1 + (c2 - c1) * j / db.designedSpans)
+                out += symbol("post:b$i:$j", Structure.POST, Structure.FRAMING, at, Size(postIn * inch, postIn * inch), foundationLayer)
+            }
+            for (spot in db.posts) {
+                val padId = if (spot.id.startsWith(GEN_PREFIX + "post:")) "pad:" + spot.id.removePrefix(GEN_PREFIX + "post:") else "pad:hand:${spot.id}"
+                out += symbol(padId, Structure.PAD, Structure.FOUNDATION, spot.center, Size(spot.padIn * inch, spot.padIn * inch), foundationLayer,
+                    mapOf(Structure.THICK to spot.padThickIn))
+            }
+        }
 
+        // Blocking between the last joist and the rim along the outside walls that run with the joists (Dan, Nov 23):
+        // 16" o.c., matching the stud layout above.
+        out += rimLadders("house", footprint.center, layout, inch, structuralLayer, color, skipEdge = null)
         // Joist lines (cross positions in the bay frame), edges included.
         val joistLines = (listOf(-layout.width / 2f) + layout.joists + listOf(layout.width / 2f)).sorted()
         for (w in walls) {
@@ -274,6 +419,117 @@ object DerivedLayers {
                 }
             }
         }
+        // The porches' floors (Porches.framing, Nov 23): joists off the house, or a masonry porch's cap.
+        for (pc in state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
+            Porches.isPorch(it) && !isGenerated(it) && Layers.layerOf(it, state).id == Building.FLOOR1_PLAN
+        }) for (part in Porches.framing(pc, footprint, s, inch)) {
+            out += symbol("pcf:${pc.id}:${part.key}", part.name, part.category, part.center, part.size, structuralLayer, part.props)
+        }
+        for (ga in state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
+            Garages.isGarage(it) && !isGenerated(it) && Layers.layerOf(it, state).id == Building.FLOOR1_PLAN
+        }) Garages.slab(ga, inch, Garages.sharedWall(ga, state)).let { part ->
+            out += symbol("gaf:${ga.id}:${part.key}", part.name, part.category, part.center, part.size, structuralLayer, part.props)
+        }
+        // Wings' floors (Wings.framing): a joist bay inside the foundation walls with its rim blocking and any beam
+        // on posts and pads (8' apart), or a slab.
+        for (wg in Wings.wings(state)) for (part in Wings.framing(wg, footprint, s, inch, joistsUpDown)) {
+            val sym = symbol("wgf:${wg.id}:${part.key}", part.name, part.category, part.center, part.size, structuralLayer, part.props)
+            out += sym
+            if (part.name != Structure.JOIST_BAY) continue
+            val wl = Structure.bayLayout(sym, sym.size.width, sym.size.height, inch)
+            val fr = Wings.frame(wg, footprint, inch)
+            // The edge on the house wall line has no wall above it now: no blocking there.
+            val houseEdge = fr?.let { f ->
+                val c = sym.center
+                val crossIsY = wl.alongX
+                val houseCoord = f.hf
+                val lo = if (crossIsY) c.y - wl.width / 2f else c.x - wl.width / 2f
+                val hi = if (crossIsY) c.y + wl.width / 2f else c.x + wl.width / 2f
+                when {
+                    crossIsY != (f.side == Porches.Side.TOP || f.side == Porches.Side.BOTTOM) -> null
+                    abs(lo - houseCoord) < abs(hi - houseCoord) -> -1
+                    else -> 1
+                }
+            }
+            out += rimLadders("wg${wg.id}", sym.center, wl, inch, structuralLayer, color, houseEdge)
+            // A basement wing: the beam across the opening where the house basement wall came out (Dan, Nov 23).
+            run {
+                val houseSpanFt = StructuralDesign.design(state)?.joistSpanFt ?: (spanIn / 12f / (beams + 1))
+                // The wing's joists land on it when they run out from the house (square to the opening).
+                val wingRunsOut = fr != null && (wl.alongX != (fr.side == Porches.Side.TOP || fr.side == Porches.Side.BOTTOM))
+                val wingSpanFt = if (wingRunsOut) wl.length / inch / 12f / (wl.beams.size + 1) else 0f
+                val jb = Wings.jointBeam(wg, state, houseSpanFt, wingSpanFt) ?: return@run
+                val idx = jb.shape?.let { SteelEngine.AISC_DATABASE.indexOf(it) } ?: -1
+                out += symbol("jbeam:${wg.id}", Structure.BEAM, Structure.FRAMING, jb.rect.center, jb.rect.size, structuralLayer,
+                    mapOf(Structure.BEAM_SECTION to idx.toFloat()))
+                if (foundationLayer != null) jb.posts.forEachIndexed { i, at ->
+                    out += symbol("pad:jb${wg.id}:$i", Structure.PAD, Structure.FOUNDATION, at, Size(PAD_IN * inch, PAD_IN * inch), foundationLayer, mapOf(Structure.THICK to 12f))
+                    out += symbol("post:jb${wg.id}:$i", Structure.POST, Structure.FRAMING, at, Size(5.5f * inch, 5.5f * inch), foundationLayer)
+                }
+            }
+            if (foundationLayer != null) wl.beams.forEachIndexed { i, b ->
+                val c1 = -wl.width / 2f; val c2 = wl.width / 2f
+                val n = (ceil((c2 - c1) / inch / MAX_POST_SPACING_IN).toInt() - 1).coerceAtLeast(0)
+                for (j in 1..n) {
+                    val cc = c1 + (c2 - c1) * j / (n + 1)
+                    val at = if (wl.alongX) sym.center + Offset(b, cc) else sym.center + Offset(cc, b)
+                    out += symbol("pad:wg${wg.id}:b$i:$j", Structure.PAD, Structure.FOUNDATION, at, Size(PAD_IN * inch, PAD_IN * inch), foundationLayer, mapOf(Structure.THICK to 12f))
+                    out += symbol("post:wg${wg.id}:b$i:$j", Structure.POST, Structure.FRAMING, at, Size(5.5f * inch, 5.5f * inch), foundationLayer)
+                }
+            }
+        }
         return out
+    }
+
+    /**
+     * Ladders of blocking between each rim and the joist next to it, on the bay's edges that run with the joists
+     * ([skipEdge] -1 or 1: not that edge). Blocks at 16" o.c. to land under the studs.
+     */
+    private fun rimLadders(key: String, center: Offset, layout: Structure.BayLayout, inch: Float, layer: String, color: androidx.compose.ui.graphics.Color, skipEdge: Int?): List<DrawingElement.Symbol> {
+        if (layout.joists.isEmpty()) return emptyList()
+        val out = mutableListOf<DrawingElement.Symbol>()
+        for ((sign, edge, next) in listOf(Triple(-1, -layout.width / 2f, layout.joists.first()), Triple(1, layout.width / 2f, layout.joists.last()))) {
+            if (sign == skipEdge) continue
+            val gap = abs(next - edge)
+            if (gap < inch) continue
+            val cross = (edge + next) / 2f
+            val at = if (layout.alongX) center + Offset(0f, cross) else center + Offset(cross, 0f)
+            val size = if (layout.alongX) Size(layout.length, gap) else Size(gap, layout.length)
+            out += DrawingElement.Symbol(id = GEN_PREFIX + "rim:$key:${if (sign < 0) "a" else "b"}", symbolName = Structure.LADDER, category = Structure.FRAMING,
+                center = at, size = size, color = color, layerId = layer,
+                properties = mapOf("widthInches" to size.width / inch, "depthInches" to size.height / inch, Structure.BLOCKS to Structure.DEFAULT_LADDER_BLOCKS_IN))
+        }
+        return out
+    }
+
+    /** [e] (rect [r]) with the stretch across [c] taken out along its length: the pieces either side. */
+    private fun cutOut(e: DrawingElement.Symbol, r: Rect, c: Rect, inch: Float): List<DrawingElement.Symbol> {
+        val horizontal = r.width >= r.height
+        val pieces = if (horizontal) listOf(r.left to minOf(c.left, r.right), maxOf(c.right, r.left) to r.right)
+            else listOf(r.top to minOf(c.top, r.bottom), maxOf(c.bottom, r.top) to r.bottom)
+        return pieces.withIndex().filter { (_, ab) -> ab.second - ab.first > 0.5f }.map { (i, ab) ->
+            val (a, b) = ab
+            val nr = if (horizontal) Rect(a, r.top, b, r.bottom) else Rect(r.left, a, r.right, b)
+            val endFlags = (e.properties[Structure.JOIN] ?: 0f).toInt()
+            // The cut ends just meet the wing's footings: no corner of their own.
+            val join = if (i == 0) endFlags % 3 else 3 * (endFlags / 3)
+            e.copy(id = e.id + ":" + (if (i == 0) "a" else "b"), center = nr.center, size = nr.size,
+                properties = e.properties + mapOf(Structure.JOIN to join.toFloat(), "widthInches" to nr.width / inch, "depthInches" to nr.height / inch))
+        }
+    }
+
+    /** The wings' plan walls (first-floor plan, generated so windows and doors can go in them). */
+    private fun wingPlanWalls(state: CanvasState): List<DrawingElement.Symbol> {
+        val inch = state.inchesToPx(1f)
+        if (inch <= 0f) return emptyList()
+        val fp = runCatching { RoofPlan.footprint(state) }.getOrNull() ?: return emptyList()
+        val color = state.elements.filterIsInstance<DrawingElement.Symbol>().firstOrNull { it.symbolName == FloorPlan.EXTERIOR_WALL }?.color ?: state.currentColor
+        return Wings.wings(state).flatMap { wg ->
+            Wings.planWalls(wg, fp, inch).map { part ->
+                DrawingElement.Symbol(id = GEN_PREFIX + Wings.genKey(wg) + part.key, symbolName = part.name, category = part.category,
+                    center = part.center, size = part.size, color = color, layerId = wg.layerId,
+                    properties = mapOf("widthInches" to part.size.width / inch, "depthInches" to part.size.height / inch))
+            }
+        }
     }
 }

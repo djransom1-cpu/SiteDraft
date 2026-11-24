@@ -21,6 +21,37 @@ enum class FoundationType(val label: String) {
     BASEMENT("Basement"), CRAWL("Crawl space"), SLAB("Slab on grade")
 }
 
+/**
+ * What the foundation walls are (Dan, Nov 22-23 2026): 12" block is his standard for block
+ * basements, poured basement walls are 10". 8" block is fine above grade, but anywhere earth pushes
+ * against the wall it's 12" block (8" would need a pilaster every 10', which no one does anymore).
+ */
+@Serializable
+enum class FoundationWall(val label: String, val thicknessIn: Float, val poured: Boolean, val callout: String, val symbol: String) {
+    BLOCK_12("12\" block", 11.625f, false, "12\" BLOCK", "12\" Block Wall"),
+    POURED_10("10\" poured", 10f, true, "10\" POURED CONCRETE", "10\" Concrete Wall"),
+    BLOCK_8("8\" block (above grade)", 7.625f, false, "8\" BLOCK", "8\" Block Wall")
+}
+
+/**
+ * The residential code the job is drawn to (Nov 23 2026): Site Draft is used outside Michigan, and
+ * each state adopts its own edition. [footingTable] is the edition whose footing table applies, when
+ * Site Draft has it: the 2015 and 2018 IRC tables are the same; the 2021 IRC revised them (smaller
+ * in most cases) and those numbers aren't loaded yet. The 2" projection rule is in every edition.
+ */
+@Serializable
+enum class CodeEdition(val label: String, val short: String, val footingTable: Int?) {
+    MRC_2015("Michigan Residential Code 2015 (IRC 2015)", "2015 MRC", 2015),
+    IRC_2015("IRC 2015", "2015 IRC", 2015),
+    IRC_2018("IRC 2018", "2018 IRC", 2015),
+    IRC_2021("IRC 2021", "2021 IRC", null),
+    IRC_2024("IRC 2024", "2024 IRC", null)
+}
+
+/** What drains the footing (Dan: Form-A-Drain, the forms stay as the drain tile; plain perforated pipe the alternative). */
+@Serializable
+enum class DrainTile(val label: String) { FORM_A_DRAIN("Form-A-Drain"), PERFORATED("4\" perforated pipe") }
+
 /** An upper floor: its name and the elevation of the top of its subfloor, inches. */
 @Serializable
 data class UpperFloor(val name: String, val elevationIn: Float)
@@ -35,6 +66,8 @@ data class BuildingSettings(
     /** Top of the first-floor subfloor, inches (100'-0" = 1200"). Walls are built on the subfloor. */
     val datumIn: Float = 1200f,
     val foundation: FoundationType = FoundationType.BASEMENT,
+    /** The code the job is drawn to; Michigan's 2015 code unless picked. */
+    val codeEdition: CodeEdition = CodeEdition.MRC_2015,
     val subfloorIn: Float = 0.75f,
     /** Joist depth, inches (a 2x10 is 9 1/4"). */
     val joistDepthIn: Float = 9.25f,
@@ -45,10 +78,30 @@ data class BuildingSettings(
     val courseIn: Float = 8f,
     /** Crawl spaces: clear height from the crawl floor to the bottom of the joists, inches. */
     val crawlClearanceIn: Float = 24f,
+    /**
+     * Basements: top of the slab above the top of the footing, inches (Dan, Nov 24: a 4" slab on
+     * the footing is the usual; set per job). Basement stairs size their rise to it. New in 1.0.38.
+     */
+    val basementSlabIn: Float = 4f,
     val footingThicknessIn: Float = 8f,
     val footingWidthIn: Float = 18f,
-    /** How far the footing runs past the outside face of the foundation wall, all the way round (Dan: 6"). */
+    /** Old (before Nov 23 2026): a fixed 6" past the outside face. No longer read; see [footingOutsideIn]. */
     val footingProjectionIn: Float = 6f,
+    /**
+     * How far the footing runs past the outside face of the wall, inches; null = centred under the
+     * wall (Nov 23: Dan went with the code rule, not a fixed 6"). See [Building.footingProjections].
+     */
+    val footingOutsideIn: Float? = null,
+    /** What the foundation walls are; 12" block unless picked (Dan). */
+    val foundationWall: FoundationWall = FoundationWall.BLOCK_12,
+    /** Footing rebar size, the bar number (Dan: #4 residential, #5 commercial, #6 when soil or stress calls for it). */
+    val rebarSize: Int = 4,
+    /** Continuous bars in the top of the footing (Dan: at least two) and in the bottom (0 = none). */
+    val footingBarsTop: Int = 2,
+    val footingBarsBottom: Int = 0,
+    /** Vertical bars from the footing up into the wall, on centre, inches (Dan: every 4' on a basement, code). */
+    val dowelSpacingIn: Float = 48f,
+    val drainTile: DrainTile = DrainTile.FORM_A_DRAIN,
     /** Anchor bolts (Dan): 1/2" bolts this far in from each corner or end of the sill, inches. */
     val anchorBoltEndIn: Float = 12f,
     /** ...and this far apart between (Dan: 32" o.c., never more than 4'). */
@@ -56,14 +109,187 @@ data class BuildingSettings(
     /** Rigid foam on the outside of the foundation wall, inches (Dan: 2"); 0 = none. */
     val foundationFoamIn: Float = 2f,
     val upperFloors: List<UpperFloor> = emptyList(),
-    /** Top of the wall plate the roof bears on, inches; null until the roof is set up. */
+    /** Top of the wall plate the roof bears on, inches; null = worked out from [plateHeightIn] once the roof is set up. */
     val roofPlateIn: Float? = null,
+    /**
+     * Wall height on each floor, top of subfloor to top of the double top plate, inches (Dan:
+     * 8' walls, 92 5/8" precut studs and three plates = 97 1/8"). New in 1.0.37.
+     */
+    val plateHeightIn: Float = 97.125f,
+    /** The roof (RoofPlan); null until it is set up on the Roof structural layer. New in 1.0.37. */
+    val roof: RoofSettings? = null,
+    /**
+     * How much foundation shows above grade, inches, set per job (Dan, Nov 22): the exterior
+     * elevations ([ExteriorElevation]) are made once it is set. Null = no elevations yet.
+     */
+    val gradeExposureIn: Float? = null,
+    /** The exterior wall finish ([ExteriorFinish]); null until it is picked. New Nov 22. */
+    val exterior: ExteriorFinish? = null,
+    /** The lot from the survey ([SiteLot]); null until it is typed in. New Nov 22. */
+    val site: SitePlan? = null,
+    /** Loads, soil and post type for the beam, post and footing sizing ([StructuralDesign]). New Nov 22. */
+    val structure: StructureSpecs = StructureSpecs(),
     /**
      * Build the foundation and first-floor framing from the first-floor plan ([DerivedLayers]).
      * Off for projects saved before 1.0.31, so a kitchen layout doesn't sprout footings.
      */
-    val autoLayers: Boolean = false
+    val autoLayers: Boolean = false,
+    /**
+     * Remodels (Dan, Nov 24): show the existing house's floor framing, the simple way an
+     * existing-conditions plan does (joist direction and size, existing beam and posts; no layout,
+     * theirs is unknown). Off: an existing house gets no floor framing, only its foundation.
+     */
+    val showExistingFraming: Boolean = false
 )
+
+/** How a roof is framed: Dan picks it per job. */
+@Serializable
+enum class RoofFraming(val label: String) { TRUSSES("Trusses"), RAFTERS("Rafters") }
+
+/** What the basement beam stands on (Dan: picked per job). */
+@Serializable
+enum class PostType(val label: String) { LALLY("Steel lally column (pipe)"), HSS("Steel tube (HSS)") }
+
+/**
+ * The structure's design inputs (Dan, Nov 22): floor loads (40 live / 20 dead psf, his usual),
+ * the soil's allowable bearing (2,000 psf unless a soils report says otherwise), what the posts
+ * are, and his layout: joists span no more than [maxJoistSpanFt] between beams, posts no more than
+ * [postSpacingFt] apart (or the standard 8'), W8s only or the best option, and the deflection limit. Each floor above whose bearing wall stacks over the
+ * beam adds its load.
+ */
+@Serializable
+data class StructureSpecs(
+    val liveLoadPsf: Float = 40f,
+    val deadLoadPsf: Float = 20f,
+    val soilBearingPsf: Float = 2000f,
+    /** Roof snow load (or roof live load, the bigger), psf, for the code's footing table ([FootingCode]). */
+    val roofSnowPsf: Float = 30f,
+    val post: PostType = PostType.LALLY,
+    val maxJoistSpanFt: Float = 15f,
+    /** Posts no more than this far apart (Dan: set the spacing, or the standard 8'). */
+    val postSpacingFt: Float = 12f,
+    val standardPosts: Boolean = false,
+    /** Dan's own limit on the beam's total deflection, inches (0.25": a more solid floor); 0 = code limits only. */
+    val maxTotalDeflectionIn: Float = 0.25f,
+    /**
+     * W8s only, or the best option (the lightest W that passes, any depth). Null until picked: W8s
+     * only in a basement under [w10HeightIn] (Dan: 8'-0", floor to the bottom of the joists).
+     */
+    val w8Only: Boolean? = null,
+    /** A beam picked by hand ("W8x21"): the posts space themselves to what it carries. Null = the engine picks. */
+    val beamShape: String? = null,
+    val w10HeightIn: Float = 96f
+)
+
+/** One line of the lot from the survey: its bearing as written ("N 45°30'15\" E") and its length in feet. */
+@Serializable
+data class LotCall(val bearing: String, val distanceFt: Float, val setbackFt: Float = 0f)
+
+/**
+ * The lot for the site plan (Dan, Nov 22), typed in from the survey's calls, starting at the point
+ * of beginning and going round. The site plan is its own drawing, away from the others: the lot
+ * north-up from its bearings, with a copy of the roof plan for the house, put in the middle of the
+ * lot, turned [rotationDeg] (clockwise) and moved [shiftEastFt] / [shiftSouthFt] until it meets the
+ * setbacks; then the whole site plan turned [viewRotationDeg] to fit the sheet. Each line can carry its setback.
+ */
+@Serializable
+data class SitePlan(
+    val calls: List<LotCall> = emptyList(),
+    val rotationDeg: Float = 0f,
+    val shiftEastFt: Float = 0f,
+    val shiftSouthFt: Float = 0f,
+    val street: String = "",
+    val viewRotationDeg: Float = 0f
+)
+
+/**
+ * An exterior wall finish (Dan, Nov 22), drawn on the exterior elevations. [defaultIn] is the
+ * spacing its pattern is drawn at: a course's exposure or height, or the batten spacing.
+ */
+@Serializable
+enum class WallFinish(val label: String, val defaultIn: Float, val spacingLabel: String) {
+    LAP("Lap siding (vinyl / fiber cement)", 7f, "Exposure"),
+    BOARD_BATTEN("Board and batten", 12f, "Batten spacing"),
+    SHAKE("Shake / shingle siding", 7f, "Exposure"),
+    BRICK("Brick veneer", 8f / 3f, "Course height"),
+    STONE("Stone veneer", 8f, "Average course height")
+}
+
+/**
+ * The house's exterior finish: the main finish, a wainscot (brick or stone, say) up to a height
+ * above the top of the foundation, a different finish in the gables, and the corner boards.
+ * Null spacings are the finish's own.
+ */
+@Serializable
+data class ExteriorFinish(
+    val main: WallFinish = WallFinish.LAP,
+    val mainIn: Float? = null,
+    val wainscot: WallFinish? = null,
+    val wainscotIn: Float? = null,
+    val wainscotHeightIn: Float = 36f,
+    /** The stone sill capping the wainscot, inches tall (Dan, Nov 22); 0 = none. */
+    val wainscotSillIn: Float = 2f,
+    val gable: WallFinish? = null,
+    val gableIn: Float? = null,
+    /** Corner board width, inches; 0 = none (brick and stone have none). */
+    val cornerTrimIn: Float = 3.5f
+)
+
+/**
+ * What the roof is covered with (Dan, Nov 22), drawn on the exterior elevations. [defaultIn] is the
+ * spacing the pattern is drawn at: the exposure of a course, or the panel width / rib spacing.
+ * [courses]: rows across the roof (shingles, shakes, slate, tile); else seams or ribs down it.
+ * [barrelIn]: tile's barrels down the roof too, this far apart.
+ */
+@Serializable
+enum class RoofCovering(val label: String, val defaultIn: Float, val courses: Boolean, val spacingLabel: String, val barrelIn: Float = 0f) {
+    ARCH_SHINGLES("Architectural shingles", 5.625f, true, "Exposure"),
+    STANDING_SEAM("Standing seam metal", 16f, false, "Panel width"),
+    EXPOSED_FASTENER("Exposed-fastener metal", 9f, false, "Rib spacing"),
+    CEDAR_SHAKES("Cedar shakes", 10f, true, "Exposure"),
+    SPANISH_TILE("Spanish tile", 14f, true, "Exposure", barrelIn = 11f),
+    SLATE("Slate", 7.5f, true, "Exposure")
+}
+
+/** A roof end: a gable wall, or a hip (the ridge stops half the span in). */
+@Serializable
+enum class RoofEnd(val label: String) { GABLE("Gable"), HIP("Hip") }
+
+/**
+ * The roof's inputs (RoofPlan draws it; ProCalc's RoofEngine and RafterEngine give the numbers).
+ * Pitch is rise per 12" of run. Overhangs are level distances past the outside of the wall:
+ * [overhangIn] at the eaves (and round a hip end), [rakeIn] at a gable end. The ridge runs the
+ * long way of the building unless [turnRidge]. [endA] is the left (or top) end, [endB] the right (or bottom).
+ */
+@Serializable
+data class RoofSettings(
+    val framing: RoofFraming = RoofFraming.TRUSSES,
+    val pitch: Float = 6f,
+    val overhangIn: Float = 12f,
+    /** The roofing (new Nov 22) and its pattern spacing; null spacing = the covering's own. */
+    val covering: RoofCovering = RoofCovering.ARCH_SHINGLES,
+    val coveringIn: Float? = null,
+    val rakeIn: Float = 12f,
+    val heelIn: Float = 4f,
+    val ocIn: Float = 24f,
+    val rafterSize: String = "2x8",
+    val endA: RoofEnd = RoofEnd.GABLE,
+    val endB: RoofEnd = RoofEnd.GABLE,
+    val turnRidge: Boolean = false,
+    /** The eave, per job (Dan, Nov 22): soffit, attic insulation and its R-value, ice and water shield up from the eave (ft). */
+    val soffit: SoffitType = SoffitType.BOXED,
+    val attic: AtticInsulation = AtticInsulation.BLOWN,
+    val atticR: Int = 49,
+    val iceWaterFt: Float = 6f
+)
+
+/** How the eave's underside is finished (Dan: per job, boxed level by default). */
+@Serializable
+enum class SoffitType(val label: String) { BOXED("Boxed, level"), SLOPED("Sloped, under the tails"), OPEN("Open tails") }
+
+/** What's in the attic at the eave (Dan: per job). */
+@Serializable
+enum class AtticInsulation(val label: String) { BLOWN("Blown, with baffles"), BATTS("Batts, with baffles"), SPRAY_FOAM("Spray foam at the deck (unvented)") }
 
 /** What a level is. */
 @Serializable
@@ -85,6 +311,8 @@ enum class LayerTrade(val label: String) {
     CABINETS("Cabinets"),
     FURNITURE("Furniture"),
     ROOF_STRUCTURAL("Roof structural"),
+    /** The roof plan for the A sheets (Dan, Nov 22): the same roof as the framing, drawn finished, with the roofing. */
+    ROOF_PLAN("Roof plan"),
     EXTERIOR_ELEVATION("Exterior elevation"),
     SITE_PLAN("Site plan"),
     CUSTOM("Custom")
@@ -117,6 +345,10 @@ object Building {
     /** Top of the foundation wall: the datum less the floor stack (subfloor, joist, sill). */
     fun foundationTopIn(s: BuildingSettings): Float = s.datumIn - s.subfloorIn - s.joistDepthIn - s.sillIn
 
+    /** Top of the plate the roof bears on: set by hand, or the top floor plus the wall height once there is a roof. */
+    fun roofPlateIn(s: BuildingSettings): Float? =
+        s.roofPlateIn ?: s.roof?.let { (s.upperFloors.lastOrNull()?.elevationIn ?: s.datumIn) + s.plateHeightIn }
+
     /** Top of the sill plate, where the first-floor joists bear. */
     fun sillTopIn(s: BuildingSettings): Float = s.datumIn - s.subfloorIn - s.joistDepthIn
 
@@ -125,6 +357,42 @@ object Building {
 
     fun footingTopIn(s: BuildingSettings): Float = foundationTopIn(s) - wallHeightIn(s)
     fun footingBottomIn(s: BuildingSettings): Float = footingTopIn(s) - s.footingThicknessIn
+
+    /** Top of the basement slab: the top of the footing plus [BuildingSettings.basementSlabIn]. */
+    fun basementFloorIn(s: BuildingSettings): Float = footingTopIn(s) + s.basementSlabIn
+
+    /** Top of subfloor of floor [n] (1-based), or null past the top floor. */
+    fun floorElevationIn(s: BuildingSettings, n: Int): Float? = when {
+        n == 1 -> s.datumIn
+        n >= 2 -> s.upperFloors.getOrNull(n - 2)?.elevationIn
+        else -> null
+    }
+
+    /** The foundation wall's thickness, inches. */
+    fun foundationWallIn(s: BuildingSettings): Float = s.foundationWall.thicknessIn
+
+    /** How far the footing runs past the wall (outside, inside), inches: centred unless set. */
+    fun footingProjections(s: BuildingSettings): Pair<Float, Float> {
+        val spare = s.footingWidthIn - foundationWallIn(s)
+        val outside = s.footingOutsideIn ?: (spare / 2f)
+        return outside to (spare - outside)
+    }
+
+    /**
+     * The footing against the residential code (IRC R403.1.1, the same in 2015, 2018 and 2021):
+     * the footing has to stick out at least 2" past each face of the wall and no farther than it
+     * is thick. Empty when it passes. Width by soil and stories comes from the code's table.
+     */
+    fun footingCodeIssues(s: BuildingSettings): List<String> {
+        if (s.foundation == FoundationType.SLAB) return emptyList()
+        val (outP, inP) = footingProjections(s)
+        val out = mutableListOf<String>()
+        for ((side, p) in listOf("outside" to outP, "inside" to inP)) {
+            if (p < 2f - 0.01f) out += "Footing sticks out only ${formatInches(p)}\" on the $side; code wants at least 2\""
+            if (p > s.footingThicknessIn + 0.01f) out += "Footing sticks out ${formatInches(p)}\" on the $side, more than its ${formatInches(s.footingThicknessIn)}\" thickness"
+        }
+        return out
+    }
 
     /** The levels, lowest first, worked out from the settings. */
     fun levels(s: BuildingSettings): List<Level> {
@@ -147,7 +415,8 @@ object Building {
             out += Level(framingId(n), "${f.name} framing", LevelKind.FLOOR_FRAMING, f.elevationIn - s.subfloorIn - s.joistDepthIn, "Top of plate, under the joists")
             out += Level(floorId(n), f.name, LevelKind.FLOOR, f.elevationIn, "Top of subfloor")
         }
-        out += Level(ROOF, "Roof", LevelKind.ROOF, s.roofPlateIn, if (s.roofPlateIn == null) "Set when the roof is set up" else "Top of plate")
+        val plate = roofPlateIn(s)
+        out += Level(ROOF, "Roof", LevelKind.ROOF, plate, if (plate == null) "Set when the roof is set up" else "Top of plate")
         return out
     }
 
@@ -158,6 +427,7 @@ object Building {
         val floors = 1 + s.upperFloors.size
         for (n in 1..floors) out += floorLayers(n, floorName(s, n), s)
         out += Layer("roof-structural", LayerTrade.ROOF_STRUCTURAL.label, LayerTrade.ROOF_STRUCTURAL, ROOF)
+        out += Layer("roof-plan", LayerTrade.ROOF_PLAN.label, LayerTrade.ROOF_PLAN, ROOF)
         out += Layer("exterior", LayerTrade.EXTERIOR_ELEVATION.label, LayerTrade.EXTERIOR_ELEVATION)
         out += Layer("site", LayerTrade.SITE_PLAN.label, LayerTrade.SITE_PLAN)
         return out
@@ -313,7 +583,7 @@ object Layers {
         if (plans.isEmpty()) return null
         val framing = active.levelId?.takeIf { it.endsWith("-framing") }
         val wanted = when {
-            active.trade == LayerTrade.ROOF_STRUCTURAL -> plans.last().id
+            active.trade == LayerTrade.ROOF_STRUCTURAL || active.trade == LayerTrade.ROOF_PLAN -> plans.last().id
             framing != null -> framing.removeSuffix("-framing") + "-plan"
             else -> Building.FLOOR1_PLAN
         }
@@ -370,8 +640,9 @@ object Layers {
             LayerTrade.CABINETS -> 3
             LayerTrade.FURNITURE -> 4
             LayerTrade.ROOF_STRUCTURAL -> 5
-            LayerTrade.CUSTOM -> 6
-            LayerTrade.EXTERIOR_ELEVATION -> 7
+            LayerTrade.ROOF_PLAN -> 6
+            LayerTrade.CUSTOM -> 7
+            LayerTrade.EXTERIOR_ELEVATION -> 8
         }
         return level * 10 + trade
     }
@@ -433,7 +704,7 @@ class LayerTaggingState(initial: CanvasState) : androidx.compose.runtime.Mutable
         get() = inner.value
         set(v) {
             val old = inner.value
-            val tagged = if (v.elements !== old.elements) Layers.tagNew(known, v) else v
+            val tagged = if (v.elements !== old.elements) Remodel.tagNew(known, Layers.tagNew(known, v)) else v
             if (tagged.elements !== old.elements) tagged.elements.forEach { known.add(it.id) }
             inner.value = tagged
         }
@@ -547,6 +818,10 @@ object LayerEdits {
         s.blockCourses < 0 -> "Block courses can't be negative"
         s.courseIn <= 0f -> "A block course needs a height"
         s.footingThicknessIn < 0f || s.footingWidthIn < 0f -> "Footing sizes can't be negative"
+        (s.footingOutsideIn ?: 0f) < 0f -> "The footing can't stop short of the wall"
+        s.rebarSize !in 3..8 -> "Rebar size runs #3 to #8"
+        s.footingBarsTop < 0 || s.footingBarsBottom < 0 -> "Bar counts can't be negative"
+        s.dowelSpacingIn <= 0f -> "Dowel spacing needs a number"
         s.crawlClearanceIn < 0f -> "Crawl clearance can't be negative"
         s.upperFloors.any { it.name.isBlank() } -> "Every floor needs a name"
         s.upperFloors.zipWithNext().any { (a, b) -> b.elevationIn <= a.elevationIn } || (s.upperFloors.firstOrNull()?.let { it.elevationIn <= s.datumIn } ?: false) ->

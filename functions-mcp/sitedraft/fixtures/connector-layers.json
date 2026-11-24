@@ -4,7 +4,7 @@
     "elements": [
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "6cb646bc-b2f1-4e6a-bf2c-c75ba599ffdb",
+            "id": "82579397-083d-4a6b-aa35-1b8c100339ee",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "750.0,15.8854",
@@ -12,13 +12,14 @@
             "color": -4294967296,
             "properties": {
                 "widthInches": 48,
-                "depthInches": 7.625
+                "depthInches": 7.625,
+                "remodelStatus": 0
             },
             "layerId": "foundation"
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "cc579cca-db0b-429f-80cb-be7f45ae4249",
+            "id": "b6e4907d-1820-41ea-b128-e266fb009f1f",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "1484.1146,600.0",
@@ -26,13 +27,14 @@
             "color": -4294967296,
             "properties": {
                 "widthInches": 48,
-                "depthInches": 7.625
+                "depthInches": 7.625,
+                "remodelStatus": 0
             },
             "layerId": "foundation"
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "271916ea-de77-4b96-8b4d-e810af2425bc",
+            "id": "22d6d939-fdad-4f2d-b31a-c06131f09ec1",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "750.0,1184.1146",
@@ -40,13 +42,14 @@
             "color": -4294967296,
             "properties": {
                 "widthInches": 48,
-                "depthInches": 7.625
+                "depthInches": 7.625,
+                "remodelStatus": 0
             },
             "layerId": "foundation"
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "7f973330-2d98-4fff-b91b-fd37e2fdb29c",
+            "id": "c1dce55e-7c70-447b-b4ed-2082d27cb459",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "15.8854,600.0",
@@ -54,13 +57,14 @@
             "color": -4294967296,
             "properties": {
                 "widthInches": 48,
-                "depthInches": 7.625
+                "depthInches": 7.625,
+                "remodelStatus": 0
             },
             "layerId": "foundation"
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "f1e32ad1-4468-44d7-a5b7-3e7a8345cd05",
+            "id": "fab46073-19c9-4f62-80ad-f2c7798eeaa5",
             "symbolName": "Base 24\"",
             "category": "Cabinets",
             "center": "416.6667,416.6667",
@@ -74,7 +78,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "d8487126-f710-4baa-b36a-c47221c6cc23",
+            "id": "bc604d13-0fd7-4e39-ad38-d9dcf5d233e5",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "2083.3333,2083.3333",
@@ -84,7 +88,7 @@
                 "widthInches": 48,
                 "depthInches": 4.5
             },
-            "layerId": "custom-b5ef596c"
+            "layerId": "custom-6287dad5"
         }
     ],
     "layers": [
@@ -149,6 +153,12 @@
             "levelId": "roof"
         },
         {
+            "id": "roof-plan",
+            "name": "Roof plan",
+            "trade": "ROOF_PLAN",
+            "levelId": "roof"
+        },
+        {
             "id": "exterior",
             "name": "Exterior elevation",
             "trade": "EXTERIOR_ELEVATION"
@@ -160,7 +170,7 @@
             "visible": false
         },
         {
-            "id": "custom-b5ef596c",
+            "id": "custom-6287dad5",
             "name": "Electrical",
             "trade": "CUSTOM",
             "levelId": "floor1"

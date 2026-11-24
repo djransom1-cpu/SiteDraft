@@ -99,7 +99,8 @@ object CabinetList {
         val counted = LinkedHashMap<Triple<String, String, String>, Int>()
         for (c in cabinets) {
             val code = PlanSymbols.cabinetLabel(c, state) ?: continue
-            val room = roomAt(c.center, state)?.second ?: NO_ROOM
+            // On the cabinet's own floor, whichever layer is active (rooms are found on the active level).
+            val room = roomAt(c.center, state.copy(activeLayerId = Layers.layerOf(c, state).id))?.second ?: NO_ROOM
             val key = Triple(room, code, description(c, state))
             counted[key] = (counted[key] ?: 0) + 1
         }

@@ -163,6 +163,92 @@ async function main() {
   await call(client, "create_project", { name: "Framing" });
   const fr = await call(client, "draw_walls", { project: "Framing", measured: "framing", close: true, segments: [{ length: "10'" }, { length: "10'", turn: "right" }, { length: "10'", turn: "right" }, { length: "10'", turn: "right" }] });
   assert.strictEqual(fr.insideSize, "9'-11\" x 9'-11\"");
+  // Remodel: a 20' x 12' room measured as existing, 6' of the north wall coming out 4' from its
+  // west end, the east wall coming out whole, then a new wall; the proposed plan shown.
+  {
+  await call(client, "create_project", { name: "Remodel" });
+  const ex = await call(client, "draw_walls", { project: "Remodel", measured: "inside", close: true, status: "existing",
+    segments: [{ length: "20'" }, { length: "12'", turn: "right" }, { length: "20'", turn: "right" }, { length: "12'", turn: "right" }] });
+  assert(ex.created.every((w) => w.status === "existing"), "drawn as existing");
+  const north = ex.created.find((w) => w.runs === "east-west" && w.from.yIn < 0);
+  const northLen = north.lengthIn;
+  const split = await call(client, "demo_wall_part", { project: "Remodel", wall_id: north.id, from: "4'", length: "6'", measured_from: "left" });
+  assert.strictEqual(split.walls.length, 3, JSON.stringify(split));
+  assert.deepStrictEqual(split.walls.map((w) => w.status), ["existing", "demo", "existing"]);
+  assert.strictEqual(split.walls[0].id, north.id, "first piece keeps the id");
+  assert.strictEqual(split.walls[1].lengthIn, 72);
+  assert.strictEqual(split.walls[1].from.xIn, north.from.xIn + 48);
+  assert(Math.abs(split.walls.reduce((t, w) => t + w.lengthIn, 0) - northLen) < 0.01, "pieces add up to the wall");
+  // From the right end, and past the end refused; a north-south wall measured from the left refused.
+  const east = ex.created.find((w) => w.runs === "north-south" && w.from.xIn > 100);
+  assert((await call(client, "demo_wall_part", { project: "Remodel", wall_id: east.id, from: 0, length: "40'" })).error.includes("past the end"));
+  assert((await call(client, "demo_wall_part", { project: "Remodel", wall_id: east.id, from: 0, length: "2'", measured_from: "left" })).error.includes("north-south"));
+  const endPiece = await call(client, "demo_wall_part", { project: "Remodel", wall_id: split.walls[2].id, from: 0, length: "1'", measured_from: "right" });
+  assert.deepStrictEqual(endPiece.walls.map((w) => w.status), ["existing", "demo"], "demo at the end makes two pieces");
+  await call(client, "edit_element", { project: "Remodel", id: east.id, status: "demo" });
+  await call(client, "draw_walls", { project: "Remodel", measured: "center", start: { x: "10'", y: 0 }, room_side: "right", status: "new", segments: [{ length: "12'", direction: "south" }] });
+  assert((await call(client, "edit_element", { project: "Remodel", id: east.id, status: "gone" })).error);
+  const view = await call(client, "set_remodel_view", { project: "Remodel", show: "proposed", draw_new_walls_as: "new" });
+  assert.deepStrictEqual(view.changed, ["showing the proposed plan", "new walls drawn as new"]);
+  const rd = await call(client, "read_drawing", { project: "Remodel" });
+  assert.strictEqual(rd.remodel.showing, "proposed");
+  // North: existing, demo, existing, demo (two splits); south and west existing; east demo whole.
+  assert.deepStrictEqual(rd.remodel.walls, { existing: 4, demo: 3, new: 1 });
+  // The app's JSON names: the phase enums and the wall property.
+  const rdoc = M.parseProject(db._store.get(`users/${uid}/projects/Remodel`).json);
+  assert.strictEqual(rdoc.remodelPhase, "PROPOSED");
+  assert.strictEqual(rdoc.wallDrawStatus, "NEW");
+  assert(rdoc.elements.filter((e) => e.category === "Walls").every((e) => [0, 1, 2].includes(e.properties.remodelStatus)));
+  }
+
+  // Stairs: the app's own worked samples (catalog.stairs, from Stairs.kt) through stairs.js.
+  {
+  const ST = require("../sitedraft/stairs.js");
+  const cs = M.catalog.stairs;
+  assert(cs && cs.samples.length > 20, "the app exported stair samples");
+  for (const smp of cs.samples) {
+    const project = { building: smp.settings, elements: [] };
+    const props = { ...cs.defaults[smp.type], [cs.keys.goes]: smp.goes };
+    if (smp.typedRise > 0) { props[cs.keys.rise] = smp.typedRise; props[cs.keys.riseSet] = 1; }
+    const st = { type: "x", id: "st", symbolName: smp.type, category: "Stairs", properties: props, layerId: `floor${smp.floor}-plan`, rotation: smp.rotation };
+    ST.syncOne(st, project);
+    const what = `${smp.building} ${smp.type} goes ${smp.goes} floor ${smp.floor}`;
+    assert.strictEqual(st.properties[cs.keys.dir] === 2, smp.down, what + ": up or down");
+    assert(Math.abs(st.properties[cs.keys.rise] - smp.riseIn) < 0.01, `${what}: rise ${st.properties[cs.keys.rise]} vs ${smp.riseIn}`);
+    assert.strictEqual(ST.layout(st).risers, smp.risers, what + ": risers");
+    const fp = ST.footprint(st);
+    assert(Math.abs(fp[0] - smp.footprintWIn) < 0.01 && Math.abs(fp[1] - smp.footprintDIn) < 0.01, `${what}: footprint ${fp} vs ${smp.footprintWIn},${smp.footprintDIn}`);
+    const op = ST.opening(st, project);
+    if (smp.openingLayer == null) assert.strictEqual(op, null, what + ": no opening");
+    else {
+      assert.strictEqual(op.layerId, smp.openingLayer, what + ": opening layer");
+      assert(Math.abs(op.lengthIn - smp.openingLIn) < 0.01, `${what}: opening ${op.lengthIn} vs ${smp.openingLIn}`);
+    }
+  }
+  // Placed by voice: a basement stair, top at the hall, climbing north; then typed and back to the building.
+  await call(client, "create_project", { name: "Stairs" });
+  await call(client, "set_building_inputs", { project: "Stairs", build_from_floor_plan: true });
+  const ps = await call(client, "place_stairs", { project: "Stairs", top: { x: "10'", y: "4'" }, climbs: "north" });
+  assert.strictEqual(ps.placed.goes, "down", JSON.stringify(ps));
+  assert.strictEqual(ps.placed.risers, 13);
+  assert.strictEqual(ps.placed.planLabel, "DN 13R");
+  assert.strictEqual(ps.footprintIn.depth, 120);
+  assert.deepStrictEqual(ps.at, { centerXIn: 120, centerYIn: 108 }, "centre half the run back from the top edge");
+  assert.strictEqual(ps.placed.floorOpening.layer, "floor1-structural");
+  const east = await call(client, "place_stairs", { project: "Stairs", top: { x: 0, y: 0 }, climbs: "east", goes: "up", width: "42\"" });
+  assert.strictEqual(east.placed.goes, "up");
+  assert.deepStrictEqual(east.at, { centerXIn: -east.footprintIn.depth / 2, centerYIn: 0 }, "climbing east: the stair runs west of its top");
+  const typed = await call(client, "edit_stairs", { project: "Stairs", id: ps.placed.id, rise: "105\"" });
+  assert.strictEqual(typed.edited.rise, "typed by hand");
+  assert.strictEqual(typed.edited.risers, 14);
+  const back = await call(client, "edit_stairs", { project: "Stairs", id: ps.placed.id, rise: "building" });
+  assert.strictEqual(back.edited.rise, "follows the building");
+  assert.strictEqual(back.edited.risers, 13);
+  const rs = await call(client, "read_drawing", { project: "Stairs" });
+  assert.strictEqual(rs.stairs.length, 2);
+  assert((await call(client, "place_symbol", { project: "Stairs", name: "Straight Stair", x: 0, y: 0 })).error.includes("place_stairs"));
+  }
+
   // An L-shaped room, outside measurements, and a 45 degree wall warns but draws.
   await call(client, "create_project", { name: "L" });
   const l = await call(client, "draw_walls", { project: "L", measured: "outside", close: true,
@@ -269,6 +355,89 @@ async function main() {
     hidden: L.effectiveLayers(house).filter((x) => !x.visible).map((x) => x.id),
     levels: Object.fromEntries(L.levels(L.settingsOf(house)).map((x) => [x.id, x.elevationIn])),
   }, null, 2) + "\n");
+
+  // ---- voice drawing (Nov 23): room-picked cabinet runs, fronts, facing, the rod, hatch, elevations, roof ----
+  await call(client, "create_project", { name: "Voice" });
+  const shell = await call(client, "draw_walls", { project: "Voice", measured: "outside", wall_type: "2x6 Wall", close: true, start: { x: 0, y: 0 },
+    segments: [{ length: "50'" }, { length: "30'", turn: "right" }, { length: "50'", turn: "right" }, { length: "30'", turn: "right" }] });
+  const northWall = shell.created.find((w) => w.runs === "east-west" && w.from.yIn === 0).id;
+  await call(client, "draw_walls", { project: "Voice", measured: "inside", start: { x: 6.5, y: 186.5 }, room_side: "left", segments: [{ length: "15'" }, { length: "15'", turn: "left" }] });
+  await call(client, "add_label", { project: "Voice", text: "KITCHEN", x: 60, y: 90 });
+  await call(client, "add_label", { project: "Voice", text: "BEDROOM", x: 300, y: 90 });
+  // The north wall runs the whole house: without a room it warns; with one it starts at that room's corner.
+  const noRoom = await call(client, "place_cabinets", { project: "Voice", wall_id: northWall, items: ["B12"] });
+  assert(noRoom.warnings && noRoom.warnings[0].includes("more than one room"), JSON.stringify(noRoom));
+  await call(client, "delete_elements", { project: "Voice", ids: [noRoom.placed[0].id] });
+  const kRun = await call(client, "place_cabinets", { project: "Voice", wall_id: northWall, room: "Kitchen", items: ["LS36", { code: "BD", width: 29 }] });
+  assert.strictEqual(kRun.warnings, undefined);
+  assert.strictEqual(kRun.placed[1].widthIn, 29);
+  assert.strictEqual(kRun.facing, "south");
+  const bRun = await call(client, "place_cabinets", { project: "Voice", wall_id: northWall, room: "bedroom", from: "right", items: ["B24"] });
+  let vd = await call(client, "read_drawing", { project: "Voice" });
+  const atX = (id) => vd.cabinetsAndAppliances.find((c) => c.id === id).at.xIn;
+  assert.strictEqual(atX(kRun.placed[0].id), 6.5, "kitchen run starts at the kitchen's inside corner");
+  assert.strictEqual(atX(bRun.placed[0].id), 593.5 - 24, "bedroom run ends at the east inside corner");
+  assert.strictEqual(vd.cabinetsAndAppliances.find((c) => c.id === kRun.placed[1].id).front, "3 drawers");
+  // Fronts on a single cabinet, then changed; facing and the wall it's against come back.
+  const base = await call(client, "place_symbol", { project: "Voice", name: "Base 36\"", x: 150, y: 18.5, front: "drawer + doors", style: "shaker" });
+  assert.strictEqual(base.placed.facing, "south");
+  assert(base.placed.against.includes(northWall));
+  const ed = await call(client, "edit_element", { project: "Voice", id: base.placed.id, front: "4 drawers", hardware: "bar pulls" });
+  assert.deepStrictEqual(ed.changed, ["front/style/hardware"]);
+  assert((await call(client, "place_symbol", { project: "Voice", name: "Washer", x: 50, y: 150, front: "doors" })).error.includes("for cabinets"));
+  const washer = await call(client, "place_symbol", { project: "Voice", name: "Washer", x: 20, y: 300, rotation: 270 });
+  assert.strictEqual(washer.placed.facing, "east");
+  const turned = await call(client, "edit_element", { project: "Voice", id: washer.placed.id, rotation: 90 });
+  assert.strictEqual(turned.facing, "west");
+  // The plain rod, stretched: its Properties carry the real size.
+  const rod = await call(client, "place_symbol", { project: "Voice", name: "Rod 48\"", x: 300, y: 250, width: "5'10 1/2\"" });
+  let vs = (await S.readProject(db, uid, "Voice")).state;
+  assert.strictEqual(vs.elements.find((e) => e.id === rod.placed.id).properties.widthInches, 70.5);
+  const bs = vs.elements.find((e) => e.id === base.placed.id).properties;
+  assert.deepStrictEqual([bs.front, bs.doorStyle, bs.hardware], [3, 1, 1]);
+  // Hardwood in the kitchen, then again (replaced, not stacked); the bedroom by a point.
+  const h1 = await call(client, "hatch_area", { project: "Voice", room: "kitchen", pattern: "hardwood", size: 5, length: 48 });
+  assert.strictEqual(h1.hatched.pattern, "PLANKS");
+  assert.strictEqual(h1.hatched.area, "15'-0\" x 15'-0\"");
+  const h2 = await call(client, "hatch_area", { project: "Voice", room: "Kitchen", pattern: "tile", size: 12 });
+  assert.deepStrictEqual(h2.replaced, [h1.hatched.id]);
+  await call(client, "hatch_area", { project: "Voice", near: { x: 300, y: 100 }, pattern: "carpet", size: 2 });
+  assert((await call(client, "hatch_area", { project: "Voice", room: "Garage", pattern: "tile", size: 12 })).error.includes("No room label"));
+  vs = (await S.readProject(db, uid, "Voice")).state;
+  const hs = vs.elements.filter((e) => M.kind(e) === "Rectangle");
+  assert.strictEqual(hs.length, 2);
+  assert.deepStrictEqual(hs.map((h) => h.fill.pattern).sort(), ["DOTS", "TILE"]);
+  assert(hs.every((h) => h.strokeWidth === 0));
+  // Elevations: the kitchen's north wall, looking north from the room; the island's front.
+  const el = await call(client, "add_elevation", { project: "Voice", wall_id: northWall, crown: 3, backsplash: { pattern: "subway", size: 3, length: 6 } });
+  assert.strictEqual(el.elevation.looking, "north");
+  assert((await call(client, "add_elevation", { project: "Voice", wall_id: northWall, looking: "east" })).error.includes("north or south"));
+  const isl = await call(client, "place_symbol", { project: "Voice", name: "Island 3'x6'", x: 100, y: 110 });
+  const ie = await call(client, "add_elevation", { project: "Voice", wall_id: isl.placed.id, island_face: "back" });
+  assert(ie.elevation.of.includes("back"));
+  // Roof and exterior elevations: set on the building; the app builds them.
+  const roof = await call(client, "set_roof", { project: "Voice", pitch: "8/12", ends: "hip", overhang: "16\"" });
+  assert.strictEqual(roof.roof.pitch, "8/12");
+  const ext = await call(client, "set_exterior_elevations", { project: "Voice", grade_exposure: "8\"" });
+  assert.strictEqual(ext.gradeExposure, "8\"");
+  vd = await call(client, "read_drawing", { project: "Voice" });
+  assert.strictEqual(vd.hatches.length, 2);
+  assert.strictEqual(vd.hatches.find((h) => h.pattern === "TILE").room, "KITCHEN");
+  assert.strictEqual(vd.elevations.length, 2);
+  assert.strictEqual(vd.roof.built, false);
+  assert.strictEqual(vd.roof.pitch, 8);
+  vs = (await S.readProject(db, uid, "Voice")).state;
+  assert.deepStrictEqual(vs.building.roof, { pitch: 8, overhangIn: 16, endA: "HIP", endB: "HIP" });
+  assert.strictEqual(vs.building.gradeExposureIn, 8);
+  fs.writeFileSync(path.join(fx, "connector-voice.json"), M.stringifyProject(vs) + "\n");
+  fs.writeFileSync(path.join(fx, "connector-voice-expect.json"), JSON.stringify({
+    note: "Written by functions-mcp/test/sitedraft-mcp.test.js; ConnectorCheckTest checks it with the app's code.",
+    kitchenRun: kRun.placed.map((p) => p.id), drawerBase: kRun.placed[1].id, base: base.placed.id, rod: rod.placed.id,
+    wallElevation: el.elevation.id, islandElevation: ie.elevation.id, northWall,
+  }, null, 2) + "\n");
+  const rmRoof = await call(client, "set_roof", { project: "Voice", remove: true });
+  assert.strictEqual(rmRoof.roof, "removed");
+  assert.strictEqual((await S.readProject(db, uid, "Voice")).state.building.roof, undefined);
 
   const forceChunks = { ...big.state, projectName: "Big", elements: [...big.state.elements, M.makeText({ text: "x".repeat(700000), topLeft: { x: 0, y: 0 } })] };
   await S.changeProject(db, uid, "Big", "test", () => ({ state: forceChunks, result: {} }), { create: { projectName: "Big" } });

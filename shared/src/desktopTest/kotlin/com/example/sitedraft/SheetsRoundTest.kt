@@ -119,6 +119,65 @@ class SheetsRoundTest {
     }
 
     @Test
+    fun `inside a viewport the model slides, the viewport stays put at its scale`() {
+        val s = CanvasState(elements = listOf(wall, kitchenWall))
+        val window = Rect(0f, 70f * inch, 144f * inch, 190f * inch)
+        val v = SheetView(kind = SheetViewKind.PLAN, title = "Kitchen", scale = PrintScale.HALF, xIn = 10f, yIn = 8f, crop = ViewCrop.of(window))
+        // Drag the model 1" right on paper: at 1/2" that is 2' of model, so the window moves 2' left.
+        val slid = Sheets.slid(v, Offset(1f, 0f), s)!!
+        assertEquals(window.left - 24f * inch, slid.crop!!.rect.left, 0.01f)
+        assertEquals(window.width, slid.crop!!.rect.width, 0.01f)
+        assertEquals(Sheets.viewRect(v, s), Sheets.viewRect(slid, s))
+        // A whole view becomes a cropped one when slid.
+        val whole = v.copy(crop = null)
+        assertNotNull(Sheets.slid(whole, Offset(0f, 1f), s)!!.crop)
+    }
+
+    @Test
+    fun `dragging a viewport corner resizes it at the same scale, the opposite corner stays`() {
+        val s = CanvasState(elements = listOf(wall, kitchenWall))
+        val window = Rect(0f, 70f * inch, 144f * inch, 190f * inch)
+        val v = SheetView(kind = SheetViewKind.PLAN, title = "Kitchen", scale = PrintScale.HALF, xIn = 10f, yIn = 8f, crop = ViewCrop.of(window))
+        val r = Sheets.viewRect(v, s)!!  // 6" x 5"
+        assertEquals(Sheets.Corner.BOTTOM_RIGHT, Sheets.cornerAt(v, r.bottomRight + Offset(0.05f, 0.05f), 0.2f, s))
+        assertNull(Sheets.cornerAt(v, r.center, 0.2f, s))
+        // Pull the bottom-right corner 2" right: 8" wide on paper, 16' of model, top-left unchanged.
+        val big = Sheets.resized(v, Sheets.Corner.BOTTOM_RIGHT, r.bottomRight + Offset(2f, 0f), s)!!
+        val br = Sheets.viewRect(big, s)!!
+        assertEquals(r.left, br.left, 0.01f)
+        assertEquals(r.top, br.top, 0.01f)
+        assertEquals(8f, br.width, 0.01f)
+        assertEquals(192f * inch, big.crop!!.rect.width, 0.5f)
+        assertEquals(PrintScale.HALF, big.scale)
+        // It can't be squeezed below the smallest viewport.
+        val tiny = Sheets.resized(v, Sheets.Corner.BOTTOM_RIGHT, r.topLeft, s)!!
+        assertEquals(Sheets.MIN_VIEWPORT_IN, Sheets.viewRect(tiny, s)!!.width, 0.01f)
+    }
+
+    @Test
+    fun `a sheet's notes layer shows only on that viewport`() {
+        val vm = DrawingManager()
+        vm.onEvent(DrawingEvent.SetBuilding(com.example.sitedraft.ui.canvas.BuildingSettings()))
+        val foundation = SheetView(kind = SheetViewKind.PLAN, title = "Foundation plan", layerIds = listOf(com.example.sitedraft.ui.canvas.Building.FOUNDATION))
+        val sheet = SheetLayout(number = "S-1", title = "Foundation", views = listOf(foundation))
+        val all = SheetView(kind = SheetViewKind.PLAN, title = "Floor Plan")
+        vm.onEvent(DrawingEvent.UpdateSheets(listOf(sheet, SheetLayout(number = "A-1", views = listOf(all)))))
+        vm.onEvent(DrawingEvent.AddSheetNotesLayer(sheet.id, foundation.id))
+        var s = vm.state.value
+        val notes = s.layers.single { Sheets.isSheetNotes(it.id) }
+        assertEquals("S-1 Foundation plan notes", notes.name)
+        assertEquals(notes.id, s.activeLayerId)
+        assertEquals(listOf(com.example.sitedraft.ui.canvas.Building.FOUNDATION, notes.id), s.sheets[0].views[0].layerIds)
+        // A note drawn now goes on it: the foundation sheet shows it, the "all layers" plan doesn't.
+        val note = DrawingElement.Text(text = "#4 BAR CONT.", topLeft = Offset(10f, 10f), fontSize = 12f, color = Color.White, layerId = notes.id)
+        s = s.copy(elements = s.elements + note)
+        assertTrue(Sheets.viewElements(s.sheets[0].views[0], s).any { it.id == note.id })
+        assertFalse(Sheets.viewElements(s.sheets[1].views[0], s).any { it.id == note.id })
+        // And it isn't offered as a plan view of its own.
+        assertFalse(Sheets.planChoices(s).any { (_, ids) -> ids?.contains(notes.id) == true })
+    }
+
+    @Test
     fun `a sheet set is one PDF with a page per sheet`() {
         val page = PdfWriter.ImagePage(2, 1, ByteArray(6), flate = false, pageWidthPt = 2592f, pageHeightPt = 1728f)
         val pdf = PdfWriter.imagePages(listOf(page, page, page)).decodeToString()

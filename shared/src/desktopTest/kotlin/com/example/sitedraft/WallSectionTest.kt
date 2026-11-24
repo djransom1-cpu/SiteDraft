@@ -65,7 +65,7 @@ class WallSectionTest {
         assertTrue(notes.any { it.startsWith("1/2\" A.B. 12\" FROM CORNERS, 32\" O.C.") })
         assertTrue(notes.any { it.startsWith("2x10 FLOOR JOISTS @ 16\" O.C.") })
         assertTrue(notes.any { it.startsWith("TREATED 2x6 SILL ON SILL SEAL") })
-        assertTrue(notes.any { it == "4\" DRAIN TILE IN STONE" })
+        assertTrue(notes.any { it == "FORM-A-DRAIN BOTH SIDES OF FOOTING" })
         // Change the inputs: the notes change with them.
         val other = two6.copy(building = BuildingSettings(footingWidthIn = 24f, blockCourses = 9, joistDepthIn = 11.25f, foundationFoamIn = 0f, foundation = FoundationType.CRAWL))
         val n2 = WallSection.geometry(other).notes.map { it.text }
@@ -74,10 +74,14 @@ class WallSectionTest {
         assertTrue(n2.any { it.startsWith("2x12 FLOOR JOISTS") })
         assertTrue(n2.none { it.contains("FOAM") })
         assertTrue(n2.any { it.startsWith("CRAWL FLOOR") })
-        // The footing projects 6" past the outside face (x = 0).
+        // The footing is centred under the 12" block (outside face x = 0): 3 3/16" past each face.
         val footing = WallSection.geometry(two6).parts.first() as com.example.sitedraft.ui.canvas.Shower.Part.Poly
-        assertEquals(-6f, footing.points.minOf { it.x }, 0.01f)
-        assertEquals(12f, footing.points.maxOf { it.x }, 0.01f)
+        assertEquals(-3.1875f, footing.points.minOf { it.x }, 0.01f)
+        assertEquals(14.8125f, footing.points.maxOf { it.x }, 0.01f)
+        assertTrue(notes.any { it.startsWith("11 COURSES 12\" BLOCK") })
+        // A poured wall: no courses, the wall's height instead.
+        val poured = two6.copy(building = BuildingSettings(foundationWall = com.example.sitedraft.ui.canvas.FoundationWall.POURED_10))
+        assertTrue(WallSection.geometry(poured).notes.any { it.text.startsWith("10\" POURED CONCRETE WALL") })
     }
 
     @Test

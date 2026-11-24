@@ -265,6 +265,9 @@ class LayersTest {
         assertEquals(3, Sheets.viewElements(all, s).size)
         val choices = Sheets.planChoices(s).map { it.first }
         assertTrue("Foundation plan" in choices && "First floor plan" in choices && "First floor framing plan" in choices)
+        // A plan sheet starts from the floor plan; "all layers" is last.
+        assertEquals("First floor plan", choices.first())
+        assertEquals("Floor plan (all layers)", choices.last())
     }
 
     @Test
