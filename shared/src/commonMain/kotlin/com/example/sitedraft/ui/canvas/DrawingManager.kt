@@ -69,6 +69,72 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     // down; the first mutating Move event of a gesture snapshots and flips it, every later one
     // in that same gesture is a no-op here.
     private var hasSnapshotThisGesture = false
+    private var moveGestureStart: Offset? = null
+    private var moveGestureBefore: List<DrawingElement>? = null
+    /** The drawing before the last Move drag, so "make that exactly ___" can put it back and redo it at the typed distance. */
+    private var lastDragElements: List<DrawingElement>? = null
+
+    /** Where an element sits, for measuring how far it moved: a symbol's centre, else its bounding box's. */
+    private fun elementAnchor(e: DrawingElement): Offset = if (e is DrawingElement.Symbol) e.center else e.boundingRect().center
+
+    /**
+     * Moves elements by [delta] (world px) the way a typed move should (Dan, Nov 27): a square wall carries its doors and
+     * windows and the square walls that meet it stretch or shorten to stay on it; anything else moves with what it owns.
+     */
+    private fun moveTyped(ids: Set<String>, delta: Offset, base: List<DrawingElement>): List<DrawingElement> {
+        val inch = _state.value.inchesToPx(1f)
+        val tol = inch * 1f
+        val moving = base.filter { it.id in ids }
+        val walls = moving.filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS && it.rotation == 0f }
+        val st = _state.value.copy(elements = base)
+        // Doors and windows in a moving wall go with it.
+        val riders = base.filterIsInstance<DrawingElement.Symbol>().filter { o ->
+            o.category == PlanSymbols.DOORS_WINDOWS && o.id !in ids && OpeningPosition.hostWall(o, st)?.id?.let { it in walls.map { w -> w.id } } == true
+        }.map { it.id }.toSet()
+        // Walls meeting a moving wall square to it: the end that touches it follows.
+        val stretch = HashMap<String, DrawingElement.Symbol>()
+        for (w in walls) {
+            val wb = FloorPlan.bounds(w)
+            val horizontal = wb.width >= wb.height
+            val along = if (horizontal) Offset(0f, delta.y) else Offset(delta.x, 0f)
+            if (along.getDistance() < 0.01f) continue
+            for (o in base.filterIsInstance<DrawingElement.Symbol>()) {
+                if (o.id in ids || o.category != PlanSymbols.WALLS || o.rotation != 0f || Layers.layerOf(o, st).id != Layers.layerOf(w, st).id) continue
+                val ob = FloorPlan.bounds(o)
+                val oHorizontal = ob.width >= ob.height
+                if (oHorizontal == horizontal) continue
+                val cur = stretch[o.id] ?: o
+                val cb = FloorPlan.bounds(cur)
+                if (horizontal) {
+                    if (cb.right < wb.left - tol || cb.left > wb.right + tol) continue
+                    // Its top or bottom end at the moving wall.
+                    val topAt = cb.top >= wb.top - tol && cb.top <= wb.bottom + tol
+                    val botAt = cb.bottom >= wb.top - tol && cb.bottom <= wb.bottom + tol
+                    if (!topAt && !botAt) continue
+                    val newTop = if (topAt) cb.top + along.y else cb.top
+                    val newBot = if (botAt && !topAt) cb.bottom + along.y else cb.bottom
+                    if (newBot - newTop < inch) continue
+                    stretch[o.id] = cur.copy(center = Offset(cb.center.x, (newTop + newBot) / 2f), size = Size(cb.width, newBot - newTop))
+                } else {
+                    if (cb.bottom < wb.top - tol || cb.top > wb.bottom + tol) continue
+                    val leftAt = cb.left >= wb.left - tol && cb.left <= wb.right + tol
+                    val rightAt = cb.right >= wb.left - tol && cb.right <= wb.right + tol
+                    if (!leftAt && !rightAt) continue
+                    val newLeft = if (leftAt) cb.left + along.x else cb.left
+                    val newRight = if (rightAt && !leftAt) cb.right + along.x else cb.right
+                    if (newRight - newLeft < inch) continue
+                    stretch[o.id] = cur.copy(center = Offset((newLeft + newRight) / 2f, cb.center.y), size = Size(newRight - newLeft, cb.height))
+                }
+            }
+        }
+        return base.map { e ->
+            when {
+                e.id in ids || e.id in riders || ids.any { e.isOwnedBy(it) } -> e.move(delta)
+                e.id in stretch -> stretch[e.id]!!
+                else -> e
+            }
+        }
+    }
     // Which endpoint of a selected Dimension is being resize-dragged. Dimension is the only
     // element type with two independently-grabbable handles (both ends need to be draggable so
     // a placed dimension can be pulled clear of the geometry it measures, not just extended from
@@ -222,7 +288,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             is DrawingEvent.SetViewportSize -> if (event.size != _state.value.viewportSize) _state.value = _state.value.copy(viewportSize = event.size)
             DrawingEvent.ZoomToFit -> zoomToFit()
             // Picking a symbol, outline or room arms placement; the next canvas tap says where it goes.
-            is DrawingEvent.SelectSymbol -> _state.value = _state.value.copy(pendingPlacement = Placement.Symbol(event.name, event.category), placementPreview = null)
+            is DrawingEvent.SelectSymbol -> _state.value = _state.value.copy(pendingPlacement = Placement.Symbol(event.name, event.category, event.widthIn), placementPreview = null)
             is DrawingEvent.StartPlacement -> _state.value = _state.value.copy(pendingPlacement = event.placement, placementPreview = null)
             is DrawingEvent.PreviewPlacementAt -> _state.value.pendingPlacement?.let { pending ->
                 // Calibration points are not snapped, so neither is their crosshair.
@@ -236,9 +302,9 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     is Placement.Symbol -> {
                         // A door or window tapped on a wall sits in that wall, turned to match it.
                         val opening = if (pending.category == PlanSymbols.DOORS_WINDOWS)
-                            FloorPlan.alignOpening(pending.name, event.point, point, _state.value) else null
-                        if (opening != null) addSymbol(pending.name, pending.category, opening.center, opening.rotation, opening.size)
-                        else addSymbol(pending.name, pending.category, point)
+                            FloorPlan.alignOpening(pending.name, event.point, point, _state.value, pending.widthIn) else null
+                        if (opening != null) addSymbol(pending.name, pending.category, opening.center, opening.rotation, opening.size, pending.widthIn)
+                        else addSymbol(pending.name, pending.category, point, widthIn = pending.widthIn)
                     }
                     is Placement.Shell -> placeShell(point, pending)
                     is Placement.Room -> placeRoom(point, pending)
@@ -461,6 +527,32 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             is DrawingEvent.RenameLayer -> applyLayerEdit(LayerEdits.rename(_state.value, event.layerId, event.name))
             is DrawingEvent.RemoveLayer -> applyLayerEdit(LayerEdits.remove(_state.value, event.layerId))
             is DrawingEvent.SetBuilding -> applyLayerEdit(LayerEdits.setBuilding(_state.value, event.settings))
+            is DrawingEvent.MoveSelectedBy -> {
+                // Typed move (Dan, Nov 27): east and south positive, inches.
+                val s = _state.value
+                val ids = s.selectedElementIds.ifEmpty { setOfNotNull(s.selectedElementId) }
+                if (ids.isNotEmpty() && (event.eastIn != 0f || event.southIn != 0f)) {
+                    pushUndoSnapshot()
+                    val k = s.inchesToPx(1f)
+                    _state.value = _state.value.copy(elements = moveTyped(ids, Offset(event.eastIn * k, event.southIn * k), _state.value.elements), lastMoveDir = null)
+                    triggerAutoSave()
+                }
+            }
+            is DrawingEvent.MakeLastMoveExactly -> {
+                // After a Move drag: put it back and move it the typed distance the same way (Nov 27).
+                val s = _state.value
+                val dir = s.lastMoveDir
+                val before = lastDragElements
+                val sel = s.selectedElementId
+                if (dir != null && before != null && sel != null && event.inches > 0f) {
+                    pushUndoSnapshot()
+                    val k = s.inchesToPx(1f)
+                    _state.value = _state.value.copy(elements = moveTyped(setOf(sel), dir * (event.inches * k), before), lastMoveDir = null)
+                    lastDragElements = null
+                    triggerAutoSave()
+                }
+            }
+            is DrawingEvent.DismissLastMove -> _state.value = _state.value.copy(lastMoveDir = null)
             is DrawingEvent.SetRoofArea -> {
                 val b = _state.value.building
                 val r = b.roof ?: RoofSettings()
@@ -1555,6 +1647,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
 
     private fun startDrawing(offset: Offset, pressure: Float, resizeThreshold: Float) {
         hasSnapshotThisGesture = false
+        // A Move drag (Nov 27): remember where it started, to offer "make that exactly ___" when it ends.
+        moveGestureStart = if (_state.value.currentTool == DrawingTool.MOVE) offset else null
+        moveGestureBefore = if (_state.value.currentTool == DrawingTool.MOVE) _state.value.elements else null
+        if (_state.value.lastMoveDir != null) _state.value = _state.value.copy(lastMoveDir = null)
         moveSnapCorrection = Offset.Zero
         carriedIds = emptySet()
         planTapCandidate = null
@@ -2330,6 +2426,27 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
     }
 
     private fun endDrawing() {
+        // A Move drag that moved something: its squared direction and distance, for "make that exactly ___" (Nov 27).
+        run {
+            val start = moveGestureStart ?: return@run
+            val sel = _state.value.selectedElementId ?: return@run
+            if (!hasSnapshotThisGesture) return@run
+            val before = moveGestureBefore?.firstOrNull { it.id == sel } ?: return@run
+            val after = _state.value.elements.firstOrNull { it.id == sel } ?: return@run
+            val d = elementAnchor(after) - elementAnchor(before)
+            if (d.getDistance() < 1f) return@run
+            val dir = if (kotlin.math.abs(d.x) >= kotlin.math.abs(d.y)) Offset(if (d.x > 0) 1f else -1f, 0f) else Offset(0f, if (d.y > 0) 1f else -1f)
+            // A square wall dragged on its own (Dan, Nov 27): the walls meeting it stretch to stay on it and its doors and
+            // windows go with it, as a typed move does. The drag is redone from where it started, the same distance.
+            val base = moveGestureBefore
+            val others = _state.value.selectedElementIds - sel
+            if (base != null && others.isEmpty() && before is DrawingElement.Symbol && before.category == PlanSymbols.WALLS && before.rotation == 0f) {
+                _state.value = _state.value.copy(elements = moveTyped(setOf(sel), d, base))
+            }
+            lastDragElements = moveGestureBefore
+            _state.value = _state.value.copy(lastMoveDir = dir, lastMoveDistanceIn = kotlin.math.abs(if (dir.x != 0f) d.x else d.y) / _state.value.inchesToPx(1f))
+        }
+        moveGestureStart = null
         val boxStart = _state.value.boxSelectStart
         if (_state.value.currentTool == DrawingTool.SELECT && boxStart != null) {
             val boxEnd = _state.value.boxSelectEnd ?: boxStart
@@ -3112,14 +3229,16 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
 
     private fun addSymbol(
         name: String, category: String, center: Offset = Offset(500f, 500f),
-        rotation: Float = 0f, sizeOverride: Size? = null
+        rotation: Float = 0f, sizeOverride: Size? = null,
+        /** A typed width (Nov 27), inches: its footprint at that width. */
+        widthIn: Float? = null
     ) {
         val ratio = _state.value.scale.ratio
         var properties = emptyMap<String, Float>()
         
         var size = when {
             category in PlanSymbols.categories -> {
-                val (wIn, dIn) = PlanSymbols.footprintInches[name] ?: Pair(24f, 24f)
+                val (wIn, dIn) = PlanSymbols.footprintAt(name, widthIn) ?: Pair(24f, 24f)
                 properties = mapOf("widthInches" to wIn, "depthInches" to dIn)
                 // Doors and windows carry their own heights (and a window its sill), editable
                 // in Properties; elevations read these instead of the wall-wide defaults.
@@ -4044,7 +4163,7 @@ sealed class DrawingEvent {
     @Serializable
     object ZoomToFit : DrawingEvent()
     @Serializable
-    data class SelectSymbol(val name: String, val category: String) : DrawingEvent()
+    data class SelectSymbol(val name: String, val category: String, /** A typed width, inches (Nov 27); null = the library size. */ val widthIn: Float? = null) : DrawingEvent()
     /** Arms a building outline or room from the floor-plan panel. */
     @Serializable
     data class StartPlacement(val placement: Placement) : DrawingEvent()
@@ -4201,6 +4320,14 @@ sealed class DrawingEvent {
     /** New building inputs (datum, subfloor, joists, sill, block, footing, floors). */
     @Serializable
     data class SetBuilding(val settings: BuildingSettings) : DrawingEvent()
+    /** Moves the selection by a typed distance (Nov 27), inches, east and south positive; a wall's meeting walls follow. */
+    @Serializable
+    data class MoveSelectedBy(val eastIn: Float, val southIn: Float) : DrawingEvent()
+    /** After a Move drag: the same direction, exactly this far from where it started (Nov 27). */
+    @Serializable
+    data class MakeLastMoveExactly(val inches: Float) : DrawingEvent()
+    @Serializable
+    object DismissLastMove : DrawingEvent()
     /** A traced roof area (RoofAreas, Dan Nov 26): added, or replaced when one has its id. */
     @Serializable
     data class SetRoofArea(val area: RoofArea) : DrawingEvent()

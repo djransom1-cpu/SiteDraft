@@ -378,9 +378,21 @@ internal fun BuildingInputs(settings: BuildingSettings, houseWidthFt: Float? = n
 
     // --- Upper floors ---
     Text("Upper floors", style = MaterialTheme.typography.titleMedium)
-    settings.upperFloors.forEach { f ->
+    settings.upperFloors.forEachIndexed { i, f ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(f.name); Text(ft(f.elevationIn), fontWeight = FontWeight.Bold)
+        }
+        // Its joists (Dan, Nov 27: joist size per floor); "Same" follows the first floor's.
+        val code = f.joistDepthIn?.let { com.example.sitedraft.ui.canvas.Structure.joistCodeFor(it) }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            FilterChip(selected = code == null, onClick = {
+                onApply(settings.copy(upperFloors = settings.upperFloors.toMutableList().also { it[i] = f.copy(joistDepthIn = null) }))
+            }, label = { Text("Joists: same as 1st") })
+            com.example.sitedraft.ui.canvas.Structure.joistSizes.forEachIndexed { j, (label, depth) ->
+                FilterChip(selected = code == j, onClick = {
+                    onApply(settings.copy(upperFloors = settings.upperFloors.toMutableList().also { it[i] = f.copy(joistDepthIn = depth) }))
+                }, label = { Text(label) })
+            }
         }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

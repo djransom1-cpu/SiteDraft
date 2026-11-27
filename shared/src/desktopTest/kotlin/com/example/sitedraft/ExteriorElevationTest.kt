@@ -258,6 +258,20 @@ class ExteriorElevationTest {
     }
 
     @Test
+    fun `a double door shows its two leaves, a single door its knob`() {
+        fun door(name: String, w: Float) = DrawingElement.Symbol(id = "d1", symbolName = name, category = PlanSymbols.DOORS_WINDOWS, color = Color.White,
+            center = Offset(240f * inch, (336f - 2.75f - w / 2f) * inch), size = Size(w * inch, w * inch))
+        val base = state()
+        fun centreLines(name: String, w: Float): Int {
+            val g = ExteriorElevation.geometry(base.copy(elements = base.elements + door(name, w)), ExteriorElevation.Face.SOUTH)!!
+            // Full-height verticals within an inch of the door's centre.
+            return g.segs.count { it.a.x == it.b.x && kotlin.math.abs(it.a.x - 240f) < 1f && kotlin.math.abs(it.a.y - it.b.y) > 70f }
+        }
+        assertEquals(2, centreLines("Door 6'-0\" Double", 72f))
+        assertEquals(0, centreLines("Door 3'-0\"", 36f))
+    }
+
+    @Test
     fun `survey bearings read the way surveys write them`() {
         val az = com.example.sitedraft.ui.canvas.SiteLot::azimuthOf
         assertEquals(45.5, az("N 45°30'00\" E")!!, 1e-6)

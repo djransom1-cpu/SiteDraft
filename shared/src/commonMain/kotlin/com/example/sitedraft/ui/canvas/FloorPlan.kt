@@ -23,8 +23,8 @@ sealed class Placement {
 
     /** A library symbol; the tap is its centre. */
     @Serializable
-    data class Symbol(val name: String, val category: String) : Placement() {
-        override val label get() = name
+    data class Symbol(val name: String, val category: String, /** A typed width (Nov 27), inches; null = the library size. */ val widthIn: Float? = null) : Placement() {
+        override val label get() = if (widthIn != null) "${PlanSymbols.sizeLabel(name).let { name.replace(it, formatFeetInches(widthIn / 12f)) }}" else name
     }
 
     /**
@@ -286,8 +286,8 @@ object FloorPlan {
      * wall and takes the wall's thickness. [snapped] is used for the position along the wall
      * when it still lies on that wall, so grid snapping keeps working; otherwise [raw] is used.
      */
-    fun alignOpening(name: String, raw: Offset, snapped: Offset, state: CanvasState): OpeningPlacement? {
-        val (wIn, _) = PlanSymbols.footprintInches[name] ?: return null
+    fun alignOpening(name: String, raw: Offset, snapped: Offset, state: CanvasState, widthIn: Float? = null): OpeningPlacement? {
+        val (wIn, dIn) = PlanSymbols.footprintAt(name, widthIn) ?: return null
         val w = state.inchesToPx(wIn)
         val reach = state.inchesToPx(12f)
         val wall = Layers.onActiveLevel(state).filterIsInstance<DrawingElement.Symbol>()
@@ -300,14 +300,17 @@ object FloorPlan {
         val horizontal = wall.width >= wall.height
         val onWall = wall.inflate(reach).contains(snapped)
         val hinged = PlanSymbols.isDoor(name)
+        // A door style stands as deep as its own footprint (a double door's half-width leaves, a barn door's panel), not its width.
+        val d = state.inchesToPx(dIn)
+        val doorSize = if (widthIn != null || d != w) Size(w, d) else null
         return if (horizontal) {
             val x = if (onWall) snapped.x else raw.x
-            if (hinged) OpeningPlacement(Offset(x, wall.center.y - w / 2f), 0f, null)
+            if (hinged) OpeningPlacement(Offset(x, wall.center.y - d / 2f), 0f, doorSize)
             else OpeningPlacement(Offset(x, wall.center.y), 0f, Size(w, wall.height))
         } else {
             val y = if (onWall) snapped.y else raw.y
             // Turned 90 degrees clockwise the threshold (bottom edge) becomes the left edge.
-            if (hinged) OpeningPlacement(Offset(wall.center.x + w / 2f, y), 90f, null)
+            if (hinged) OpeningPlacement(Offset(wall.center.x + d / 2f, y), 90f, doorSize)
             else OpeningPlacement(Offset(wall.center.x, y), 0f, Size(wall.width, w))
         }
     }
@@ -322,8 +325,8 @@ object FloorPlan {
         val ratio = state.scale.ratio
         return when (placement) {
             is Placement.Symbol -> {
-                val opening = if (placement.category == PlanSymbols.DOORS_WINDOWS) alignOpening(placement.name, point, point, state) else null
-                val footprint = PlanSymbols.footprintInches[placement.name]
+                val opening = if (placement.category == PlanSymbols.DOORS_WINDOWS) alignOpening(placement.name, point, point, state, placement.widthIn) else null
+                val footprint = PlanSymbols.footprintAt(placement.name, placement.widthIn)
                 val size = opening?.size
                     ?: footprint?.let { (w, d) -> Size(state.inchesToPx(w), state.inchesToPx(d)) }
                     ?: Size(100f, 100f)

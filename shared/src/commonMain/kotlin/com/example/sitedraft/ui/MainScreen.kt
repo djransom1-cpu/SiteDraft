@@ -154,6 +154,7 @@ fun MainScreen(
             if (isExpanded && (currentNav == "Symbols")) {
                 SymbolLibraryPanel(
                     activeTrade = state.activeLayer.trade,
+                    state = state,
                     onEvent = { event ->
                         viewModel.onEvent(event)
                         // Picking a symbol closes the library so the canvas is free for the placing tap.
@@ -320,6 +321,7 @@ fun MainScreen(
                         ) {
                             SymbolLibraryPanel(
                                 activeTrade = state.activeLayer.trade,
+                                state = state,
                                 onEvent = { event ->
                                     viewModel.onEvent(event)
                                     if (event is DrawingEvent.SelectSymbol) currentNav = "Drawing"
@@ -425,6 +427,12 @@ fun MainScreen(
                                 .padding(bottom = 150.dp)
                         )
                     }
+
+                    // After a Move drag: "make it exactly ___" (Nov 27).
+                    com.example.sitedraft.ui.components.LastMoveBar(
+                        state = state, onEvent = viewModel::onEvent,
+                        modifier = Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 72.dp)
+                    )
 
                     // Zoom Controls
                     ZoomControls(

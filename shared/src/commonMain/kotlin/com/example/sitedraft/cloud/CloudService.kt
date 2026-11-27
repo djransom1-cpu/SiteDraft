@@ -44,7 +44,8 @@ data class AccessCodeInfo(val code: String, val active: Boolean, val note: Strin
 data class AccessCodeRedemption(val code: String = "", val redeemedAt: Long = 0L)
 
 /** One entry of `users/{uid}/projects` without its JSON (for listing). */
-data class ProjectMeta(val name: String, val updatedAt: Long, val device: String?, val chunkCount: Int)
+/** [deletedAt]: when the project was deleted (kept 30 days in Recently deleted, then removed), 0 when it isn't. */
+data class ProjectMeta(val name: String, val updatedAt: Long, val device: String?, val chunkCount: Int, val deletedAt: Long = 0L)
 
 /** A whole cloud project. */
 /** One open copy of the app, for the connector: which project it has open and when it was last used. */
@@ -87,6 +88,11 @@ interface CloudStore {
     suspend fun readProject(uid: String, name: String): ProjectDoc?
     suspend fun writeProject(uid: String, name: String, json: String, updatedAt: Long, device: String)
     suspend fun deleteProject(uid: String, name: String)
+    /**
+     * Marks the project deleted at [deletedAt] (a tombstone: every device takes it out of its list and never pushes it
+     * back), or restores it with 0. The drawing stays in the cloud until [deleteProject] removes it after 30 days.
+     */
+    suspend fun setProjectDeleted(uid: String, name: String, deletedAt: Long) {}
     /**
      * When the Site Draft connector (Claude, functions-mcp/sitedraft) last changed [name]:
      * `users/{uid}/projectStamps/{name}.updatedAt`, or null when it never has. The open project is

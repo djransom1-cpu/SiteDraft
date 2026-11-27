@@ -134,6 +134,17 @@ async function main() {
   const tall = await call(client, "place_cabinets", { project: "Ransom Kitchen", wall_id: east.id, from: "top", items: ["Refrigerator 36\" French Door", "B24", { code: "W3018" }] });
   assert(tall.placed.length === 3);
 
+  // A tall oven cabinet gets its double oven set into it (Practice Run 1, Nov 24); undone so the fixture stays the same.
+  const oven = await call(client, "place_cabinets", { project: "Ransom Kitchen", wall_id: east.id, from: "bottom", items: ["OV3384"] });
+  assert.deepStrictEqual(oven.placed.map((p) => p.code || p.name), ["OV3384"]);
+  let od = await call(client, "read_drawing", { project: "Ransom Kitchen" });
+  const ov = od.cabinetsAndAppliances.find((c) => c.code === "OV3384");
+  const dbl = od.cabinetsAndAppliances.find((c) => c.name === "Wall Oven Double 33\"");
+  assert(ov && dbl, "oven cabinet and its double oven");
+  assert.strictEqual(ov.fromLeftOrTopInsideCornerIn, dbl.fromLeftOrTopInsideCornerIn);
+  await call(client, "undo_last_change", { project: "Ransom Kitchen" });
+  assert((await call(client, "place_cabinets", { project: "Ransom Kitchen", wall_id: east.id, items: [{ code: "OV33", oven: "triple" }] })).error.includes("oven"));
+
   d = await call(client, "read_drawing", { project: "Ransom Kitchen" });
   const codes = d.cabinetsAndAppliances.map((c) => c.code || c.name);
   for (const c of ["B18", "SB36", "BD18", "W1830", "W2430", "W3018", "Dishwasher"]) assert(codes.includes(c), `has ${c}`);
@@ -305,6 +316,20 @@ async function main() {
   assert.strictEqual(l.closed, true);
   const angled = await call(client, "draw_walls", { project: "L", measured: "inside", start: { x: 0, y: "30'" }, room_side: "right", segments: [{ length: "8'" }, { length: "4'", turn: 45 }] });
   assert(angled.nonSquareWalls);
+
+  // Delete Project (Nov 27): only with confirm, waits in Recently deleted, can't be read or changed, restore brings it back.
+  assert((await call(client, "delete_project", { project: "L", confirm: false })).error.includes("confirm"));
+  const del = await call(client, "delete_project", { project: "L", confirm: true });
+  assert.strictEqual(del.deleted, "L");
+  const listed = await call(client, "list_projects", {});
+  assert(listed.recentlyDeleted.some((p) => p.name === "L" && p.daysLeft === 30));
+  assert(!listed.projects.some((p) => p.name === "L"));
+  assert((await call(client, "read_drawing", { project: "L" })).error.includes("Recently deleted"));
+  assert((await call(client, "add_label", { project: "L", text: "X", x: 0, y: 0 })).error.includes("Recently deleted"));
+  assert((await call(client, "delete_project", { project: "L", confirm: true })).error.includes("already deleted"));
+  assert.strictEqual((await call(client, "restore_project", { project: "L" })).restored, "L");
+  assert.strictEqual((await call(client, "read_drawing", { project: "L" })).walls.length, 8);
+  assert(Array.isArray(await call(client, "list_projects", {})));
 
   // PDF import inline.
   const pdf = fs.readFileSync(path.join(__dirname, "plan.pdf"));

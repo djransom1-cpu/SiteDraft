@@ -529,15 +529,8 @@ fun FloorPlanPanel(
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                PlanSymbols.doorsWindows.forEach { name ->
-                    FilterChip(
-                        selected = (state.pendingPlacement as? Placement.Symbol)?.name == name,
-                        onClick = { onEvent(DrawingEvent.SelectSymbol(name, PlanSymbols.DOORS_WINDOWS)) },
-                        label = { Text(name) }
-                    )
-                }
-            }
+            // The kind, then its size (Dan, Nov 27: the list got too long).
+            SizedPicker(PlanSymbols.doorWindowGroups, PlanSymbols.DOORS_WINDOWS, state, onEvent)
             Spacer(Modifier.height(8.dp))
             Text(
                 "Closets, tubs, cabinets and the rest are in the Symbol Library; they place the same way.",

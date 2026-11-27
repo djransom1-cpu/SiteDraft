@@ -6,6 +6,7 @@ import com.example.sitedraft.ui.canvas.Fill
 import com.example.sitedraft.ui.canvas.FillPattern
 import com.example.sitedraft.ui.canvas.HatchGeometry
 import com.example.sitedraft.ui.canvas.herringbonePlanks
+import com.example.sitedraft.ui.canvas.plankRows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -49,5 +50,26 @@ class TileSizeTest {
         val inside = centres.count { box.deflate(15f).contains(it) }
         val area = box.deflate(15f).width * box.deflate(15f).height
         assertTrue("inside $inside", abs(inside * 36f - area) / area < 0.25f)
+    }
+
+    @Test
+    fun `hardwood joints are random and never line up with the row before`() {
+        // 2 1/4" boards over a 20' x 12' room, inches as px: average length 6 widths.
+        val w = 2.25f
+        val rows = plankRows(Rect(0f, 0f, 240f, 144f), w)
+        assertTrue(rows.size > 60)
+        val stagger = maxOf(w * 2f, w * 6f * 0.3f)
+        var close = 0
+        for (i in 1 until rows.size) for (x in rows[i].second) if (rows[i - 1].second.any { abs(it - x) < stagger - 0.01f }) close++
+        val joints = rows.sumOf { it.second.size }
+        assertTrue("$close of $joints joints too close to the row before", close * 50 < joints)
+        // Not stair-stepped: the first joint of each row doesn't move by the same amount row to row.
+        val steps = rows.zipWithNext().mapNotNull { (a, b) -> if (a.second.isEmpty() || b.second.isEmpty()) null else ((b.second[0] - a.second[0]) * 100).toInt() }
+        assertTrue(steps.toSet().size > steps.size / 2)
+        // Boards are random lengths, not one size.
+        val lengths = rows.flatMap { it.second.zipWithNext { a, b -> ((b - a) * 10).toInt() } }.toSet()
+        assertTrue(lengths.size > 20)
+        // Same floor every time it's drawn.
+        assertEquals(rows, plankRows(Rect(0f, 0f, 240f, 144f), w))
     }
 }

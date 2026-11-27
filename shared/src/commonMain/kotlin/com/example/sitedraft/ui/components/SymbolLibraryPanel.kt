@@ -46,6 +46,8 @@ fun SymbolLibraryPanel(
     modifier: Modifier = Modifier,
     /** The active layer's trade: its tools come first, opened (foundation parts on Foundation...). */
     activeTrade: LayerTrade? = null,
+    /** The drawing, for the size pickers (Nov 27); without it doors and windows list every size. */
+    state: com.example.sitedraft.ui.canvas.CanvasState? = null,
     onClose: () -> Unit
 ) {
     Surface(
@@ -106,11 +108,15 @@ fun SymbolLibraryPanel(
             SymbolCategory(PlanSymbols.STAIRS, Icons.Default.Stairs, com.example.sitedraft.ui.canvas.Stairs.library, onEvent)
             // Guard rails (Nov 24): stretch along a loft, landing or deck edge.
             SymbolCategory(PlanSymbols.RAILINGS, Icons.Default.Stairs, com.example.sitedraft.ui.canvas.Guards.library, onEvent)
-            SymbolCategory(PlanSymbols.CABINETS, Icons.Default.Kitchen, PlanSymbols.cabinets, onEvent)
+            // Cabinets: the kind, then its size (Dan, Nov 27).
+            if (state != null) SizedCategory(PlanSymbols.CABINETS, Icons.Default.Kitchen, PlanSymbols.cabinetGroups, state, onEvent)
+            else SymbolCategory(PlanSymbols.CABINETS, Icons.Default.Kitchen, PlanSymbols.cabinets, onEvent)
             SymbolCategory(PlanSymbols.OUTDOOR, Icons.Default.OutdoorGrill, PlanSymbols.outdoor, onEvent)
             SymbolCategory(PlanSymbols.CLOSET, Icons.Default.Checkroom, PlanSymbols.closet, onEvent)
             SymbolCategory(PlanSymbols.FURNITURE, Icons.Default.Weekend, PlanSymbols.furniture, onEvent)
-            SymbolCategory(PlanSymbols.DOORS_WINDOWS, Icons.Default.DoorFront, PlanSymbols.doorsWindows, onEvent)
+            // Doors and windows: the kind, then its size (Dan, Nov 27).
+            if (state != null) SizedCategory(PlanSymbols.DOORS_WINDOWS, Icons.Default.DoorFront, PlanSymbols.doorWindowGroups, state, onEvent)
+            else SymbolCategory(PlanSymbols.DOORS_WINDOWS, Icons.Default.DoorFront, PlanSymbols.doorsWindows, onEvent)
             SymbolCategory(PlanSymbols.WALLS, Icons.Default.Fence, PlanSymbols.walls, onEvent)
             if (!onFoundation) SymbolCategory(Structure.FOUNDATION, Icons.Default.Foundation, Structure.foundationLibrary, onEvent)
             if (!onFraming) SymbolCategory(Structure.FRAMING, Icons.Default.ViewWeek, Structure.framingLibrary, onEvent)
@@ -121,6 +127,25 @@ fun SymbolLibraryPanel(
             SymbolCategory("Welding", Icons.Default.Whatshot, listOf("Fillet Weld", "V-Groove Weld", "Bevel Weld", "Plug/Slot Weld", "Spot Weld", "Weld All Around", "Field Weld"), onEvent)
             SymbolCategory("Site Layout", Icons.Default.Park, listOf("Tree", "Bush", "Light Pole"), onEvent)
         }
+    }
+}
+
+/** A library heading that opens to a [SizedPicker]: the kind first, then its size (Nov 27). */
+@Composable
+private fun SizedCategory(name: String, icon: ImageVector, groups: List<PlanSymbols.SizedGroup>, state: com.example.sitedraft.ui.canvas.CanvasState, onEvent: (DrawingEvent) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(text = name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = null)
+        }
+        if (expanded) Column(modifier = Modifier.padding(8.dp)) { SizedPicker(groups, name, state, onEvent) }
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f))
     }
 }
 

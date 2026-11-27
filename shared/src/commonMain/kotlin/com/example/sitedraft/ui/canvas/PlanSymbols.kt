@@ -71,7 +71,7 @@ object PlanSymbols {
     val cabinets = listOf(
         "Base 12\"", "Base 18\"", "Base 24\"", "Base 30\"", "Base 36\"", "Corner Base 36\"",
         "Upper 12\"", "Upper 18\"", "Upper 24\"", "Upper 30\"", "Upper 36\"", UPPER_CORNER,
-        "Pantry 24\"", "Island 3'x6'",
+        "Pantry 24\"", OVEN_CABINET, "Island 3'x6'",
         // Bathroom vanities: 21" deep, top at the comfort height (36") unless changed.
         "Vanity 18\"", "Vanity 24\"", "Vanity 30\"", "Vanity 36\"", "Vanity 48\"",
         "Vanity 60\" Double", "Vanity 72\" Double", "Vanity Drawers 12\"", "Vanity Drawers 18\"",
@@ -124,6 +124,62 @@ object PlanSymbols {
         "Opening 2'-6\"", "Opening 3'-0\"", "Opening 4'-0\"", "Opening 6'-0\"",
         "Window 3'-0\"", "Window 4'-0\"", "Window 6'-0\""
     )
+    /**
+     * A kind of thing picked first, then its size (Dan, Nov 27: the doors list got too long). [sizes] are the library
+     * names in order; [label] what the button says; any typed width ("Other") uses the nearest size and is set to it.
+     */
+    data class SizedGroup(val label: String, val sizes: List<String>)
+
+    /** The size part of a library name: "Door 2'-6\" Bifold" -> 2'-6". */
+    fun sizeLabel(name: String): String = Regex("""\d+'-\d+(?: \d+/\d+)?"|\d+(?:\.\d+)?"""").find(name)?.value ?: name
+
+    /** Doors and windows by kind (Dan, Nov 27). */
+    val doorWindowGroups: List<SizedGroup> by lazy {
+        fun pick(test: (String) -> Boolean) = doorsWindows.filter(test)
+        listOf(
+            SizedGroup("Door", pick { isDoor(it) && !isBifold(it) && !isDoubleDoor(it) && !isBarnDoor(it) }),
+            SizedGroup("Bifold", pick { isBifold(it) }),
+            SizedGroup("Double door", pick { isDoubleDoor(it) }),
+            SizedGroup("Barn door", pick { isBarnDoor(it) && !isBiParting(it) }),
+            SizedGroup("Barn door, bi-parting", pick { isBiParting(it) }),
+            SizedGroup("Pocket door", pick { isPocketDoor(it) }),
+            SizedGroup("Sliding door", pick { isSlidingDoor(it) }),
+            SizedGroup("Cased opening", pick { isOpening(it) }),
+            SizedGroup("Window", pick { isWindow(it) }),
+        ).filter { it.sizes.isNotEmpty() }
+    }
+
+    /** Cabinets by kind (Dan, Nov 27: the size picker for cabinets too); Other sets any width. */
+    val cabinetGroups: List<SizedGroup> by lazy {
+        fun pick(test: (String) -> Boolean) = cabinets.filter(test)
+        listOf(
+            SizedGroup("Base", pick { it.startsWith("Base") }),
+            SizedGroup("Corner base", pick { it.startsWith("Corner Base") }),
+            SizedGroup("Wall (upper)", pick { it.startsWith("Upper") && it != UPPER_CORNER && !isFiller(it) }),
+            SizedGroup("Wall corner", listOf(UPPER_CORNER)),
+            SizedGroup("Pantry", pick { it.startsWith("Pantry") }),
+            SizedGroup("Oven cabinet", pick { isOvenCabinet(it) }),
+            SizedGroup("Island", pick { it.startsWith("Island") }),
+            SizedGroup("Vanity", pick { isVanity(it) && !isVanityDrawers(it) }),
+            SizedGroup("Vanity drawers", pick { isVanityDrawers(it) }),
+            SizedGroup("Linen tower", pick { isLinenTower(it) }),
+            SizedGroup("Filler", pick { isFiller(it) && !it.startsWith("Upper") }),
+            SizedGroup("Wall filler", pick { isFiller(it) && it.startsWith("Upper") }),
+        ).filter { it.sizes.isNotEmpty() }
+    }
+
+    /**
+     * A library symbol's plan footprint (width, depth) in inches at a typed width (Nov 27): stock size unchanged; a hinged
+     * door's swing grows with its width (a double door's with each leaf), a bifold's folded panels too; anything set in the
+     * wall (windows, sliders, pockets, openings, barn doors) keeps its depth.
+     */
+    fun footprintAt(name: String, widthIn: Float?): Pair<Float, Float>? {
+        val fp = footprintInches[name] ?: return null
+        if (widthIn == null || widthIn <= 0f) return fp
+        val scaled = isDoor(name) && !isBarnDoor(name)
+        return widthIn to (if (scaled) fp.second * widthIn / fp.first else fp.second)
+    }
+
     val walls = listOf(
         "2x4 Wall", "2x6 Wall", "2x4 Framing", "2x6 Framing", "12\" Block Wall", "10\" Concrete Wall", "8\" Block Wall", "8\" Concrete Wall"
     )
@@ -207,6 +263,7 @@ object PlanSymbols {
         "Upper 36\"" to Pair(36f, 12f),
         UPPER_CORNER to Pair(24f, 24f),
         "Pantry 24\"" to Pair(24f, 24f),
+        OVEN_CABINET to Pair(33f, 24f),
         "Island 3'x6'" to Pair(72f, 36f),
         "Vanity 18\"" to Pair(18f, VANITY_DEPTH_IN),
         "Vanity 24\"" to Pair(24f, VANITY_DEPTH_IN),
@@ -411,6 +468,7 @@ object PlanSymbols {
                 else -> "B$w"
             }
             name.startsWith("Pantry") -> "P$w${codeInches(PANTRY_HEIGHT_IN)}"
+            isOvenCabinet(name) -> "OV$w${codeInches(PANTRY_HEIGHT_IN)}"
             isLinenTower(name) -> "LT$w"
             isVanityDrawers(name) -> "VD$w"
             isVanity(name) -> "V$w"
@@ -419,10 +477,49 @@ object PlanSymbols {
         }
     }
 
+    /**
+     * A cabinet's name from what it is and its real size (Dan, Nov 27: a 36" pantry was listed as "Pantry 24"", a sink base as
+     * "Base 36""), worked out from its code: "Sink Base 36"", "Drawer Base 18"", "Wall 30" x 42"", "Pantry 36" x 84"",
+     * "Base Filler 2-1/2"". Null for anything that isn't a cabinet with a code.
+     */
+    fun cabinetName(symbol: DrawingElement.Symbol, state: CanvasState): String? {
+        val code = cabinetLabel(symbol, state) ?: return null
+        val prefix = code.takeWhile { it.isLetter() }
+        val w = codeInches(symbol.size.width / state.inchesToPx(1f))
+        val upperH = codeInches(upperHeightOf(symbol) ?: DEFAULT_UPPER_HEIGHT_IN)
+        return when (prefix) {
+            "B" -> "Base $w\""
+            "SB" -> "Sink Base $w\""
+            "BD" -> "Drawer Base $w\""
+            "LS" -> "Corner Base (lazy susan) $w\""
+            "W" -> "Wall $w\" x $upperH\""
+            "WDC" -> "Wall Corner (diagonal) $w\" x $upperH\""
+            "P" -> "Pantry $w\" x ${codeInches(PANTRY_HEIGHT_IN)}\""
+            "OV" -> "Oven Cabinet $w\" x ${codeInches(PANTRY_HEIGHT_IN)}\""
+            "LT" -> "Linen Tower $w\""
+            "VD" -> "Vanity Drawers $w\""
+            "V" -> "Vanity $w\""
+            "BF" -> "Base Filler $w\""
+            "WF" -> "Wall Filler $w\""
+            "ISL" -> symbol.symbolName
+            else -> null
+        }
+    }
+
     /** Bathroom vanities, including the drawer bases that sit in a vanity run (not the linen tower). */
     fun isVanity(name: String) = name.startsWith("Vanity")
     fun isVanityDrawers(name: String) = name.startsWith("Vanity Drawers")
     fun isLinenTower(name: String) = name == LINEN_TOWER
+
+    /**
+     * Tall oven cabinet (Practice Run 1, Nov 24: a double oven placed in a run had no cabinet around it). 84" tall like a
+     * pantry, code OV3384; the wall oven sits in it as its own appliance, and the elevation draws the oven in the tower.
+     */
+    const val OVEN_CABINET = "Oven Cabinet 33\""
+    fun isOvenCabinet(name: String) = name.startsWith("Oven Cabinet")
+
+    /** Cabinets that stand floor to the uppers' tops: pantry, oven cabinet, linen tower. */
+    fun isTallCabinet(name: String) = name.startsWith("Pantry") || isOvenCabinet(name) || isLinenTower(name)
 
     /**
      * Vanity settings in the symbol's properties. [PROP_TOP_IN]: height to the top of the
@@ -1385,6 +1482,11 @@ private fun blankShape(element: DrawingElement.Symbol, w: Float, h: Float, inch:
     val name = element.symbolName
     fun oval(r: androidx.compose.ui.geometry.Rect) = Path().apply { addOval(r) }
     return when {
+        // Lazy-susan corner base: its front is the 45-degree face, so a floor hatch runs up to it (card lDqpObbK).
+        element.category == PlanSymbols.CABINETS && name.startsWith("Corner Base") -> {
+            val d = inch * 12f
+            Path().apply { moveTo(-hw, -hh); lineTo(hw, -hh); lineTo(hw, hh - d); lineTo(hw - d, hh); lineTo(-hw, hh); close() }
+        }
         name == "Toilet" -> {
             val tankD = min(h * 0.3f, inch * 8f)
             val tankW = min(w, inch * 20f)

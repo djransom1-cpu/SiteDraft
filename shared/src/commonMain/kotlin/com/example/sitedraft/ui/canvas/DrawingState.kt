@@ -441,6 +441,14 @@ data class CanvasState(
     val lastSnapPoint: Offset? = null,
     @Serializable(with = OffsetSerializer::class)
     val preciseMoveFromPoint: Offset? = null,
+    /**
+     * After a Move drag (Dan, Nov 27): the direction it went, squared to the page (east, west, north or south), so the
+     * screen can offer "make that exactly ___". Null when there's nothing to offer. Session only.
+     */
+    @kotlinx.serialization.Transient
+    val lastMoveDir: Offset? = null,
+    @kotlinx.serialization.Transient
+    val lastMoveDistanceIn: Float = 0f,
     // True once the two points of a new dimension have been picked (currentDrawingElement holds
     // a Dimension with a real start/end) and the tool is now waiting for a third
     // touch to place the dimension line's offset - see DrawingTool.DIMENSION handling.

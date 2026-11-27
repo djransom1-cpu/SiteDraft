@@ -84,7 +84,9 @@ object DerivedLayers {
         // Stairs open the floor framing at their top (Stairs.floorOpening, Nov 24).
         // Section and detail markers go where their drawings belong once the drawings are in the model (CalloutsAuto, Nov 24).
         val desired = if (!state.building.autoLayers) (upper + Guards.forStairs(state)).map { stamped(it) } else {
-            val parts = planParts(state)
+            // The upper floors' walls as they'll be, so their joists are framed in the same pass (Nov 27).
+            val framedOn = state.copy(elements = state.elements.filter { !it.id.startsWith(GEN_PREFIX + "up") } + upper)
+            val parts = planParts(framedOn)
             (parts + Stairs.floorOpenings(state) + Guards.forStairs(state) + CalloutsAuto.forPlan(state, parts) + upper).map { stamped(it) }
         }
         val current = state.elements.filter { isGenerated(it) }
@@ -341,6 +343,9 @@ object DerivedLayers {
             }
         }
 
+        // ---- The floors above: their joists (Dan, Nov 27: "2nd floor structural isn't putting joists in") ----
+        out += upperFloorFraming(state, color)
+
         // ---- First-floor framing ----
         if (structuralLayer == null) return out
         val joistsUpDown = footprint.width >= footprint.height // joists span the short way
@@ -520,6 +525,129 @@ object DerivedLayers {
      * Ladders of blocking between each rim and the joist next to it, on the bay's edges that run with the joists
      * ([skipEdge] -1 or 1: not that edge). Blocks at 16" o.c. to land under the studs.
      */
+    /**
+     * Each upper floor's joists (Nov 27): one joist bay per rectangle of that floor's outline (its outside walls, the ones
+     * carried up from the floor below included), so an L-shaped floor or one over a one-story wing gets joists only where
+     * the floor is. Joists run the short way of the whole floor at 16" o.c., at the building's joist size. No beams are
+     * drawn: an upper floor bears on the walls below, picked by hand for now.
+     */
+    private fun upperFloorFraming(state: CanvasState, color: androidx.compose.ui.graphics.Color): List<DrawingElement.Symbol> {
+        val s = state.building
+        if (s.upperFloors.isEmpty()) return emptyList()
+        val inch = state.inchesToPx(1f)
+        if (inch <= 0f) return emptyList()
+        val layers = state.effectiveLayers.map { it.id }.toSet()
+        val of = Layers.resolver(state)
+        val out = mutableListOf<DrawingElement.Symbol>()
+        for (n in 2..(s.upperFloors.size + 1)) {
+            val plan = "${Building.floorId(n)}-plan"
+            val framing = "${Building.floorId(n)}-structural"
+            if (plan !in layers || framing !in layers) continue
+            val ws = state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
+                it.category == PlanSymbols.WALLS && isSquare(it.rotation) && of(it).id == plan && Remodel.status(it) != WallStatus.DEMO
+            }
+            // The outside walls: carried up from below, or drawn as 2x6 exterior walls on this floor.
+            val outside = ws.filter { it.id.startsWith(GEN_PREFIX + "up") || it.symbolName == FloorPlan.EXTERIOR_WALL }.map { wallRect(it) }
+            if (outside.size < 3) continue
+            val floor = s.upperFloors[n - 2]
+            // The walls of the floor below, where the joists can bear (Dan, Nov 27: second-floor beams).
+            val below = if (n == 2) Building.FLOOR1_PLAN else "${Building.floorId(n - 1)}-plan"
+            val belowWalls = state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
+                it.category == PlanSymbols.WALLS && isSquare(it.rotation) && of(it).id == below && Remodel.status(it) != WallStatus.DEMO
+            }.map { wallRect(it) }
+            for ((k, r) in floorRects(outside, inch).withIndex()) {
+                val all = outside.reduce { a, b -> Rect(minOf(a.left, b.left), minOf(a.top, b.top), maxOf(a.right, b.right), maxOf(a.bottom, b.bottom)) }
+                val joistsUpDown = all.width >= all.height
+                val beams = upperBeams(r, joistsUpDown, belowWalls, s.structure.maxJoistSpanFt, inch)
+                out += DrawingElement.Symbol(
+                    id = GEN_PREFIX + "bay:floor$n:$k", symbolName = Structure.JOIST_BAY, category = Structure.FRAMING,
+                    center = r.center, size = r.size, color = color, layerId = framing,
+                    properties = mapOf(
+                        Structure.SPACING to 16f,
+                        Structure.JOIST to Structure.joistCodeFor(floor.joistDepthIn ?: s.joistDepthIn).toFloat(),
+                        Structure.DIRECTION to if (joistsUpDown) 1f else 0f,
+                        Structure.BEAMS to beams.toFloat(),
+                        Structure.BEAM_SECTION to -1f,
+                        "widthInches" to r.width / inch, "depthInches" to r.height / inch
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    /**
+     * Beams an upper floor's joist bay [r] needs (Dan, Nov 27): its joists span [r] the short way of the floor; walls of the
+     * floor below running across the joists, under most of the bay's width and not at its edges, carry them. When the
+     * longest stretch between those supports is within the joist span limit ([maxSpanFt], Dan's 15'), none; otherwise as
+     * few evenly spaced beams as bring the whole span within it, as on the first floor. Not sized here.
+     */
+    internal fun upperBeams(r: Rect, joistsUpDown: Boolean, belowWalls: List<Rect>, maxSpanFt: Float, inch: Float): Int {
+        val (a1, a2) = if (joistsUpDown) r.top to r.bottom else r.left to r.right // along the joists
+        val (c1, c2) = if (joistsUpDown) r.left to r.right else r.top to r.bottom // across them
+        val supports = belowWalls.mapNotNull { w ->
+            val across = if (joistsUpDown) w.width >= w.height else w.height > w.width // a wall running across the joists
+            if (!across) return@mapNotNull null
+            val at = if (joistsUpDown) w.center.y else w.center.x
+            if (at <= a1 + 12f * inch || at >= a2 - 12f * inch) return@mapNotNull null
+            val w1 = if (joistsUpDown) w.left else w.top
+            val w2 = if (joistsUpDown) w.right else w.bottom
+            val cover = (minOf(w2, c2) - maxOf(w1, c1)).coerceAtLeast(0f)
+            if (cover < 0.6f * (c2 - c1)) null else at
+        }.sorted()
+        val stops = listOf(a1) + supports + listOf(a2)
+        val longest = stops.zipWithNext { p, q -> q - p }.maxOrNull() ?: 0f
+        if (longest / inch <= maxSpanFt * 12f + 0.5f) return 0
+        return StructuralDesign.beamCount((a2 - a1) / inch, maxSpanFt)
+    }
+
+    /**
+     * A floor's outline from its outside walls, as rectangles: the walls' edges cut the plan into cells (edges within 2" of
+     * each other taken as one); a cell is in the floor when it's under a wall or walls close it in on all four sides; the
+     * cells are joined into strips across, then strips of the same width down. Rectangles under 2' are dropped.
+     */
+    private fun floorRects(walls: List<Rect>, inch: Float): List<Rect> {
+        fun cluster(vs: List<Float>): List<Float> {
+            val sorted = vs.sorted()
+            val out = mutableListOf<MutableList<Float>>()
+            for (v in sorted) if (out.isNotEmpty() && v - out.last().last() <= 2f * inch) out.last() += v else out += mutableListOf(v)
+            return out.map { g -> g.average().toFloat() }
+        }
+        val xs = cluster(walls.flatMap { listOf(it.left, it.right) })
+        val ys = cluster(walls.flatMap { listOf(it.top, it.bottom) })
+        if (xs.size < 2 || ys.size < 2) return emptyList()
+        fun inside(x: Float, y: Float): Boolean {
+            if (walls.any { it.contains(Offset(x, y)) }) return true
+            return walls.any { it.left > x && it.top <= y && it.bottom >= y } && walls.any { it.right < x && it.top <= y && it.bottom >= y } &&
+                walls.any { it.top > y && it.left <= x && it.right >= x } && walls.any { it.bottom < y && it.left <= x && it.right >= x }
+        }
+        // Strips across each band of cells.
+        data class Strip(val x1: Float, val x2: Float, var y1: Float, var y2: Float)
+        val done = mutableListOf<Strip>()
+        var open = mutableListOf<Strip>()
+        for (j in 0 until ys.size - 1) {
+            val y1 = ys[j]; val y2 = ys[j + 1]
+            val runs = mutableListOf<Pair<Float, Float>>()
+            var start: Float? = null
+            for (i in 0 until xs.size - 1) {
+                val inCell = inside((xs[i] + xs[i + 1]) / 2f, (y1 + y2) / 2f)
+                if (inCell && start == null) start = xs[i]
+                if (!inCell && start != null) { runs += start to xs[i]; start = null }
+            }
+            if (start != null) runs += start to xs.last()
+            val next = mutableListOf<Strip>()
+            for ((a, b) in runs) {
+                val cont = open.firstOrNull { kotlin.math.abs(it.x1 - a) < 0.5f && kotlin.math.abs(it.x2 - b) < 0.5f && kotlin.math.abs(it.y2 - y1) < 0.5f }
+                if (cont != null) { cont.y2 = y2; next += cont; open.remove(cont) } else next += Strip(a, b, y1, y2)
+            }
+            done += open
+            open = next
+        }
+        done += open
+        val min = 24f * inch
+        return done.map { Rect(it.x1, it.y1, it.x2, it.y2) }.filter { it.width >= min && it.height >= min }
+    }
+
     private fun rimLadders(key: String, center: Offset, layout: Structure.BayLayout, inch: Float, layer: String, color: androidx.compose.ui.graphics.Color, skipEdge: Int?): List<DrawingElement.Symbol> {
         if (layout.joists.isEmpty()) return emptyList()
         val out = mutableListOf<DrawingElement.Symbol>()

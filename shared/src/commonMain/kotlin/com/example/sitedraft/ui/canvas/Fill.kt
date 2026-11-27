@@ -199,21 +199,54 @@ private fun DrawScope.hexagon(b: Rect, color: Color, spacing: Float, lw: Float) 
     }
 }
 
-// Wood flooring: boards `spacing` wide, six times as long, end joints staggered per row.
+// Wood flooring: boards `spacing` wide, random lengths averaging six widths (or [length]), joints laid
+// like a brick bond with nothing lined up (plankRows).
 private fun DrawScope.planks(b: Rect, color: Color, spacing: Float, lw: Float, length: Float = 0f) {
-    val len = if (length > 0f) length else spacing * 6f
+    for ((y, joints) in plankRows(b, spacing, length)) {
+        drawLine(color, Offset(b.left, y), Offset(b.right, y), lw)
+        for (x in joints) drawLine(color, Offset(x, y), Offset(x, minOf(y + spacing, b.bottom)), lw)
+    }
+}
+
+/**
+ * Plank rows over [b]: each row's top y and the x of its end joints. Dan, Nov 24: the old pattern moved every row
+ * the same 2 widths, so the joints stair-stepped; hardwood goes down in random lengths with the joints staggered
+ * like brick and nothing lined up. Boards run 1/2 to 1 1/2 times the average length ([length], or 6 widths); a
+ * joint stays at least 2 widths (or 30% of the average) from the joints in the row before, and a width from the row
+ * before that. The lengths come from the row and board number, so the floor looks the same every time it's drawn.
+ */
+internal fun plankRows(b: Rect, spacing: Float, length: Float = 0f): List<Pair<Float, List<Float>>> {
+    val avg = if (length > 0f) length else spacing * 6f
+    val stagger = maxOf(spacing * 2f, avg * 0.3f)
+    fun rand(row: Int, k: Int): Float {
+        var h = row * 73856093 xor k * 19349663 xor 0x5bd1e995
+        h = h xor (h ushr 13); h *= 0x5bd1e995; h = h xor (h ushr 15)
+        return (h and 0xffffff) / 16777216f
+    }
+    val rows = mutableListOf<Pair<Float, List<Float>>>()
     var y = b.top
     var row = 0
     while (y <= b.bottom) {
-        drawLine(color, Offset(b.left, y), Offset(b.right, y), lw)
-        var x = b.left + ((row * 2f * spacing) % len)
+        val prev = rows.lastOrNull()?.second ?: emptyList()
+        val prev2 = if (rows.size >= 2) rows[rows.size - 2].second else emptyList()
+        fun clash(x: Float) = prev.firstOrNull { kotlin.math.abs(it - x) < stagger }
+            ?: prev2.firstOrNull { kotlin.math.abs(it - x) < spacing }
+        val joints = mutableListOf<Float>()
+        var x = b.left - rand(row, 0) * avg
+        var k = 1
         while (x <= b.right) {
-            drawLine(color, Offset(x, y), Offset(x, minOf(y + spacing, b.bottom)), lw)
-            x += len
+            var next = x + avg * (0.5f + rand(row, k))
+            // Slide the joint along until it clears the rows below it (a few tries, then let it be).
+            repeat(4) { val c = clash(next) ?: return@repeat; next = maxOf(next, c + stagger) }
+            if (next > b.left && next <= b.right) joints += next
+            x = next
+            k++
         }
+        rows += y to joints
         y += spacing
         row++
     }
+    return rows
 }
 
 // Fish-scale shingles: rows of semicircles, each row offset by half a scale.

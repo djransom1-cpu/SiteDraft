@@ -270,7 +270,7 @@ object Elevation {
     fun endPanelSpan(s: DrawingElement.Symbol, spec: ElevationSpec): Pair<Float, Float> = when {
         PlanSymbols.isUpperCabinet(s) -> upperSpan(s, spec)
         PlanSymbols.isVanity(s.symbolName) -> 0f to PlanSymbols.vanityTop(s)
-        s.symbolName.startsWith("Pantry") -> 0f to PlanSymbols.PANTRY_HEIGHT_IN
+        s.symbolName.startsWith("Pantry") || PlanSymbols.isOvenCabinet(s.symbolName) -> 0f to PlanSymbols.PANTRY_HEIGHT_IN
         Appliances.isFridge(s.symbolName) -> 0f to 70f
         Appliances.isWallOven(s.symbolName) -> 0f to PlanSymbols.PANTRY_HEIGHT_IN
         else -> 0f to spec.counterHeightIn
@@ -940,6 +940,21 @@ object Elevation {
                         rect(from, to, bottom, top)
                         doors(from, to, bottom, top, PlanSymbols.doorCount(item.symbol, w / inch), knobsLow = true)
                         upperRuns += floatArrayOf(from, to, bottom, top)
+                    }
+                    PlanSymbols.isOvenCabinet(name) -> {
+                        // The wall oven set into it draws the toe kick, drawers, oven(s) and doors above (Appliances);
+                        // with no oven in it yet, an empty oven opening between the drawers and the doors.
+                        val top = spec.upperBottomIn + spec.upperHeightIn
+                        upperRuns += floatArrayOf(from, to, 0f, top)
+                        val hasOven = items.any { o -> o !== item && Appliances.isWallOven(o.symbol.symbolName) && o.from < to - inch && o.to > from + inch }
+                        if (!hasOven) {
+                            rect(from, to, 0f, top)
+                            line(from, 4f, to, 4f)
+                            drawers(from, to, 4f, 18f, 1)
+                            rect(from + 1.5f * inch, to - 1.5f * inch, 19f, 74f, light)
+                            line(from + 1.5f * inch, 46.5f, to - 1.5f * inch, 46.5f, light)
+                            if (top - 75f > 6f) doors(from, to, 75f, top - 1f, PlanSymbols.doorCount(item.symbol, w / inch))
+                        }
                     }
                     name.startsWith("Pantry") -> {
                         val top = spec.upperBottomIn + spec.upperHeightIn

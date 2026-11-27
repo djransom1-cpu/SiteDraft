@@ -39,7 +39,7 @@ async function listProjects(db, uid) {
   const snap = await projects(db, uid).get();
   return snap.docs.map((d) => {
     const x = d.data();
-    return { name: x.name || d.id, updatedAt: x.updatedAt || 0, device: x.device || null, sizeChars: null, chunkCount: x.chunkCount || 1 };
+    return { name: x.name || d.id, updatedAt: x.updatedAt || 0, device: x.device || null, sizeChars: null, chunkCount: x.chunkCount || 1, deletedAt: Number(x.deletedAt || 0) };
   }).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
@@ -67,9 +67,18 @@ function writeChunked(w, ref, fields, json, oldCount = 1) {
   for (let i = chunks.length; i < oldCount; i++) w.delete(ref.collection("chunks").doc(String(i)));
 }
 
+/** Deleted projects wait 30 days in the app's Recently deleted (ProjectSync.KEEP_DELETED_MS). */
+const KEEP_DELETED_MS = 30 * 86400000;
+
+function deletedError(name, deletedAt) {
+  const left = Math.max(0, Math.ceil((deletedAt + KEEP_DELETED_MS - Date.now()) / 86400000));
+  return new M.UserError(`"${name}" was deleted on ${new Date(deletedAt).toDateString()} and is in Recently deleted for ${left} more day(s); restore_project brings it back.`);
+}
+
 async function readProject(db, uid, name) {
   const got = await readChunked(projects(db, uid).doc(encodeDocId(name)), (r) => r.get());
   if (!got) return null;
+  if (Number(got.data.deletedAt || 0) > 0) throw deletedError(name, Number(got.data.deletedAt));
   return { name: got.data.name || name, updatedAt: got.data.updatedAt || 0, device: got.data.device || null, state: M.parseProject(got.json) };
 }
 
@@ -81,6 +90,7 @@ async function changeProject(db, uid, name, tool, change, { create = null, mustB
   const ref = projects(db, uid).doc(encodeDocId(name));
   return db.runTransaction(async (tx) => {
     const got = await readChunked(ref, (r) => tx.get(r));
+    if (got && Number(got.data.deletedAt || 0) > 0) throw deletedError(name, Number(got.data.deletedAt));
     if (got && mustBeNew) throw new M.UserError(`There is already a project named "${name}".`);
     if (!got && !create) throw new M.UserError(`No project named "${name}". Use list_projects to see the names.`);
     const before = got ? M.parseProject(got.json) : create;
@@ -99,6 +109,20 @@ async function changeProject(db, uid, name, tool, change, { create = null, mustB
     tx.set(stamps(db, uid).doc(encodeDocId(name)), { name, updatedAt, device: DEVICE });
     return { state, result, updatedAt };
   }).then(async (out) => { await pruneHistory(db, uid, name).catch(() => {}); return out; });
+}
+
+/**
+ * Marks project [name] deleted (deletedAt > 0) or restores it (0), as the app's ProjectSync.deleteProject does: every
+ * copy of the app takes it out of its list and never pushes it back; after 30 days the app removes it from the cloud.
+ * The drawing itself is not touched. Returns the project's metadata, or null when there is no such project.
+ */
+async function setDeleted(db, uid, name, deletedAt) {
+  const ref = projects(db, uid).doc(encodeDocId(name));
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+  await ref.set({ deletedAt }, { merge: true });
+  const d = snap.data();
+  return { name: d.name || name, updatedAt: d.updatedAt || 0, wasDeletedAt: Number(d.deletedAt || 0) };
 }
 
 async function historyFor(db, uid, name) {
@@ -135,4 +159,4 @@ async function undoLast(db, uid, name) {
   return out;
 }
 
-module.exports = { encodeDocId, split, listProjects, readProject, changeProject, undoLast, historyFor, CHUNK_CHARS, DEVICE };
+module.exports = { encodeDocId, split, listProjects, readProject, setDeleted, KEEP_DELETED_MS, changeProject, undoLast, historyFor, CHUNK_CHARS, DEVICE };

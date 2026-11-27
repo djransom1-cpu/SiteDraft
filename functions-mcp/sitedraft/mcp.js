@@ -83,10 +83,41 @@ function buildServer(ctx) {
     json({ email: ctx.email, uid: ctx.uid, coordinates: COORDS, lengths: "12'6\", 12' 6 1/2\", 150\" (bare numbers are inches), 3.2m",
       wallsDefault: "2x4 Wall (4 1/2\" with drywall both sides)" }));
 
-  reg("list_projects", "Site Draft projects in the cloud, newest first.", {}, async () => {
+  reg("list_projects", "Site Draft projects in the cloud, newest first. Deleted ones are listed apart, under recentlyDeleted.", {}, async () => {
     const list = await S.listProjects(ctx.db, ctx.uid);
-    return json(list.map((p) => ({ name: p.name, updated: p.updatedAt ? new Date(p.updatedAt).toISOString() : null, lastSavedBy: p.device })));
+    const now = Date.now();
+    const live = list.filter((p) => !(p.deletedAt > 0));
+    const gone = list.filter((p) => p.deletedAt > 0 && now - p.deletedAt < S.KEEP_DELETED_MS);
+    const rows = live.map((p) => ({ name: p.name, updated: p.updatedAt ? new Date(p.updatedAt).toISOString() : null, lastSavedBy: p.device }));
+    if (!gone.length) return json(rows);
+    return json({ projects: rows, recentlyDeleted: gone.map((p) => ({ name: p.name, deleted: new Date(p.deletedAt).toISOString(),
+      daysLeft: Math.max(0, Math.ceil((p.deletedAt + S.KEEP_DELETED_MS - now) / 86400000)) })) });
   });
+
+  reg("delete_project",
+    "Deletes a whole project (job), as the app's Delete does: it leaves the project list on every device and waits 30 days in Recently deleted, " +
+    "where restore_project (or Restore in the app) brings it back; after that it's gone. Only when Dan has asked to delete that job: " +
+    "say which project and that it will be in Recently deleted for 30 days, get his yes, then call with confirm: true. " +
+    "Refused while a copy of the app has the project open.",
+    { project: Project, confirm: z.boolean().describe("true only after Dan said yes to deleting this project") },
+    async (a) => {
+      if (a.confirm !== true) throw new M.UserError("Not deleted: ask Dan first, then call again with confirm: true.");
+      const open = (await B.copies(ctx.db, ctx.uid)).filter((c) => c.open && c.project === a.project);
+      if (open.length) throw new M.UserError(`"${a.project}" is open on ${open.map((c) => c.device).join(", ")}. Open another job there first.`);
+      const r = await S.setDeleted(ctx.db, ctx.uid, a.project, Date.now());
+      if (!r) throw new M.UserError(`No project named "${a.project}". Use list_projects to see the names.`);
+      if (r.wasDeletedAt > 0) { await S.setDeleted(ctx.db, ctx.uid, a.project, r.wasDeletedAt); throw new M.UserError(`"${a.project}" is already deleted.`); }
+      return json({ deleted: r.name, inRecentlyDeletedUntil: new Date(Date.now() + S.KEEP_DELETED_MS).toDateString(), restoreWith: "restore_project" });
+    });
+
+  reg("restore_project", "Brings a deleted project back from Recently deleted (within 30 days of deleting it), on every device.",
+    { project: Project },
+    async (a) => {
+      const r = await S.setDeleted(ctx.db, ctx.uid, a.project, 0);
+      if (!r) throw new M.UserError(`No project named "${a.project}" in the cloud; it may be past the 30 days.`);
+      if (!(r.wasDeletedAt > 0)) throw new M.UserError(`"${a.project}" isn't deleted.`);
+      return json({ restored: r.name });
+    });
 
   reg("read_drawing",
     "The walls (with ids, length, ends, which side the room is on), doors and windows (wall, position, hinge, swing), cabinets and appliances " +
@@ -193,12 +224,12 @@ function buildServer(ctx) {
 
   reg("place_cabinets",
     "Places a run of cabinets and appliances with their backs against one face of a wall, in order from the chosen end (inside corner by default) plus an offset. " +
-    "Items: shop codes (B15, BD18, SB36 adds a sink, LS36, W3030, W1530, WDC2430, P2484, V30, VD18, BF3, WF3, DW), exact catalog names " +
+    "Items: shop codes (B15, BD18, SB36 adds a sink, LS36, W3030, W1530, WDC2430, P2484, OV3384 tall oven cabinet with a double oven in it ({code: \"OV3384\", oven: \"single\"|\"none\"}), V30, VD18, BF3, WF3, DW), exact catalog names " +
     "(\"Range 30\\\"\", \"Refrigerator 36\\\" French Door\"), \"GAP 30\" for empty space, or {code, width, front} ({code: \"BD\", width: 29} for an odd size). Base and wall cabinets go in separate calls. " +
     "A wall that borders several rooms (an exterior wall the length of the house) has several sets of inside corners: give room (its label) or near (a point in the room) so the run starts at that room's corner.",
     {
       project: Project, wall_id: z.string(),
-      items: z.array(z.union([z.string(), z.object({ code: z.string().optional(), name: z.string().optional(), width: Len.optional(), depth: Len.optional(), front: z.union([z.string(), z.number()]).optional(), sink: z.boolean().optional() })])).min(1),
+      items: z.array(z.union([z.string(), z.object({ code: z.string().optional(), name: z.string().optional(), width: Len.optional(), depth: Len.optional(), front: z.union([z.string(), z.number()]).optional(), sink: z.boolean().optional(), oven: z.string().optional().describe("OV only: double (default), single or none") })])).min(1),
       face: Compass.optional().describe("Which face of the wall the cabinets stand against (default: the room side)"),
       from: z.enum(["left", "right", "top", "bottom"]).optional(), corner: z.enum(["inside", "outside"]).optional(), offset: Len.optional(),
       style: z.union([z.string(), z.number()]).optional().describe("slab, shaker, raised panel, glass"),

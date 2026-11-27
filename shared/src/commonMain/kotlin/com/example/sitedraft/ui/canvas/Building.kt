@@ -52,9 +52,12 @@ enum class CodeEdition(val label: String, val short: String, val footingTable: I
 @Serializable
 enum class DrainTile(val label: String) { FORM_A_DRAIN("Form-A-Drain"), PERFORATED("4\" perforated pipe") }
 
-/** An upper floor: its name and the elevation of the top of its subfloor, inches. */
+/**
+ * An upper floor: its name and the elevation of the top of its subfloor, inches. [joistDepthIn]: its own joist depth
+ * (Dan, Nov 27: joist size per floor), null = the same as the first floor's.
+ */
 @Serializable
-data class UpperFloor(val name: String, val elevationIn: Float)
+data class UpperFloor(val name: String, val elevationIn: Float, val joistDepthIn: Float? = null)
 
 /**
  * The inputs the levels are worked out from. Defaults are Dan's (Nov 19 2026): first floor top of

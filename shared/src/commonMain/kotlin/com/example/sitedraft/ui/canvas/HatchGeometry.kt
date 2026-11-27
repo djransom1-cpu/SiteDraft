@@ -49,8 +49,12 @@ object HatchGeometry {
                 var y = b.top
                 while (y <= b.bottom) { line(Offset(b.left, y), Offset(b.right, y)); y += spacing }
             }
-            FillPattern.BRICK, FillPattern.PLANKS -> {
-                val len = if (fill.length > 0f) fill.length else if (fill.pattern == FillPattern.BRICK) spacing * 2f else spacing * 6f
+            FillPattern.PLANKS -> for ((y, joints) in plankRows(b, spacing, fill.length)) {
+                line(Offset(b.left, y), Offset(b.right, y))
+                for (x in joints) line(Offset(x, y), Offset(x, minOf(y + spacing, b.bottom)))
+            }
+            FillPattern.BRICK -> {
+                val len = if (fill.length > 0f) fill.length else spacing * 2f
                 var y = b.top
                 var row = 0
                 while (y <= b.bottom) {

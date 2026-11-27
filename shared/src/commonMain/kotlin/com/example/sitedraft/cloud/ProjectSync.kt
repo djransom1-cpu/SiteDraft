@@ -18,6 +18,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -88,6 +90,20 @@ data class SharedRef(
     val canEdit: Boolean = false,
 )
 
+/**
+ * A project deleted on this device, kept in `deleted_projects.json`. The drawing file stays on disk (nothing is
+ * erased on the device); the project just leaves the list and is never pushed again. [cloudMarked]: the cloud copy
+ * carries the tombstone, so if it later shows none, it was restored on another device.
+ */
+@Serializable
+data class DeletedLocal(val deletedAt: Long, val cloudMarked: Boolean = false)
+
+/** One row of Recently deleted. */
+data class DeletedProject(val name: String, val deletedAt: Long) {
+    /** Whole days left before it is removed for good. */
+    fun daysLeft(now: Long = nowMillis()): Int = ((deletedAt + ProjectSync.KEEP_DELETED_MS - now + 86_399_999L) / 86_400_000L).toInt().coerceAtLeast(0)
+}
+
 /** The listener the sync engine uses to tell the drawing side that a project changed on disk. */
 interface ProjectSyncListener {
     /** The local file for [name] was replaced with the cloud copy. */
@@ -124,6 +140,9 @@ class ProjectSync(
     companion object {
         const val PROJECT_LIST_FILE = "project_list.txt"
         const val SHARED_FILE = "shared_projects.json"
+        const val DELETED_FILE = "deleted_projects.json"
+        /** Deleted projects stay in Recently deleted this long, then the cloud copy is removed (Dan, Nov 27: 30 days). */
+        const val KEEP_DELETED_MS = 30L * 86_400_000L
         /** How often the open project is checked for a change Claude made through the connector. */
         const val WATCH_INTERVAL_MS = 5_000L
         fun projectFileName(name: String) = "project_${name.replace(" ", "_")}.json"
@@ -153,6 +172,81 @@ class ProjectSync(
         storage?.write(metaFileName(name), json.encodeToString(SyncMeta.serializer(), meta))
     }
 
+    private val deletedSerializer = MapSerializer(String.serializer(), DeletedLocal.serializer())
+
+    private fun readDeleted(): Map<String, DeletedLocal> =
+        storage?.read(DELETED_FILE)?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { json.decodeFromString(deletedSerializer, it) }.getOrNull() } ?: emptyMap()
+
+    private fun writeDeleted(map: Map<String, DeletedLocal>) {
+        storage?.write(DELETED_FILE, json.encodeToString(deletedSerializer, map))
+    }
+
+    // ------------------------------------------------------------------ delete and restore (Dan, Nov 27)
+
+    /**
+     * Deletes the user's own project [name]: it leaves the list here, the cloud copy is marked deleted so every other
+     * device takes it out of its list and never pushes it back, and it waits 30 days in Recently deleted before the
+     * cloud copy is removed. The drawing file on this device is kept. Returns why it can't, or null when done.
+     */
+    suspend fun deleteProject(name: String): String? = withContext(ioDispatcher) {
+        if (name == listener?.openProjectName()) return@withContext "\"$name\" is open. Open another job first, then delete this one."
+        if (sharedRef(name) != null) return@withContext "\"$name\" is shared with you; only its owner can delete it."
+        val at = nowMillis()
+        lock.withLock {
+            writeDeleted(readDeleted() + (name to DeletedLocal(at)))
+            writeList(readList() - name)
+        }
+        markInCloud(name, at)
+        withContext(Dispatchers.Main) { listener?.onProjectListChanged() }
+        null
+    }
+
+    /** Puts the tombstone on the cloud copy (when there is one) and notes that it's there. */
+    private suspend fun markInCloud(name: String, at: Long) {
+        val user = uid ?: return
+        try {
+            // Not in the cloud (never pushed): nothing to mark yet; if it turns up there later, the next sync marks it.
+            if (cloud.store.projectUpdatedAt(user, name) == null) return
+            cloud.store.setProjectDeleted(user, name, at)
+            lock.withLock { readDeleted()[name]?.let { writeDeleted(readDeleted() + (name to it.copy(cloudMarked = true))) } }
+        } catch (e: Exception) {
+            platform.log("SiteDraftSync", "marking '$name' deleted failed, will retry: ${e.message}")
+        }
+    }
+
+    /** Brings [name] back from Recently deleted, on this device and (through the cloud) the others. */
+    suspend fun restoreProject(name: String): String? = withContext(ioDispatcher) {
+        val user = uid
+        if (user != null) {
+            try {
+                if (cloud.store.projectUpdatedAt(user, name) != null) cloud.store.setProjectDeleted(user, name, 0L)
+            } catch (e: Exception) {
+                return@withContext "Couldn't restore \"$name\": ${e.message}"
+            }
+        }
+        lock.withLock {
+            writeDeleted(readDeleted() - name)
+            if (storage?.exists(projectFileName(name)) == true) writeList(readList() + name)
+        }
+        if (user != null) syncOne(user, name, remoteUpdatedAt = null, knownRemote = false)
+        withContext(Dispatchers.Main) { listener?.onProjectListChanged() }
+        if (storage?.exists(projectFileName(name)) == true) null else "Couldn't download \"$name\". Check your connection."
+    }
+
+    /** Recently deleted: this device's and the cloud's deleted projects from the last 30 days, newest first. */
+    suspend fun recentlyDeleted(): List<DeletedProject> = withContext(ioDispatcher) {
+        val now = nowMillis()
+        val out = readDeleted().mapValues { it.value.deletedAt }.toMutableMap()
+        uid?.let { user ->
+            runCatching { cloud.store.listProjects(user) }.getOrNull()?.forEach { m ->
+                if (m.deletedAt > 0L) out[m.name] = maxOf(out[m.name] ?: 0L, m.deletedAt)
+                else if (readDeleted()[m.name]?.cloudMarked == true) out.remove(m.name) // restored elsewhere
+            }
+        }
+        out.filter { now - it.value < KEEP_DELETED_MS }.map { DeletedProject(it.key, it.value) }.sortedByDescending { it.deletedAt }
+    }
+
     private fun readList(): Set<String> =
         storage?.read(PROJECT_LIST_FILE)?.lines()?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
 
@@ -176,10 +270,15 @@ class ProjectSync(
         val ref = sharedRef(name)
         val previous = readMeta(name)
         val willPush = ref == null || ref.canEdit
+        // Work saved under the name of a deleted project (a job renamed to it): that work is kept, so the name comes
+        // back out of Recently deleted rather than the work never reaching the cloud.
+        val revived = ref == null && name in readDeleted()
+        if (revived) writeDeleted(readDeleted() - name)
         writeMeta(name, SyncMeta(updatedAt = savedAt, remoteUpdatedAt = previous?.remoteUpdatedAt, pendingPush = willPush))
         val user = uid ?: return
         if (!willPush) return // view-only: the change stays on this device
         scope.launch {
+            if (revived) runCatching { if (cloud.store.projectUpdatedAt(user, name) != null) cloud.store.setProjectDeleted(user, name, 0L) }
             if (ref == null) {
                 // Claude changed this project in the cloud since this device last saw it: these
                 // edits are kept as a copy and Claude's version is taken, so neither is lost.
@@ -329,16 +428,46 @@ class ProjectSync(
             return
         }
         val sharedNames = _shared.value.map { it.localName }.toSet()
-        val localNames = readList() - sharedNames
-        val remoteByName = remote.associateBy { it.name }
+        val now = nowMillis()
+        val open = listener?.openProjectName()
         var listChanged = false
+        // Deleted projects (Nov 27): deleted on another device -> out of the list here too (unless it's open on
+        // screen; it goes when it's closed); kept 30 days, then removed from the cloud; restored on another device ->
+        // back in the list; deleted here while offline -> the tombstone goes up now.
+        val tombstoned = mutableSetOf<String>()
         for (meta in remote) {
+            val local = readDeleted()[meta.name]
+            when {
+                meta.deletedAt > 0L -> {
+                    tombstoned += meta.name
+                    if (now - meta.deletedAt >= KEEP_DELETED_MS) {
+                        try { cloud.store.deleteProject(uid, meta.name) } catch (e: Exception) { platform.log("SiteDraftSync", "removing '${meta.name}' failed: ${e.message}") }
+                        lock.withLock { writeDeleted(readDeleted() - meta.name) }
+                    } else if (meta.name != open && meta.name !in sharedNames) lock.withLock {
+                        writeDeleted(readDeleted() + (meta.name to DeletedLocal(meta.deletedAt, cloudMarked = true)))
+                        if (meta.name in readList()) { writeList(readList() - meta.name); listChanged = true }
+                    }
+                }
+                local != null && local.cloudMarked -> lock.withLock {
+                    writeDeleted(readDeleted() - meta.name)
+                    if (st.exists(projectFileName(meta.name))) { writeList(readList() + meta.name); listChanged = true }
+                }
+                local != null -> { tombstoned += meta.name; markInCloud(meta.name, local.deletedAt) }
+            }
+        }
+        val deletedHere = readDeleted()
+        // Local records older than 30 days (never in the cloud) drop off Recently deleted; the file stays on disk.
+        val expired = deletedHere.filter { now - it.value.deletedAt >= KEEP_DELETED_MS }.keys
+        if (expired.isNotEmpty()) lock.withLock { writeDeleted(readDeleted() - expired) }
+        val localNames = readList() - sharedNames - deletedHere.keys
+        val remoteByName = remote.filter { it.name !in tombstoned && it.name !in deletedHere }.associateBy { it.name }
+        for (meta in remoteByName.values) {
             val existedLocally = st.exists(projectFileName(meta.name))
             if (meta.name in sharedNames) continue // an own project may not shadow a share's local name
             syncOne(uid, meta.name, meta.updatedAt, knownRemote = true)
             if (!existedLocally && st.exists(projectFileName(meta.name))) listChanged = true
         }
-        for (name in localNames - remoteByName.keys) {
+        for (name in localNames - remoteByName.keys - tombstoned) {
             val text = st.read(projectFileName(name)) ?: continue
             val at = readMeta(name)?.updatedAt?.takeIf { it > 0 } ?: nowMillis()
             push(uid, name, text, at, localName = name)

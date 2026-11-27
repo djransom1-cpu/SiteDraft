@@ -271,6 +271,10 @@
             ]
         },
         {
+            "action": "DismissLastMove",
+            "args": []
+        },
+        {
             "action": "DuplicateSelectedElement",
             "args": []
         },
@@ -292,6 +296,16 @@
             "args": []
         },
         {
+            "action": "MakeLastMoveExactly",
+            "about": "After a Move drag: the same direction, exactly this far from where it started (Nov 27).",
+            "args": [
+                {
+                    "name": "inches",
+                    "type": "number"
+                }
+            ]
+        },
+        {
             "action": "MatchFloorPlan",
             "about": "Draw the active layer's parts (foundation or framing) once, to match the first-floor plan.",
             "args": []
@@ -307,6 +321,20 @@
                     "name": "pressure",
                     "type": "number",
                     "optional": true
+                }
+            ]
+        },
+        {
+            "action": "MoveSelectedBy",
+            "about": "Moves the selection by a typed distance (Nov 27), inches, east and south positive; a wall's meeting walls follow.",
+            "args": [
+                {
+                    "name": "eastIn",
+                    "type": "number"
+                },
+                {
+                    "name": "southIn",
+                    "type": "number"
                 }
             ]
         },
@@ -562,6 +590,11 @@
                 {
                     "name": "category",
                     "type": "text"
+                },
+                {
+                    "name": "widthIn",
+                    "type": "number or null",
+                    "optional": true
                 }
             ]
         },
@@ -792,6 +825,11 @@
                                             {
                                                 "name": "elevationIn",
                                                 "type": "number"
+                                            },
+                                            {
+                                                "name": "joistDepthIn",
+                                                "type": "number or null",
+                                                "optional": true
                                             }
                                         ]
                                     }
@@ -1760,6 +1798,11 @@
                                     {
                                         "name": "category",
                                         "type": "text"
+                                    },
+                                    {
+                                        "name": "widthIn",
+                                        "type": "number or null",
+                                        "optional": true
                                     }
                                 ]
                             }

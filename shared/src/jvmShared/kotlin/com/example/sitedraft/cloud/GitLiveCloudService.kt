@@ -166,6 +166,9 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
     private data class ProjectFields(val name: String, val updatedAt: Long, val device: String, val chunkCount: Int, val json: String)
 
     @Serializable
+    private data class DeletedFields(val deletedAt: Long)
+
+    @Serializable
     private data class ChunkFields(val index: Int, val json: String)
 
     @Serializable
@@ -197,6 +200,7 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
         updatedAt = field<Long>("updatedAt") ?: 0L,
         device = field<String>("device"),
         chunkCount = field<Long>("chunkCount")?.toInt() ?: 1,
+        deletedAt = field<Long>("deletedAt") ?: 0L,
     )
 
     private inline fun <T> store(what: String, block: () -> T): T {
@@ -282,6 +286,11 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
             for (i in 1 until snap.toMeta(name).chunkCount) batch.delete(ref.collection("chunks").document(i.toString()))
             batch.delete(ref)
             batch.commit()
+        }
+
+        override suspend fun setProjectDeleted(uid: String, name: String, deletedAt: Long) = store(if (deletedAt > 0L) "Deleting '$name'" else "Restoring '$name'") {
+            db.collection("users").document(uid).collection("projects").document(CloudDocs.encodeDocId(name))
+                .set(DeletedFields.serializer(), DeletedFields(deletedAt), merge = true)
         }
 
         override suspend fun projectUpdatedAt(uid: String, name: String): Long? = store("Checking '$name'") {
@@ -403,6 +412,7 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
             db.collectionGroup("projects").where { "memberEmails" contains me }.get().documents.mapNotNull { snap ->
                 val parts = snap.reference.path.split('/')
                 if (parts.size != 4 || parts[0] != "users" || parts[2] != "projects") return@mapNotNull null
+                if ((snap.field<Long>("deletedAt") ?: 0L) > 0L) return@mapNotNull null // the owner deleted it
                 val editors = snap.field<List<String>>("editorEmails") ?: emptyList()
                 SharedProjectMeta(
                     ownerUid = parts[1],

@@ -79,4 +79,47 @@ class UpperFloorsTest {
         val synced = DerivedLayers.sync(st)
         assertEquals(7, synced.elements.count { it.layerId == "floor2-plan" })
     }
+
+    @Test
+    fun `the second floor gets joists over its own outline, not over the one-story wing`() {
+        val areas = listOf(
+            RoofArea("main", "Main", listOf(0f, 480f, 480f, 0f), listOf(0f, 0f, 336f, 336f), listOf(RoofEdge.GABLE, RoofEdge.EAVE, RoofEdge.GABLE, RoofEdge.EAVE), wallHeightIn = 186f),
+            RoofArea("wing", "Wing", listOf(480f, 624f, 624f, 480f), listOf(0f, 0f, 336f, 336f), listOf(RoofEdge.EAVE, RoofEdge.GABLE, RoofEdge.EAVE, RoofEdge.OPEN), wallHeightIn = 96f)
+        )
+        val st = CanvasState(elements = house(), building = twoStory.copy(roof = RoofSettings(areas = areas), autoLayers = true))
+        // One sync carries the walls up and frames under them.
+        val synced = DerivedLayers.sync(st)
+        val bays = synced.elements.filterIsInstance<DrawingElement.Symbol>().filter { it.layerId == "floor2-structural" && it.id.contains("bay:floor2") }
+        assertEquals(1, bays.size)
+        val b = bays.single()
+        assertEquals(480f, b.size.width / inch, 1f)
+        assertEquals(336f, b.size.height / inch, 1f)
+    }
+
+    private fun floor2Bay(extra: List<DrawingElement>, settings: BuildingSettings = twoStory): DrawingElement.Symbol {
+        val box = house().take(4) // the 40' x 28' two-story part alone
+        val st = CanvasState(elements = box + extra, building = settings.copy(autoLayers = true))
+        return DerivedLayers.sync(st).elements.filterIsInstance<DrawingElement.Symbol>().single { it.id.contains("bay:floor2") }
+    }
+
+    @Test
+    fun `a 28-foot second floor span gets a beam, unless a wall below carries the joists`() {
+        // Joists run the short way, 28': over Dan's 15' limit with nothing under them.
+        assertEquals(1f, floor2Bay(emptyList()).properties[com.example.sitedraft.ui.canvas.Structure.BEAMS])
+        // A first-floor wall down the middle, most of the length: it carries them.
+        val middle = wall("mid", 40f, 165f, 440f, 169.5f, FloorPlan.INTERIOR_WALL)
+        assertEquals(0f, floor2Bay(listOf(middle)).properties[com.example.sitedraft.ui.canvas.Structure.BEAMS])
+        // A short wall doesn't.
+        val short = wall("mid", 40f, 165f, 160f, 169.5f, FloorPlan.INTERIOR_WALL)
+        assertEquals(1f, floor2Bay(listOf(short)).properties[com.example.sitedraft.ui.canvas.Structure.BEAMS])
+    }
+
+    @Test
+    fun `each upper floor can have its own joist size`() {
+        val joist = com.example.sitedraft.ui.canvas.Structure.JOIST
+        val same = floor2Bay(emptyList())
+        assertEquals(com.example.sitedraft.ui.canvas.Structure.joistCodeFor(twoStory.joistDepthIn).toFloat(), same.properties[joist])
+        val tji = floor2Bay(emptyList(), twoStory.copy(upperFloors = listOf(UpperFloor("Second Floor", 1317.25f, joistDepthIn = 11.875f))))
+        assertEquals("TJI 11 7/8", com.example.sitedraft.ui.canvas.Structure.joistLabel(tji))
+    }
 }

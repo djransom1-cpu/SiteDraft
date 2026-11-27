@@ -205,8 +205,9 @@ object Schedules {
                     else -> "Sash up/down"
                 }
                 PlanSymbols.isPocketDoor(s.symbolName) -> "Pocket" to (if (PlanSymbols.pocketRight(s)) "Pocket right" else "Pocket left")
-                PlanSymbols.isBiParting(s.symbolName) -> "Barn, bi-parting" to "Slides both ways"
-                PlanSymbols.isBarnDoor(s.symbolName) -> "Barn" to (if (PlanSymbols.hingeRight(s)) "Slides right" else "Slides left")
+                // The track length with it (Dan's card: barn door schedule shows the track).
+                PlanSymbols.isBiParting(s.symbolName) -> "Barn, bi-parting" to "Slides both ways, ${BarnDoors.trackText(s, state).lowercase()}"
+                PlanSymbols.isBarnDoor(s.symbolName) -> "Barn" to "${if (PlanSymbols.hingeRight(s)) "Slides right" else "Slides left"}, ${BarnDoors.trackText(s, state).lowercase()}"
                 PlanSymbols.isBifold(s.symbolName) -> (if (PlanSymbols.isBifoldPair(s.symbolName, w)) "Bifold pair" else "Bifold") to
                     (if (PlanSymbols.isBifoldPair(s.symbolName, w)) "Folds both ways" else if (PlanSymbols.hingeRight(s)) "Folds right" else "Folds left")
                 PlanSymbols.isDoubleDoor(s.symbolName) -> "Double (pair)" to "Both leaves"

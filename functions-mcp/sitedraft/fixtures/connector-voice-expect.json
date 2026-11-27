@@ -1,13 +1,13 @@
 {
   "note": "Written by functions-mcp/test/sitedraft-mcp.test.js; ConnectorCheckTest checks it with the app's code.",
   "kitchenRun": [
-    "ce94e86d-c72d-4ddd-8162-901c1e262b90",
-    "43d01f76-8d83-4c1d-aba1-dfa5449af464"
+    "70b31236-a056-4eeb-9795-217bc507a4c8",
+    "014afa6f-0e04-4849-be86-cdc3d1d90928"
   ],
-  "drawerBase": "43d01f76-8d83-4c1d-aba1-dfa5449af464",
-  "base": "608323c3-519e-4408-9684-8eb553e6d9fe",
-  "rod": "e76d45ca-d996-4ac0-a171-9bd6bdcb67d2",
-  "wallElevation": "191d4d6d-55df-4ff3-bcad-ce09e3f96990",
-  "islandElevation": "257408fa-8895-4749-934b-eddff31dd0f1",
-  "northWall": "aab2b547-bbde-4e6e-b54f-3c530964df81"
+  "drawerBase": "014afa6f-0e04-4849-be86-cdc3d1d90928",
+  "base": "c181148d-1fc7-4f1a-b3ec-b15c237f884e",
+  "rod": "4c5723f9-f0cd-43ec-be51-8bb30157a49e",
+  "wallElevation": "49eb4a53-3579-420a-bfe2-800ab5868d47",
+  "islandElevation": "0de2326b-dfe8-45ec-9bb0-55d722aed37b",
+  "northWall": "f8298c00-ce81-4ce9-bb36-4f881fed5fae"
 }

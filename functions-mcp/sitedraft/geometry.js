@@ -66,6 +66,33 @@ function openingAnchor(s) {
   return rotateAbout({ x: c.x, y: c.y + h / 2 }, c, Number(s.rotation || 0));
 }
 
+/**
+ * Which faces of a wall look into a room (Nov 27: roomSide was guessed from the middle of all the walls and came out on the
+ * wrong side in a house of several rooms): a point 6" off each face is in a room when walls close it in on all four sides.
+ * Returns the faces as "BELOW"/"ABOVE"/"RIGHT"/"LEFT" (both for an interior wall).
+ */
+function roomFaces(wall, state, inch) {
+  const others = wallsOn(state, wall).filter((w) => w.id !== wall.id).map((w) => bounds(w));
+  const wb = bounds(wall), h = isHorizontal(wall);
+  const off = 6 * inch;
+  const enclosed = (p) => {
+    const hit = (dir) => others.some((r) => {
+      if (dir === "E") return r.left > p.x && r.top <= p.y && r.bottom >= p.y;
+      if (dir === "W") return r.right < p.x && r.top <= p.y && r.bottom >= p.y;
+      if (dir === "S") return r.top > p.y && r.left <= p.x && r.right >= p.x;
+      return r.bottom < p.y && r.left <= p.x && r.right >= p.x;
+    });
+    return ["E", "W", "S", "N"].every(hit);
+  };
+  const faces = [];
+  // Probe at a few points along the wall (a door or a short wall in the way shouldn't decide it).
+  const probes = (side) => [0.25, 0.5, 0.75].map((f) => h
+    ? { x: wb.left + wb.width * f, y: side === "BELOW" ? wb.bottom + off : wb.top - off }
+    : { x: side === "RIGHT" ? wb.right + off : wb.left - off, y: wb.top + wb.height * f });
+  for (const side of h ? ["BELOW", "ABOVE"] : ["RIGHT", "LEFT"]) if (probes(side).filter(enclosed).length >= 2) faces.push(side);
+  return faces;
+}
+
 // ---------------------------------------------------------------- OpeningPosition
 
 function hostWall(opening, state, inch) {
@@ -182,6 +209,7 @@ function cabinetLabel(s, state, inch) {
     return (sink ? "SB" : (front === 2 || front === 3 ? "BD" : "B")) + w;
   }
   if (name.startsWith("Pantry")) return `P${w}${codeInches(M.catalog.defaults.pantryHeightIn)}`;
+  if (name.startsWith("Oven Cabinet")) return `OV${w}${codeInches(M.catalog.defaults.pantryHeightIn)}`;
   if (name === "Linen Tower 18\"") return `LT${w}`;
   if (name.startsWith("Vanity Drawers")) return `VD${w}`;
   if (name.startsWith("Vanity")) return `V${w}`;
@@ -189,7 +217,21 @@ function cabinetLabel(s, state, inch) {
   return null;
 }
 
+/** PlanSymbols.cabinetName: what a cabinet is and its real size, from its code ("Sink Base 36\"", "Pantry 36\" x 84\""). */
+function cabinetName(s, state, inch) {
+  const code = cabinetLabel(s, state, inch);
+  if (!code) return null;
+  const prefix = code.match(/^[A-Z]+/)[0];
+  const w = codeInches(size(s).w / inch);
+  const upperH = codeInches((s.properties || {})[M.props.upperHeightIn] ?? M.catalog.defaults.upperHeightIn);
+  const names = { B: `Base ${w}"`, SB: `Sink Base ${w}"`, BD: `Drawer Base ${w}"`, LS: `Corner Base (lazy susan) ${w}"`,
+    W: `Wall ${w}" x ${upperH}"`, WDC: `Wall Corner (diagonal) ${w}" x ${upperH}"`, P: `Pantry ${w}" x ${codeInches(M.catalog.defaults.pantryHeightIn)}"`,
+    OV: `Oven Cabinet ${w}" x ${codeInches(M.catalog.defaults.pantryHeightIn)}"`, LT: `Linen Tower ${w}"`, VD: `Vanity Drawers ${w}"`, V: `Vanity ${w}"`, BF: `Base Filler ${w}"`, WF: `Wall Filler ${w}"`, ISL: s.symbolName };
+  return names[prefix] || null;
+}
+
 module.exports = {
+  cabinetName, roomFaces,
   WALLS, DOORS_WINDOWS, CABINETS, symbols, walls, wallsOn, floorNo, center, size, rotateAbout, rect, inflate, contains, bounds,
   isHorizontal, isDoor, isWindow, interiorSide, openingAnchor, hostWall, axis, wallEnds, openingDistance, openingShift,
   areaAt, codeInches, cabinetLabel,

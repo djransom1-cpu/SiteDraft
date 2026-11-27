@@ -96,6 +96,7 @@ internal object CloudDocs {
         updatedAt = fields["updatedAt"]?.jsonPrimitive?.longOrNull ?: 0L,
         device = fields["device"]?.jsonPrimitive?.contentOrNull,
         chunkCount = fields["chunkCount"]?.jsonPrimitive?.longOrNull?.toInt() ?: 1,
+        deletedAt = fields["deletedAt"]?.jsonPrimitive?.longOrNull ?: 0L,
     )
 
     /** Fields of the project document; the first chunk rides on it as `json`. */
@@ -147,6 +148,8 @@ internal object CloudDocs {
         val parts = path.split('/')
         if (parts.size != 4 || parts[0] != "users" || parts[2] != "projects") return null
         val sharing = sharingFrom(parts[1], fields)
+        // A project the owner deleted is no longer shared.
+        if ((fields["deletedAt"]?.jsonPrimitive?.longOrNull ?: 0L) > 0L) return null
         return SharedProjectMeta(
             ownerUid = parts[1],
             ownerEmail = sharing.ownerEmail,
@@ -445,6 +448,9 @@ class RestCloudService(
             commit(writes)
         }
 
+        override suspend fun setProjectDeleted(uid: String, name: String, deletedAt: Long) =
+            mergeDocument(CloudDocs.projectPath(uid, name), buildJsonObject { put("deletedAt", JsonPrimitive(deletedAt)) })
+
         override suspend fun projectUpdatedAt(uid: String, name: String): Long? =
             getDocument(CloudDocs.projectPath(uid, name), onlyFields = listOf("updatedAt"))?.let { CloudDocs.projectMetaFrom(name, it).updatedAt }
 
@@ -561,7 +567,7 @@ class RestCloudService(
         /** A collection-group query over every user's `projects`, metadata fields only. */
         override suspend fun listSharedWithMe(email: String): List<SharedProjectMeta> {
             val me = Sharing.normalize(email)
-            val select = listOf("name", "updatedAt", "ownerUid", "ownerEmail", "memberEmails", "editorEmails")
+            val select = listOf("name", "updatedAt", "ownerUid", "ownerEmail", "memberEmails", "editorEmails", "deletedAt")
             val body = buildJsonObject {
                 put("structuredQuery", buildJsonObject {
                     put("from", JsonArray(listOf(buildJsonObject {

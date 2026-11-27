@@ -91,4 +91,21 @@ class CabinetsAndIslandTest {
             assertTrue(parts.filterIsInstance<DrawingElement.Line>().none { it.start.y < 1000f - 40f * inch || it.end.y < 1000f - 40f * inch })
         }
     }
+
+    @Test
+    fun `the oven cabinet is a tall cabinet with its own code`() {
+        val oc = cab(PlanSymbols.OVEN_CABINET, 0f, 0f)
+        val s = CanvasState(elements = listOf(oc))
+        assertEquals("OV3384", PlanSymbols.cabinetLabel(oc, s))
+        assertEquals("Oven Cabinet 33\" x 84\"", PlanSymbols.cabinetName(oc, s))
+        assertTrue(PlanSymbols.isTallCabinet(oc.symbolName))
+        assertTrue(PlanSymbols.OVEN_CABINET in PlanSymbols.cabinets)
+    }
+
+    @Test
+    fun `every cabinet is in exactly one size-picker group`() {
+        val grouped = PlanSymbols.cabinetGroups.flatMap { it.sizes }
+        assertEquals(PlanSymbols.cabinets.toSet(), grouped.toSet())
+        assertEquals(grouped.size, grouped.toSet().size)
+    }
 }

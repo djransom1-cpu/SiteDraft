@@ -100,7 +100,13 @@ function describeWall(w, state, inch) {
     id: w.id, type: w.symbolName, runs: h ? "east-west" : "north-south",
     length: fmt(length, state), lengthIn: r2(length), thicknessIn: r2(thick),
     from: { xIn: r2(b.left / inch), yIn: r2(b.top / inch) }, to: { xIn: r2(b.right / inch), yIn: r2(b.bottom / inch) },
-    roomSide: ({ BELOW: "south", ABOVE: "north", RIGHT: "east", LEFT: "west" })[G.interiorSide(w, state)] || null,
+    roomSide: (() => {
+      const word = { BELOW: "south", ABOVE: "north", RIGHT: "east", LEFT: "west" };
+      const faces = G.roomFaces(w, state, inch);
+      if (faces.length === 2) return "both (interior wall)";
+      if (faces.length === 1) return word[faces[0]];
+      return word[G.interiorSide(w, state)] || null;
+    })(),
     status: wallStatus(w),
     // Upstairs walls say so; the second floor's outside walls carried up from the first (UpperFloors) are marked.
     floor: G.floorNo(w) > 1 ? G.floorNo(w) : undefined,
@@ -165,7 +171,12 @@ function readDrawing(state) {
       at: { xIn: r2(b.left / inch), yIn: r2(b.top / inch) }, rotation: Number(s.rotation || 0), facing: facingOf(s) };
     if ((s.properties || {})[M.props.front] !== undefined) item.front = Object.keys(FRONT).find((k) => FRONT[k] === s.properties[M.props.front]) || s.properties[M.props.front];
     const code = G.cabinetLabel(s, state, inch);
-    if (code) item.code = code;
+    if (code) {
+      item.code = code;
+      // Named for what it is and its real size; the library entry it was placed from stays as catalogName (Nov 27).
+      const named = G.cabinetName(s, state, inch);
+      if (named && named !== s.symbolName) { item.catalogName = s.symbolName; item.name = named; }
+    }
     const on = wallOf(s, state, inch);
     if (on) Object.assign(item, { wallId: on.wallId, wallFace: on.face, fromLeftOrTopInsideCornerIn: on.fromStartIn });
     const kitchen = [G.CABINETS, "Appliances", "Hoods"].includes(s.category) || (s.category === "Fixtures" && on);
@@ -596,7 +607,9 @@ function placeOpening(state, a) {
   }
   const check = G.openingDistance(sym, withIt, ref, inch);
   return { state: withIt, result: { placed: { id: sym.id, type: name, wallId: wall.id, widthIn: r2(widthIn), measured: `${fmt(distance, state)} from the ${from} end's ${ref.outside ? "outside" : "inside"} corner to the ${ref.toCenter ? "centre" : "near edge"}`,
-    inItsRoom: `${fmt(check / inch, state)} from the ${from} ${ref.outside ? "outside" : "inside"} corner of the room it's in (what the app's Position shows)` } } };
+    inItsRoom: `${fmt(check / inch, state)} from the ${from} ${ref.outside ? "outside" : "inside"} corner of the room it's in (what the app's Position shows)`,
+    // Barn doors (BarnDoors.trackIn): the track is the panel's travel plus the panel; the app's Properties lists what the open panel would hit.
+    ...(/ Barn/.test(name) ? { trackLength: fmt(Math.round(2 * (widthIn + 2)), state), slideCheck: "Select it in the app: Properties says if the open panel hits a wall, window, door or switch." } : {}) } } };
 }
 
 // =============================================================================== cabinets
@@ -631,11 +644,11 @@ function resolveItem(item, opts) {
   const up = raw.toUpperCase().replace(/\s+/g, "");
   if (up === "DW" || up === "DW24") return { name: "Dishwasher", widthIn: 24, depthIn: 24, props: {}, cat: "Fixtures" };
   if (up === "DW18") return { name: "Dishwasher 18\"", widthIn: 18, depthIn: M.footprints["Dishwasher 18\""][1], props: {}, cat: "Appliances" };
-  if (!(m = up.match(/^(WDC|BD|SB|LS|BF|WF|VD|LT|ISL|W|B|P|V)(\d+(?:\.\d+)?)?$/)) || (!m[2] && !o.width && !["LS", "WDC", "P", "LT", "ISL"].includes(m[1]))) fail(`"${raw}": not a cabinet code (B24, BD18, SB36, LS36, W3030, WDC2430, P2484, V30, VD18, LT18, BF3, WF3), a catalog name, or GAP 30".`);
+  if (!(m = up.match(/^(WDC|BD|SB|LS|BF|WF|VD|LT|ISL|OV|W|B|P|V)(\d+(?:\.\d+)?)?$/)) || (!m[2] && !o.width && !["LS", "WDC", "P", "OV", "LT", "ISL"].includes(m[1]))) fail(`"${raw}": not a cabinet code (B24, BD18, SB36, LS36, W3030, WDC2430, P2484, OV3384, V30, VD18, LT18, BF3, WF3), a catalog name, or GAP 30".`);
   const code = m[1], digits = m[2] || "";
   // Wall cabinets carry width then height: W3030 = 30" wide, 30" high; W15 alone = 15" x 30".
   let width = digits ? Number(digits) : NaN, height = null;
-  if ((code === "W" || code === "WDC" || code === "P") && /^\d{4}$/.test(digits)) { width = Number(digits.slice(0, 2)); height = Number(digits.slice(2)); }
+  if ((code === "W" || code === "WDC" || code === "P" || code === "OV") && /^\d{4}$/.test(digits)) { width = Number(digits.slice(0, 2)); height = Number(digits.slice(2)); }
   if (o.width) width = len(o.width, "width");
   const upper = UPPER_CODES.has(code);
   let name;
@@ -645,6 +658,7 @@ function resolveItem(item, opts) {
     case "W": name = nearestName("Upper ", width, (n) => n.includes("Corner") || n.includes("Filler")); break;
     case "WDC": name = "Upper Corner 24\""; break;
     case "P": name = "Pantry 24\""; break;
+    case "OV": name = "Oven Cabinet 33\""; break;
     case "V": name = nearestName("Vanity ", width, (n) => n.includes("Drawers")); break;
     case "VD": name = nearestName("Vanity Drawers", width); break;
     case "LT": name = "Linen Tower 18\""; break;
@@ -658,7 +672,16 @@ function resolveItem(item, opts) {
   if (upper && height && height !== M.catalog.defaults.upperHeightIn) props[M.props.upperHeightIn] = height;
   if (o.front !== undefined) props[M.props.front] = typeof o.front === "number" ? o.front : FRONT[String(o.front).toLowerCase()];
   const fp = M.footprints[name];
-  return { name, widthIn: width, depthIn: o.depth ? len(o.depth, "depth") : fp[1], props, upper, cat: G.CABINETS, sink: code === "SB" && o.sink !== false };
+  return { name, widthIn: width, depthIn: o.depth ? len(o.depth, "depth") : fp[1], props, upper, cat: G.CABINETS, sink: code === "SB" && o.sink !== false, oven: code === "OV" ? ovenFor(o.oven) : null };
+}
+
+/** The wall oven an oven cabinet gets: double by default, "single", or "none" for an empty cabinet. */
+function ovenFor(v) {
+  const k = v === undefined ? "double" : String(v).toLowerCase();
+  if (k === "none" || v === false) return null;
+  if (k === "single") return "Wall Oven Single 33\"";
+  if (k === "double") return "Wall Oven Double 33\"";
+  fail('oven: "double" (default), "single" or "none".');
 }
 
 /**
@@ -728,6 +751,12 @@ function placeCabinets(state, a) {
       const sw = Math.min(33, it.widthIn - 3) * inch, sd = 22 * inch;
       const sc = horizontal ? { x: along, y: faceCoord + outward * (1.5 * inch + sd / 2) } : { x: faceCoord + outward * (1.5 * inch + sd / 2), y: along };
       made.push(M.makeSymbol({ name: "Kitchen Sink", category: "Fixtures", center: sc, widthPx: sw, depthPx: sd, rotation, color, properties: { widthInches: sw / inch, depthInches: 22 } }));
+    }
+    if (it.oven) {
+      // The oven sits in the cabinet, same footprint, centred in its width.
+      const ow = Math.min(M.footprints[it.oven][0], it.widthIn) * inch;
+      made.push(M.makeSymbol({ name: it.oven, category: M.categoryOf(it.oven), center: c, widthPx: ow, depthPx: d, rotation, color,
+        properties: { widthInches: ow / inch, depthInches: it.depthIn } }));
     }
     placed.push({ sym, it, a1, a2 });
     if (a1 < s - 0.5 || a2 > e + 0.5) warnings.push(`${it.name} runs past the ${outside ? "outside" : "inside"} corner at the ${a1 < s ? (horizontal ? "left" : "top") : (horizontal ? "right" : "bottom")} end.`);

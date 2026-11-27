@@ -159,6 +159,42 @@ object ExteriorElevation {
     }
 
     enum class Pen { HEAVY, MEDIUM, THIN, HIDDEN }
+
+    /**
+     * A door's face as seen from outside, inside its frame x1..x2, lo..hi (inches; elevations up): a single door's knob on
+     * the latch side; a double door's meeting stiles with a knob each side (Dan, Nov 27: double doors drew as one slab);
+     * a bifold's panel joints; a slider's meeting rail; a barn door's brace and its track above, bi-parting split in two.
+     */
+    internal fun doorFace(name: String, x1: Float, x2: Float, lo: Float, hi: Float, latchAtRight: Boolean, line: (Float, Float, Float, Float, Pen) -> Unit) {
+        val c = (x1 + x2) / 2f
+        val w = x2 - x1
+        fun knob(x: Float) {
+            line(x - 1f, lo + 35f, x + 1f, lo + 35f, Pen.THIN); line(x + 1f, lo + 35f, x + 1f, lo + 37f, Pen.THIN)
+            line(x + 1f, lo + 37f, x - 1f, lo + 37f, Pen.THIN); line(x - 1f, lo + 37f, x - 1f, lo + 35f, Pen.THIN)
+        }
+        when {
+            PlanSymbols.isOpening(name) -> {}
+            PlanSymbols.isSlidingDoor(name) -> line(c, lo, c, hi, Pen.THIN)
+            PlanSymbols.isDoubleDoor(name) -> {
+                line(c - 0.5f, lo, c - 0.5f, hi, Pen.THIN); line(c + 0.5f, lo, c + 0.5f, hi, Pen.THIN)
+                knob(c - 3f); knob(c + 3f)
+            }
+            PlanSymbols.isBifold(name) -> {
+                val n = if (PlanSymbols.isBifoldPair(name, w)) 4 else 2
+                for (i in 1 until n) line(x1 + w * i / n, lo, x1 + w * i / n, hi, Pen.THIN)
+                if (n == 4) { knob(c - 2f); knob(c + 2f) } else knob(if (latchAtRight) x2 - 2f else x1 + 2f)
+            }
+            PlanSymbols.isBarnDoor(name) -> {
+                // Track across the head, past the opening by the door's slide.
+                line(x1 - w * 0.5f, hi + 6f, x2 + w * 0.5f, hi + 6f, Pen.THIN)
+                if (PlanSymbols.isBiParting(name)) {
+                    line(c, lo, c, hi, Pen.THIN)
+                    line(x1 + 2f, lo + 6f, c - 2f, hi - 6f, Pen.THIN); line(x2 - 2f, lo + 6f, c + 2f, hi - 6f, Pen.THIN)
+                } else line(x1 + 2f, lo + 6f, x2 - 2f, hi - 6f, Pen.THIN)
+            }
+            PlanSymbols.isDoor(name) -> knob(if (latchAtRight) x2 - 3f else x1 + 3f)
+        }
+    }
     data class Seg(val a: Offset, val b: Offset, val pen: Pen)
     /** A level mark's text, [at] its top-left. */
     data class Label(val text: String, val at: Offset)
@@ -417,16 +453,11 @@ object ExteriorElevation {
                 line(x1 - CASING_IN, head + CASING_IN, x2 + CASING_IN, head + CASING_IN, Pen.THIN)
                 line(x2 + CASING_IN, head + CASING_IN, x2 + CASING_IN, base, Pen.THIN)
                 holes += Rect(x1 - CASING_IN, base, x2 + CASING_IN, head + CASING_IN)
-                if (PlanSymbols.isSlidingDoor(o.symbolName)) {
-                    line(c, base, c, head, Pen.THIN)
-                } else if (PlanSymbols.isDoor(o.symbolName)) {
-                    // The knob on the latch side.
-                    val latchLocal = Offset(if (PlanSymbols.hingeRight(o)) -o.size.width / 2f else o.size.width / 2f, o.size.height / 2f)
-                    val latch = rotateAbout(o.center + latchLocal, o.center, o.rotation)
-                    val latchAtRight = Elevation.alongOf(fp, side, latch) > Elevation.alongOf(fp, side, a)
-                    val kx = if (latchAtRight) x2 - 3f else x1 + 3f
-                    rect(kx - 1f, base + 35f, kx + 1f, base + 37f, Pen.THIN)
-                }
+                // The knob on the latch side; double doors, bifolds, sliders and barn doors their own way.
+                val latchLocal = Offset(if (PlanSymbols.hingeRight(o)) -o.size.width / 2f else o.size.width / 2f, o.size.height / 2f)
+                val latch = rotateAbout(o.center + latchLocal, o.center, o.rotation)
+                val latchAtRight = Elevation.alongOf(fp, side, latch) > Elevation.alongOf(fp, side, a)
+                doorFace(o.symbolName, x1, x2, base, head, latchAtRight, ::line)
             }
         }
 
@@ -715,6 +746,10 @@ object ExteriorElevation {
             if (kind == Schedules.Kind.WINDOW) {
                 line(x1 - CASING_IN, lo - 1.5f, x2 + CASING_IN, lo - 1.5f, Pen.THIN)
                 line(x1, (lo + hi) / 2f, x2, (lo + hi) / 2f, Pen.THIN)
+            } else {
+                val latchLocal = Offset(if (PlanSymbols.hingeRight(o)) -o.size.width / 2f else o.size.width / 2f, o.size.height / 2f)
+                val latch = rotateAbout(o.center + latchLocal, o.center, o.rotation)
+                doorFace(o.symbolName, x1, x2, lo, hi, along(Offset(latch.x / k, latch.y / k)) > c, ::line)
             }
         }
         // Grade across everything, a little past each end.

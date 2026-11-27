@@ -47,7 +47,7 @@ object CabinetList {
             PlanSymbols.WALLS -> true
             PlanSymbols.CABINETS -> {
                 val otherUpper = PlanSymbols.isUpperCabinet(other)
-                val tall = other.symbolName.startsWith("Pantry") || PlanSymbols.isLinenTower(other.symbolName)
+                val tall = PlanSymbols.isTallCabinet(other.symbolName)
                 if (upper) otherUpper || tall else !otherUpper
             }
             PlanSymbols.HOODS -> upper
@@ -89,7 +89,8 @@ object CabinetList {
     }
 
     private fun description(s: DrawingElement.Symbol, state: CanvasState): String {
-        val parts = mutableListOf(s.symbolName)
+        // Its real size and kind, not the library entry it was placed from (Nov 27).
+        val parts = mutableListOf(PlanSymbols.cabinetName(s, state) ?: s.symbolName)
         if (PlanSymbols.hasFrontChoice(s)) parts += PlanSymbols.frontLabels.getOrElse(PlanSymbols.front(s)) { "" }
         if (PlanSymbols.isUpperCabinet(s)) PlanSymbols.upperHeightOf(s)?.let { parts += "${PlanSymbols.codeInches(it)}\" high" }
         if (PlanSymbols.hasStyleChoice(s)) parts += PlanSymbols.styleLabels.getOrElse(PlanSymbols.doorStyle(s)) { "" }

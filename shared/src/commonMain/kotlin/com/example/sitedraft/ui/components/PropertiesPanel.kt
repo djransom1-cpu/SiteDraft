@@ -595,6 +595,12 @@ fun PropertiesPanel(
                         }
                     }
                     is DrawingElement.Symbol -> {
+                        // Move by a typed distance (Nov 27).
+                        MoveBox(selectedElement, state, onEvent)
+                        // A cabinet's real size and kind (Nov 27), not the library entry it was placed from.
+                        PlanSymbols.cabinetName(selectedElement, state)?.let { named ->
+                            Text("$named  (${PlanSymbols.cabinetLabel(selectedElement, state)})", style = MaterialTheme.typography.titleSmall)
+                        }
                         // An appliance or plumbing fixture: its mark and what's typed for its schedule (Nov 26).
                         if (ItemSchedules.kindOf(selectedElement) != null) ItemSpecFields(selectedElement, state, onEvent)
                         if (selectedElement.category == "Lumber") {
@@ -888,6 +894,14 @@ fun PropertiesPanel(
                                     OutlinedButton(onClick = { onEvent(DrawingEvent.SwapDoorHinge(selectedElement.id)) }) { Text("Swap hinge side") }
                                     OutlinedButton(onClick = { onEvent(DrawingEvent.SwingDoorOtherSide(selectedElement.id)) }) { Text("Swing to other side") }
                                 }
+                            }
+                            // Barn doors: the track, and what the open panel would hit (Dan, Nov 26 card).
+                            if (PlanSymbols.isBarnDoor(selectedElement.symbolName)) {
+                                Text(text = "Barn door", style = MaterialTheme.typography.labelLarge)
+                                Text(BarnDoors.trackText(selectedElement, state) + " (the panel's travel plus the panel)", style = MaterialTheme.typography.bodySmall)
+                                val clashes = BarnDoors.warnings(selectedElement, state)
+                                if (clashes.isEmpty()) Text("Slides clear.", style = MaterialTheme.typography.bodySmall)
+                                else clashes.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                             }
                             if (PlanSymbols.isPocketDoor(selectedElement.symbolName)) {
                                 Text(text = "Pocket", style = MaterialTheme.typography.labelLarge)
