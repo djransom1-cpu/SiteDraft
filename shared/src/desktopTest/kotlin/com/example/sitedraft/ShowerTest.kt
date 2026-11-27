@@ -135,4 +135,40 @@ class ShowerTest {
         assertTrue(turned.size.height > turned.size.width)
         assertTrue(turned.center.x > 500f)
     }
+
+    @Test
+    fun `a slab seat is stone over the tile, a full bench is tiled top and front`() {
+        val name = "Alcove Shower 60x32"
+        val full = shower(name, mapOf(Shower.BENCH_WALL to Shower.BACK.toFloat()))
+        val slab = shower(name, mapOf(Shower.BENCH_WALL to Shower.BACK.toFloat(), Shower.BENCH_STYLE to Shower.BENCH_SLAB.toFloat()))
+        for (f in Shower.faces(Shower.type(name))) assertTrue("slab face $f", view(slab, f).size > 5)
+        fun rows(s: DrawingElement.Symbol) = com.example.sitedraft.ui.canvas.TileTakeoff.rows(CanvasState(elements = listOf(s)))
+        val fullWall = rows(full).first { it.where.contains("wall", ignoreCase = true) }
+        val slabWall = rows(slab).first { it.where.contains("wall", ignoreCase = true) }
+        // The full bench adds its top and front (60" x (15" + 18")) to the wall tile; the slab adds none.
+        assertEquals(60f * 33f / 144f, fullWall.netSqFt - slabWall.netSqFt, 0.05f)
+        assertTrue(slabWall.note, slabWall.note.contains("slab"))
+        // The floor runs under the slab, not under the full bench.
+        val fullFloor = rows(full).first { it.where == "Shower floor" }
+        val slabFloor = rows(slab).first { it.where == "Shower floor" }
+        assertEquals(60f * 15f / 144f, slabFloor.netSqFt - fullFloor.netSqFt, 0.05f)
+    }
+
+    @Test
+    fun `corner shelves and a ledge draw on their walls, and tiled ones count in the tile`() {
+        val name = "Alcove Shower 60x32"
+        val corner = shower(name, mapOf(Shower.SHELF_KIND to Shower.SHELF_CORNER.toFloat(), Shower.SHELF_WHERE to 1f, Shower.SHELF_N to 3f))
+        assertEquals(listOf(36f, 48f, 60f), Shower.shelfHeights(corner))
+        for (f in Shower.faces(Shower.type(name))) assertTrue("corner face $f", view(corner, f).size > 5)
+        val ledge = shower(name, mapOf(Shower.SHELF_KIND to Shower.SHELF_LEDGE.toFloat(), Shower.SHELF_WHERE to Shower.BACK.toFloat(), Shower.SHELF_MAT to 1f))
+        for (f in Shower.faces(Shower.type(name))) assertTrue("ledge face $f", view(ledge, f).size > 5)
+        fun wall(s: DrawingElement.Symbol) = com.example.sitedraft.ui.canvas.TileTakeoff.rows(CanvasState(elements = listOf(s))).first { it.where == "Shower walls" }
+        val plain = shower(name)
+        // Two tiled 60" x 9" ledges: top and bottom of each plus the 1 1/4" edge.
+        assertEquals(2f * (2f * 60f * 9f + 60f * 1.25f) / 144f, wall(ledge).netSqFt - wall(plain).netSqFt, 0.05f)
+        assertTrue(wall(corner).note.contains("stone shelves"))
+        // A back-right corner on a corner shower (its right side is glass) has no shelves.
+        val cs = shower("Corner Shower 36x36", mapOf(Shower.SHELF_KIND to Shower.SHELF_CORNER.toFloat(), Shower.SHELF_WHERE to 1f))
+        assertTrue(Shower.shelfHeights(cs).isEmpty())
+    }
 }

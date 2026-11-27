@@ -71,6 +71,12 @@ sealed class Placement {
         override val label get() = "inside the room for its elevations"
     }
 
+    /** A room whose electrical card opens (ElectricalCode, Nov 27): the tap lands inside it. Not snapped. */
+    @Serializable
+    data object RoomElectrical : Placement() {
+        override val label get() = "inside the room for its electrical"
+    }
+
     /** A room for the finish schedule (FinishSchedule, Nov 26), named [name]: the tap lands inside it. Not snapped. */
     @Serializable
     data class RoomFinish(val name: String = "") : Placement() {
@@ -350,6 +356,7 @@ object FloorPlan {
             // The room whose walls get elevations, outlined as the pen moves over it.
             is Placement.RoomElevations -> listOfNotNull(areaAt(point, state))
             is Placement.RoomFinish -> listOfNotNull(areaAt(point, state))
+            is Placement.RoomElectrical -> listOfNotNull(areaAt(point, state))
             is Placement.Elevation -> {
                 val wall = state.elements.find { it.id == placement.spec.wallId } as? DrawingElement.Symbol ?: return emptyList()
                 val size = Elevation.sizePx(wall, placement.spec, state)

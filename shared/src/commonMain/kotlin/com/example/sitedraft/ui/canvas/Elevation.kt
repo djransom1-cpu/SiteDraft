@@ -91,7 +91,8 @@ object Elevation {
     /** How far a farmhouse sink's apron reaches down from the counter top, inches. */
     const val FARMHOUSE_APRON_IN = 10f
 
-    enum class Kind { OPENING, FIXTURE, CUT_WALL }
+    /** [DEVICE]: a plug, switch, sconce, thermostat, wall register or return grille on the wall (Mep, Nov 27). */
+    enum class Kind { OPENING, FIXTURE, CUT_WALL, DEVICE }
 
     /** A plan symbol seen in the elevation, with its extent along the wall measured from the viewer's left end (px). */
     data class WallItem(val symbol: DrawingElement.Symbol, val from: Float, val to: Float, val kind: Kind)
@@ -316,6 +317,18 @@ object Elevation {
                         ViewerSide.LEFT -> abs(b.right - wb.left) <= inch
                     }
                     if (perpendicular && touches) Kind.CUT_WALL else continue
+                }
+                // Wall devices on this face: their centre within 8" of it, on the viewer's side.
+                Mep.ELECTRICAL, Mep.HVAC, Mep.PLUMBING -> {
+                    if (!Mep.isWallDevice(s.symbolName)) continue
+                    val c = s.center
+                    val off = when (side) {
+                        ViewerSide.BELOW -> c.y - wb.bottom
+                        ViewerSide.ABOVE -> wb.top - c.y
+                        ViewerSide.RIGHT -> c.x - wb.right
+                        ViewerSide.LEFT -> wb.left - c.x
+                    }
+                    if (off >= -1f * inch && off <= 8f * inch) Kind.DEVICE else continue
                 }
                 PlanSymbols.FIXTURES, PlanSymbols.CABINETS, PlanSymbols.OUTDOOR, PlanSymbols.CLOSET, PlanSymbols.FURNITURE,
                 PlanSymbols.APPLIANCES, PlanSymbols.HOODS -> {
@@ -610,7 +623,7 @@ object Elevation {
             for (o in items.filter { it.kind == Kind.OPENING }) {
                 val win = PlanSymbols.isWindow(o.symbol.symbolName)
                 if (!win) {
-                    val (a, b) = if (spec.trimOn) Trim.outerEdges(o.from, o.to, false, spec, inch) else (o.from to o.to)
+                    val (a, b) = if (spec.trimOn) Trim.outerEdges(o.from, o.to, false, Trim.specFor(o.symbol, spec), inch) else (o.from to o.to)
                     doorsIn += a / inch to b / inch; continue
                 }
                 val sill = o.symbol.properties[PlanSymbols.PROP_SILL_IN] ?: spec.sillIn
@@ -699,6 +712,7 @@ object Elevation {
             val xc = (from + to) / 2f
             val name = item.symbol.symbolName
             when (item.kind) {
+                Kind.DEVICE -> Unit // drawn after everything, below
                 Kind.CUT_WALL -> {
                     rect(from, to, 0f, spec.wallHeightIn, medium)
                     line(from, 0f, to, spec.wallHeightIn)
@@ -1148,6 +1162,17 @@ object Elevation {
             }
         }
 
+        // Plugs, switches, sconces, thermostats, wall registers and grilles (Mep, Nov 27), over the wall finish, unless a
+        // cabinet or appliance in front of the wall hides them (a plug behind a base cabinet).
+        for (d in items.filter { it.kind == Kind.DEVICE }) {
+            val bottom = Mep.mountIn(d.symbol)
+            val hidden = items.any { f ->
+                f.kind == Kind.FIXTURE && f.from < d.to && f.to > d.from && !PlanSymbols.isUpperCabinet(f.symbol) &&
+                    endPanelSpan(f.symbol, spec).let { (b, t) -> bottom >= b && bottom < t }
+            }
+            if (!hidden) Mep.drawElevation(d.symbol, d.from, d.to, appliancePen)
+        }
+
         // Door and window casing, and the base, which stops at the door casing and at anything
         // standing on the floor.
         val openings = items.filter { it.kind == Kind.OPENING }
@@ -1156,24 +1181,29 @@ object Elevation {
             when (it.kind) {
                 Kind.CUT_WALL -> blocked += it.from to it.to
                 Kind.FIXTURE -> if (standsOnFloor(it.symbol)) blocked += it.from to it.to
-                Kind.OPENING -> Unit
+                Kind.OPENING, Kind.DEVICE -> Unit
             }
         }
         // Windows side by side with the same head and sill are trimmed as one unit (Trim.gangs, Dan Nov 25).
         val windowSpans = mutableListOf<FloatArray>()
+        val windowSyms = mutableListOf<DrawingElement.Symbol>()
         for (o in openings) {
             val props = o.symbol.properties
             val window = PlanSymbols.isWindow(o.symbol.symbolName)
             val bottom = if (window) props[PlanSymbols.PROP_SILL_IN] ?: spec.sillIn else 0f
             val top = if (window) bottom + (props[PlanSymbols.PROP_HEIGHT_IN] ?: spec.windowHeightIn) else props[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
-            if (window) { windowSpans += floatArrayOf(o.from, o.to, bottom, top); continue }
-            if (spec.trimOn) Trim.drawOpening(appliancePen, o.from, o.to, bottom, top, false, spec)
-            blocked += if (spec.trimOn) Trim.outerEdges(o.from, o.to, false, spec, inch) else (o.from to o.to)
+            if (window) { windowSpans += floatArrayOf(o.from, o.to, bottom, top); windowSyms += o.symbol; continue }
+            // Its own trim when it has some (Trim.specFor, Nov 27).
+            val own = Trim.specFor(o.symbol, spec)
+            if (spec.trimOn) Trim.drawOpening(appliancePen, o.from, o.to, bottom, top, false, own)
+            blocked += if (spec.trimOn) Trim.outerEdges(o.from, o.to, false, own, inch) else (o.from to o.to)
         }
         if (spec.trimOn) for (g in Trim.gangs(windowSpans, inch)) {
             val w0 = windowSpans[g.first()]
-            if (g.size == 1) Trim.drawOpening(appliancePen, w0[0], w0[1], w0[2], w0[3], true, spec)
-            else Trim.drawGang(appliancePen, g.map { windowSpans[it][0] to windowSpans[it][1] }, w0[2], w0[3], spec)
+            // A gang takes its first window's trim.
+            val own = Trim.specFor(windowSyms[g.first()], spec)
+            if (g.size == 1) Trim.drawOpening(appliancePen, w0[0], w0[1], w0[2], w0[3], true, own)
+            else Trim.drawGang(appliancePen, g.map { windowSpans[it][0] to windowSpans[it][1] }, w0[2], w0[3], own)
         }
         Trim.drawBase(appliancePen, length, blocked, spec)
         // Each faucet a solid shape - base, body and spout - filled so nothing behind it (window trim) runs through it.

@@ -1368,6 +1368,8 @@ private class DocumentLayerCache {
     private var showOpeningMarks = false
     // Remodel phase (Remodel.kt): without it the All/Existing/Demo/Proposed toggle only showed after a zoom.
     private var remodelPhase = RemodelPhase.ALL
+    // Switch legs (Mep, Nov 27): drawn with the switches, so a change has to redraw.
+    private var switchLegs: List<SwitchLeg> = emptyList()
     private var size = Size.Zero
 
     fun matches(state: CanvasState, size: Size): Boolean =
@@ -1379,7 +1381,7 @@ private class DocumentLayerCache {
             layers == state.layers && activeLayerId == state.activeLayerId &&
             shownLayerIds == state.shownLayerIds && layerDisplay == state.layerDisplay &&
             building == state.building && showOpeningMarks == state.showOpeningMarks &&
-            remodelPhase == state.remodelPhase
+            remodelPhase == state.remodelPhase && switchLegs == state.switchLegs
 
     fun update(state: CanvasState, size: Size) {
         elements = state.elements
@@ -1399,6 +1401,7 @@ private class DocumentLayerCache {
         building = state.building
         showOpeningMarks = state.showOpeningMarks
         remodelPhase = state.remodelPhase
+        switchLegs = state.switchLegs
         this.size = size
     }
 }

@@ -965,6 +965,310 @@
         "Ladder": [
             96.0,
             16.0
+        ],
+        "Duplex Outlet": [
+            10.0,
+            8.0
+        ],
+        "Counter Outlet": [
+            10.0,
+            8.0
+        ],
+        "GFCI Outlet": [
+            10.0,
+            8.0
+        ],
+        "Weatherproof Outlet": [
+            10.0,
+            8.0
+        ],
+        "240V Outlet": [
+            10.0,
+            8.0
+        ],
+        "Floor Outlet": [
+            8.0,
+            8.0
+        ],
+        "Switch": [
+            8.0,
+            8.0
+        ],
+        "3-Way Switch": [
+            8.0,
+            8.0
+        ],
+        "4-Way Switch": [
+            8.0,
+            8.0
+        ],
+        "Dimmer Switch": [
+            8.0,
+            8.0
+        ],
+        "Ceiling Light": [
+            12.0,
+            12.0
+        ],
+        "Recessed Can 4\"": [
+            6.0,
+            6.0
+        ],
+        "Recessed Can 6\"": [
+            8.0,
+            8.0
+        ],
+        "Pendant Light": [
+            12.0,
+            12.0
+        ],
+        "Wall Sconce": [
+            10.0,
+            6.0
+        ],
+        "Exterior Light": [
+            10.0,
+            6.0
+        ],
+        "Under-Cabinet Light": [
+            24.0,
+            3.0
+        ],
+        "Ceiling Fan 44\"": [
+            44.0,
+            44.0
+        ],
+        "Ceiling Fan 52\"": [
+            52.0,
+            52.0
+        ],
+        "Ceiling Fan 60\"": [
+            60.0,
+            60.0
+        ],
+        "Bath Fan": [
+            12.0,
+            12.0
+        ],
+        "Bath Fan/Light": [
+            12.0,
+            12.0
+        ],
+        "Smoke Detector": [
+            10.0,
+            10.0
+        ],
+        "Smoke/CO Detector": [
+            10.0,
+            10.0
+        ],
+        "Junction Box": [
+            8.0,
+            8.0
+        ],
+        "Thermostat": [
+            8.0,
+            6.0
+        ],
+        "Floor Register 4x10": [
+            10.0,
+            4.0
+        ],
+        "Floor Register 4x12": [
+            12.0,
+            4.0
+        ],
+        "Wall Register 6x12": [
+            12.0,
+            3.0
+        ],
+        "Return Grille 6x14": [
+            14.0,
+            3.0
+        ],
+        "Return Grille 6x30": [
+            30.0,
+            3.0
+        ],
+        "Furnace": [
+            22.0,
+            30.0
+        ],
+        "AC Condenser": [
+            30.0,
+            30.0
+        ],
+        "Duct Trunk 8x12": [
+            120.0,
+            12.0
+        ],
+        "Duct Trunk 8x16": [
+            120.0,
+            16.0
+        ],
+        "Duct Trunk 8x20": [
+            120.0,
+            20.0
+        ],
+        "Duct Trunk 8x24": [
+            120.0,
+            24.0
+        ],
+        "Duct Trunk 10x20": [
+            120.0,
+            20.0
+        ],
+        "Duct Trunk 10x24": [
+            120.0,
+            24.0
+        ],
+        "Round Duct 4\"": [
+            120.0,
+            4.0
+        ],
+        "Round Duct 5\"": [
+            120.0,
+            5.0
+        ],
+        "Round Duct 6\"": [
+            120.0,
+            6.0
+        ],
+        "Round Duct 7\"": [
+            120.0,
+            7.0
+        ],
+        "Round Duct 8\"": [
+            120.0,
+            8.0
+        ],
+        "Round Duct 10\"": [
+            120.0,
+            10.0
+        ],
+        "Round Duct 12\"": [
+            120.0,
+            12.0
+        ],
+        "Duct Elbow 90": [
+            12.0,
+            12.0
+        ],
+        "Duct Elbow 45": [
+            12.0,
+            12.0
+        ],
+        "Duct Tee": [
+            24.0,
+            12.0
+        ],
+        "Duct Takeoff": [
+            8.0,
+            8.0
+        ],
+        "Register Boot": [
+            12.0,
+            8.0
+        ],
+        "Duct Reducer": [
+            12.0,
+            12.0
+        ],
+        "Duct End Cap": [
+            4.0,
+            12.0
+        ],
+        "Cold Water 1/2\"": [
+            120.0,
+            3.0
+        ],
+        "Cold Water 3/4\"": [
+            120.0,
+            3.0
+        ],
+        "Cold Water 1\"": [
+            120.0,
+            3.0
+        ],
+        "Hot Water 1/2\"": [
+            120.0,
+            3.0
+        ],
+        "Hot Water 3/4\"": [
+            120.0,
+            3.0
+        ],
+        "Drain 1-1/2\"": [
+            120.0,
+            3.0
+        ],
+        "Drain 2\"": [
+            120.0,
+            3.0
+        ],
+        "Drain 3\"": [
+            120.0,
+            3.0
+        ],
+        "Drain 4\"": [
+            120.0,
+            3.0
+        ],
+        "Vent 1-1/2\"": [
+            120.0,
+            3.0
+        ],
+        "Vent 2\"": [
+            120.0,
+            3.0
+        ],
+        "Vent 3\"": [
+            120.0,
+            3.0
+        ],
+        "Gas Line 3/4\"": [
+            120.0,
+            3.0
+        ],
+        "Cleanout": [
+            6.0,
+            6.0
+        ],
+        "Floor Drain": [
+            6.0,
+            6.0
+        ],
+        "Hose Bib": [
+            8.0,
+            4.0
+        ],
+        "Main Shutoff": [
+            8.0,
+            6.0
+        ],
+        "Water Meter": [
+            10.0,
+            8.0
+        ],
+        "Vent Thru Roof": [
+            6.0,
+            6.0
+        ],
+        "Washer Box": [
+            10.0,
+            4.0
+        ],
+        "Ice Maker Box": [
+            8.0,
+            4.0
+        ],
+        "Sump Pit": [
+            18.0,
+            18.0
+        ],
+        "Gas Stub": [
+            6.0,
+            6.0
         ]
     },
     "building": {
@@ -1145,6 +1449,27 @@
                         "visible": true
                     },
                     {
+                        "id": "floor1-electrical",
+                        "name": "First floor electrical",
+                        "trade": "ELECTRICAL",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-mechanical",
+                        "name": "First floor mechanical",
+                        "trade": "MECHANICAL",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-plumbing",
+                        "name": "First floor plumbing",
+                        "trade": "PLUMBING",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
                         "id": "roof-structural",
                         "name": "Roof structural",
                         "trade": "ROOF_STRUCTURAL",
@@ -1318,6 +1643,27 @@
                         "visible": true
                     },
                     {
+                        "id": "floor1-electrical",
+                        "name": "First floor electrical",
+                        "trade": "ELECTRICAL",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-mechanical",
+                        "name": "First floor mechanical",
+                        "trade": "MECHANICAL",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-plumbing",
+                        "name": "First floor plumbing",
+                        "trade": "PLUMBING",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
                         "id": "floor2-structural",
                         "name": "Second floor structural",
                         "trade": "FLOOR_STRUCTURAL",
@@ -1342,6 +1688,27 @@
                         "id": "floor2-furniture",
                         "name": "Second floor furniture",
                         "trade": "FURNITURE",
+                        "levelId": "floor2",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor2-electrical",
+                        "name": "Second floor electrical",
+                        "trade": "ELECTRICAL",
+                        "levelId": "floor2",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor2-mechanical",
+                        "name": "Second floor mechanical",
+                        "trade": "MECHANICAL",
+                        "levelId": "floor2",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor2-plumbing",
+                        "name": "Second floor plumbing",
+                        "trade": "PLUMBING",
                         "levelId": "floor2",
                         "visible": true
                     },
@@ -1506,6 +1873,27 @@
                         "visible": true
                     },
                     {
+                        "id": "floor1-electrical",
+                        "name": "First floor electrical",
+                        "trade": "ELECTRICAL",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-mechanical",
+                        "name": "First floor mechanical",
+                        "trade": "MECHANICAL",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-plumbing",
+                        "name": "First floor plumbing",
+                        "trade": "PLUMBING",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
                         "id": "roof-structural",
                         "name": "Roof structural",
                         "trade": "ROOF_STRUCTURAL",
@@ -1620,6 +2008,27 @@
                         "id": "floor1-furniture",
                         "name": "First floor furniture",
                         "trade": "FURNITURE",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-electrical",
+                        "name": "First floor electrical",
+                        "trade": "ELECTRICAL",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-mechanical",
+                        "name": "First floor mechanical",
+                        "trade": "MECHANICAL",
+                        "levelId": "floor1",
+                        "visible": true
+                    },
+                    {
+                        "id": "floor1-plumbing",
+                        "name": "First floor plumbing",
+                        "trade": "PLUMBING",
                         "levelId": "floor1",
                         "visible": true
                     },

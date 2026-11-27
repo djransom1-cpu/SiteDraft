@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.Stroke
 import kotlin.math.PI
 import kotlin.math.cos
@@ -86,7 +87,14 @@ object Guards {
                 if (p.closed) path.close()
                 drawPath(path, lineColor, style = thin)
             }
-            is Shower.Part.Label -> drawPageText(p.text, p.c, p.size, lineColor, bold = false, maxWidth = p.size * p.text.length)
+            is Shower.Part.Label -> {
+                // Turned past a quarter (a guard on the far side of the opening), the note would read upside down
+                // (Dan, Nov 27: "36\" GUARD" upside down on Practice House): turn it back about its middle.
+                val r = ((s.rotation % 360f) + 360f) % 360f
+                val mid = Offset(p.c.x + p.text.length * p.size * 0.3f, p.c.y + p.size * 0.5f)
+                if (r > 90.5f && r < 269.5f) rotate(180f, pivot = mid) { drawPageText(p.text, p.c, p.size, lineColor, bold = false, maxWidth = p.size * p.text.length) }
+                else drawPageText(p.text, p.c, p.size, lineColor, bold = false, maxWidth = p.size * p.text.length)
+            }
             is Shower.Part.Ring -> drawCircle(lineColor, p.r, p.c, style = thin)
         }
     }

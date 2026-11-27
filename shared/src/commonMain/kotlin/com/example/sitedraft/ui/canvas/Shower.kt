@@ -105,10 +105,56 @@ object Shower {
     const val BENCH_WALL = "shBenchWall"
     const val BENCH_H = "shBenchH"
     const val BENCH_D = "shBenchD"
+    /**
+     * Bench style (Dan, Nov 27): 0 a full bench, framed to the floor and tiled top and front; 1 a floating slab seat, a
+     * piece of granite or quartz [SLAB_IN] thick set into the wall on hidden supports, open under it (the wall tile and the
+     * floor run under it).
+     */
+    const val BENCH_STYLE = "shBenchStyle"
+    const val BENCH_FULL = 0
+    const val BENCH_SLAB = 1
+    const val SLAB_IN = 1.25f
+    val benchStyleLabels = listOf("Full bench (tiled)", "Floating slab (stone)")
+    fun isSlabBench(s: DrawingElement.Symbol) = code(s, BENCH_STYLE) == BENCH_SLAB
+
+    /**
+     * Shelves (Dan, Nov 27): corner shelves (triangles set into a back corner) or a ledge along one wall, one to four of them,
+     * the lowest at [SHELF_H] and the rest [SHELF_GAP] apart, [SHELF_D] deep (a corner shelf's legs, a ledge's depth), in
+     * stone or tile. Heights and sizes are starting values to change, not a rule.
+     */
+    const val SHELF_KIND = "shShelfKind"   // 0 none, 1 corner, 2 ledge
+    const val SHELF_WHERE = "shShelfWhere" // corner: 0 back-left, 1 back-right; ledge: BACK, LEFT or RIGHT
+    const val SHELF_N = "shShelfN"
+    const val SHELF_H = "shShelfH"
+    const val SHELF_GAP = "shShelfGap"
+    const val SHELF_D = "shShelfD"
+    const val SHELF_MAT = "shShelfMat"     // 0 stone, 1 tile
+    const val SHELF_NONE = 0
+    const val SHELF_CORNER = 1
+    const val SHELF_LEDGE = 2
+    val shelfKindLabels = listOf("None", "Corner shelves", "Ledge along a wall")
+    val cornerLabels = listOf("Back-left corner", "Back-right corner")
+    val shelfMatLabels = listOf("Stone", "Tile")
+
+    /** The shelves' heights, inches, lowest first; empty when there are none (or the corner or wall isn't tiled). */
+    fun shelfHeights(s: DrawingElement.Symbol): List<Float> {
+        val kind = code(s, SHELF_KIND)
+        if (kind == SHELF_NONE) return emptyList()
+        val solid = solidFaces(type(s.symbolName))
+        val where = code(s, SHELF_WHERE)
+        val ok = if (kind == SHELF_CORNER) BACK in solid && (if (where == 1) RIGHT else LEFT) in solid else where in solid
+        if (!ok) return emptyList()
+        val n = code(s, SHELF_N).coerceIn(1, 4)
+        return (0 until n).map { prop(s, SHELF_H) + it * prop(s, SHELF_GAP) }
+    }
+
+    /** A shelf's thickness, inches: a 3/4" stone shelf, or a tiled one about 1 1/4" with its backer. */
+    fun shelfThickIn(s: DrawingElement.Symbol) = if (code(s, SHELF_MAT) == 1) 1.25f else 0.75f
 
     val keys = setOf(
         GLASS, DOOR_W, DOOR_SIDE, HINGE_ON, CURB_H, CURB_W, GLASS_H, TILE_H, CEILING, TILE_IN, TILE_LEN, TILE_PAT, FLOOR_TILE, FLOOR_TILE_LEN, DRAIN,
-        VALVE_WALL, VALVE_H, HEAD_H, NICHE_WALL, NICHE_H, NICHE_W, NICHE_T, BENCH_WALL, BENCH_H, BENCH_D
+        VALVE_WALL, VALVE_H, HEAD_H, NICHE_WALL, NICHE_H, NICHE_W, NICHE_T, BENCH_WALL, BENCH_H, BENCH_D, BENCH_STYLE,
+        SHELF_KIND, SHELF_WHERE, SHELF_N, SHELF_H, SHELF_GAP, SHELF_D, SHELF_MAT
     )
 
     val glassLabels = listOf("Door + panel", "Door only", "Sliding", "Fixed panel", "Curtain")
@@ -143,6 +189,14 @@ object Shower {
             BENCH_WALL to NONE.toFloat(),
             BENCH_H to 18f,
             BENCH_D to 15f,
+            BENCH_STYLE to BENCH_FULL.toFloat(),
+            SHELF_KIND to SHELF_NONE.toFloat(),
+            SHELF_WHERE to 0f,
+            SHELF_N to 2f,
+            SHELF_H to 36f,
+            SHELF_GAP to 12f,
+            SHELF_D to 9f,
+            SHELF_MAT to 0f,
         )
     }
 
@@ -254,7 +308,24 @@ object Shower {
                 else -> Rect(hw - d, -hh, hw, hh - c)
             }
             rect(r, Ink.THIN)
-            parts += Part.Label("BENCH", r.center, (inch * 3f).coerceAtLeast(6f), Ink.LINE)
+            parts += Part.Label(if (isSlabBench(s)) "SLAB SEAT" else "BENCH", r.center, (inch * 3f).coerceAtLeast(6f), Ink.LINE)
+        }
+
+        // Shelves, dashed: above the cut line or up on the wall.
+        if (shelfHeights(s).isNotEmpty()) {
+            val d = prop(s, SHELF_D) * inch
+            val right = if (t == Type.CORNER || t == Type.NEO_ANGLE) hw - c else hw
+            val pts = when {
+                code(s, SHELF_KIND) == SHELF_CORNER && code(s, SHELF_WHERE) == 1 -> listOf(Offset(hw, -hh), Offset(hw - d, -hh), Offset(hw, -hh + d))
+                code(s, SHELF_KIND) == SHELF_CORNER -> listOf(Offset(-hw, -hh), Offset(-hw + d, -hh), Offset(-hw, -hh + d))
+                code(s, SHELF_WHERE) == BACK -> Rect(-hw, -hh, right, -hh + d).let { listOf(it.topLeft, it.topRight, it.bottomRight, it.bottomLeft) }
+                code(s, SHELF_WHERE) == LEFT -> Rect(-hw, -hh, -hw + d, hh - c).let { listOf(it.topLeft, it.topRight, it.bottomRight, it.bottomLeft) }
+                else -> Rect(hw - d, -hh, hw, hh - c).let { listOf(it.topLeft, it.topRight, it.bottomRight, it.bottomLeft) }
+            }
+            parts += Part.Poly(pts, true, Ink.DASHED)
+            val cx = pts.map { it.x }.average().toFloat()
+            val cy = pts.map { it.y }.average().toFloat()
+            parts += Part.Label("SHELF", Offset(cx, cy), (inch * 2.5f).coerceAtLeast(5f), Ink.LINE)
         }
 
         // Drain.
@@ -529,12 +600,20 @@ object Shower {
             val benchH = prop(s, BENCH_H)
             val benchD = prop(s, BENCH_D)
             if (benchWall in solidFaces(t)) {
+                val slab = isSlabBench(s)
                 if (benchWall == face) {
                     val from = if (face == LEFT) curbW else 0f
                     val to = if (face == RIGHT) length - curbW else length
-                    rect(from, to, 0f, benchH, medium, blank())
-                    line(from, benchH - 1.5f, to, benchH - 1.5f)
-                    text("BENCH", (from + to) / 2f - 6f, benchH - 4f)
+                    if (slab) {
+                        // The slab's edge, the wall tile running on under it.
+                        rect(from, to, benchH - SLAB_IN, benchH, medium, blank())
+                        text("SLAB SEAT", (from + to) / 2f - 9f, benchH + 2f)
+                    } else {
+                        // Framed to the floor and tiled: the wall tile carries on across its front, a bullnose/cap at the top.
+                        rect(from, to, 0f, benchH, medium, tileFill)
+                        rect(from, to, benchH - 1.5f, benchH, medium, blank())
+                        text("BENCH", (from + to) / 2f - 6f, benchH + 2f)
+                    }
                 } else {
                     // Seen from the side: where is the bench's wall in this view?
                     val atLeft = when (face) {
@@ -549,8 +628,40 @@ object Shower {
                         else -> false
                     }
                     if (visible) {
-                        if (atLeft) rect(0f, benchD, 0f, benchH, medium, blank()) else rect(length - benchD, length, 0f, benchH, medium, blank())
+                        val bottom = if (slab) benchH - SLAB_IN else 0f
+                        if (atLeft) rect(0f, benchD, bottom, benchH, medium, blank()) else rect(length - benchD, length, bottom, benchH, medium, blank())
                     }
+                }
+            }
+
+            // Shelves: the edge face-on, a short end where they run into the wall beside.
+            val shelves = shelfHeights(s)
+            if (shelves.isNotEmpty()) {
+                val d = prop(s, SHELF_D)
+                val th = shelfThickIn(s)
+                val kind = code(s, SHELF_KIND)
+                val where = code(s, SHELF_WHERE)
+                // The stretch this face sees, along it (inches), or null.
+                val span: Pair<Float, Float>? = if (kind == SHELF_CORNER) {
+                    val rightCorner = where == 1
+                    when (face) {
+                        BACK -> if (rightCorner) (length - d) to length else 0f to d
+                        LEFT -> if (!rightCorner) (length - d) to length else null
+                        RIGHT -> if (rightCorner) 0f to d else null
+                        else -> null
+                    }
+                } else when {
+                    where == face -> (if (face == LEFT) curbW else 0f) to (if (face == RIGHT) length - curbW else length)
+                    face == BACK && where == LEFT -> 0f to d
+                    face == BACK && where == RIGHT -> (length - d) to length
+                    face == LEFT && where == BACK -> (length - d) to length
+                    face == RIGHT && where == BACK -> 0f to d
+                    else -> null
+                }
+                if (span != null) {
+                    for (h in shelves) rect(span.first, span.second, h - th, h, medium, blank())
+                    val label = (if (kind == SHELF_CORNER) "CORNER SHELF" else "SHELF") + if (code(s, SHELF_MAT) == 1) " (TILE)" else " (STONE)"
+                    text(label, span.first + 1f, shelves.last() + 2f, 2.5f)
                 }
             }
 

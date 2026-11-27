@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import kotlin.math.max
 
 /**
@@ -17,7 +18,7 @@ import kotlin.math.max
 object CoverSheet {
 
     /** One row: a label (or number) and its text; [symbol] draws a legend symbol in the label column instead. */
-    data class Row(val label: String, val text: String, val symbol: LegendSymbol? = null)
+    data class Row(val label: String, val text: String, val symbol: LegendSymbol? = null, /** An electrical or HVAC symbol to draw (Mep). */ val mep: String? = null)
 
     enum class LegendSymbol { DOOR_TAG, WINDOW_TAG, SECTION_CUT, DETAIL_BUBBLE, VIEW_TITLE, NORTH_ARROW }
 
@@ -47,7 +48,7 @@ object CoverSheet {
     fun rows(kind: SheetViewKind, state: CanvasState): List<Row> = when (kind) {
         SheetViewKind.SHEET_INDEX -> sheetIndex(state)
         SheetViewKind.PROJECT_DATA -> projectData(state)
-        SheetViewKind.LEGEND -> legend()
+        SheetViewKind.LEGEND -> legend() + mepLegend(state)
         SheetViewKind.COVER_TITLE -> emptyList()
         SheetViewKind.PAINT_SCHEDULE -> paintSchedule(state)
         else -> generalNotes(state)
@@ -73,6 +74,18 @@ object CoverSheet {
         out += Row("Design loads", "Floor ${num(s.liveLoadPsf)} psf live / ${num(s.deadLoadPsf)} psf dead; roof snow ${num(s.roofSnowPsf)} psf; soil ${num(s.soilBearingPsf)} psf")
         p.revisions.lastOrNull()?.let { out += Row("Revision", it.number + (if (it.date.isNotBlank()) ", ${it.date}" else "")) }
         return out
+    }
+
+    /**
+     * The electrical and HVAC symbols the drawing uses (Dan, Nov 27), each drawn as on the plan, with what it is and, for
+     * the wall boxes, the height to the bottom of the box (A.F.F., above the finished floor).
+     */
+    fun mepLegend(state: CanvasState): List<Row> {
+        val used = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { Mep.isMep(it) }.map { it.symbolName }.toSet()
+        return (Mep.electrical + Mep.hvac + Mep.plumbing).filter { it in used }.map { n ->
+            val text = if (Mep.isWallDevice(n)) "$n, ${num(Mep.defaultMountIn(n))}\" A.F.F. to the bottom" else n
+            Row("", text, mep = n)
+        }
     }
 
     fun legend(): List<Row> = listOf(
@@ -215,12 +228,24 @@ object CoverSheet {
         for (r in rows) {
             val rh = rowIn(kind, r) * k
             if (r.symbol != null) drawSymbol(r.symbol, Offset(topLeft.x + lw / 2f, y + rh / 2f), rh * 0.8f, line)
+            else if (r.mep != null) drawMep(r.mep, Offset(topLeft.x + lw / 2f, y + rh / 2f), rh * 0.8f, line)
             else drawPageText(r.label, Offset(topLeft.x + 0.08f * k, y + (rh - text * 1.2f) / 2f), text * 0.95f, black, bold = true, maxWidth = lw - 0.1f * k)
             drawPageText(r.text, Offset(topLeft.x + lw + 0.08f * k, y + (rh - text * 1.2f) / 2f), text * 0.95f, black, bold = false, maxWidth = w - lw - 0.12f * k)
             y += rh
             drawLine(black, Offset(topLeft.x, y), Offset(topLeft.x + w, y), strokeWidth = line)
         }
         drawLine(black, Offset(topLeft.x + lw, topLeft.y + HEAD_IN * k), Offset(topLeft.x + lw, topLeft.y + h), strokeWidth = line)
+    }
+
+    /** An electrical or HVAC symbol fitted in a [d] square at [c], drawn as the plan draws it. */
+    private fun DrawScope.drawMep(name: String, c: Offset, d: Float, line: Float) {
+        val fp = PlanSymbols.footprintInches[name] ?: return
+        val inch = d / maxOf(fp.first, fp.second)
+        val sym = DrawingElement.Symbol(symbolName = name, category = if (name in Mep.hvac) Mep.HVAC else Mep.ELECTRICAL, color = Color.Black,
+            center = Offset.Zero, size = Size(fp.first * inch, fp.second * inch))
+        translate(c.x, c.y) {
+            with(Mep) { drawMepPlan(sym, sym.size.width, sym.size.height, inch, Color.Black, Color.Black, Color.Gray, Stroke(line * 1.2f), Stroke(line * 0.7f)) }
+        }
     }
 
     /** A legend symbol [d] tall, centred on [c] (page px), drawn as the drawing draws it. */

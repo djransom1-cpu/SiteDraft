@@ -186,7 +186,7 @@ object AutoDimension {
      * The rooms: the area around the middle of each cell of the wall grid, bounded by walls on
      * all four sides, at least 2' each way, biggest first and never overlapping one already taken.
      */
-    private fun rooms(walls: List<Rect>, outer: Rect, state: CanvasState): List<Rect> {
+    internal fun rooms(walls: List<Rect>, outer: Rect, state: CanvasState): List<Rect> {
         val inch = state.inchesToPx(1f)
         val xs = merged(walls.flatMap { listOf(it.left, it.right) }, 0.5f)
         val ys = merged(walls.flatMap { listOf(it.top, it.bottom) }, 0.5f)
@@ -285,7 +285,7 @@ object AutoDimension {
             upAt(w, listOf(0f, heightIn), right, ELEV_TIER_IN * inch)
             return out
         }
-        val items = Elevation.itemsInView(wall, spec, state).filter { it.kind != Elevation.Kind.CUT_WALL }
+        val items = Elevation.itemsInView(wall, spec, state).filter { it.kind != Elevation.Kind.CUT_WALL && it.kind != Elevation.Kind.DEVICE }
         // Across the top: every item's width, then the overall length.
         val xs = merged(listOf(0f, w) + items.flatMap { listOf(it.from, it.to) }, 0.25f * inch)
         var dist = ELEV_TIER_IN * inch

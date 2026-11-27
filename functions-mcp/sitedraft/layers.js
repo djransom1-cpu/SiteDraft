@@ -20,7 +20,8 @@ const FLOOR1_FURNITURE = B.floor1Furniture;
 
 const LABEL = {
   FOUNDATION: "Foundation and foundation walls", FLOOR_STRUCTURAL: "Floor structural", FLOOR_PLAN: "Floor plan",
-  CABINETS: "Cabinets", FURNITURE: "Furniture", ROOF_STRUCTURAL: "Roof structural", ROOF_PLAN: "Roof plan",
+  CABINETS: "Cabinets", FURNITURE: "Furniture", ELECTRICAL: "Electrical", MECHANICAL: "Mechanical (HVAC)", PLUMBING: "Plumbing",
+  ROOF_STRUCTURAL: "Roof structural", ROOF_PLAN: "Roof plan",
   EXTERIOR_ELEVATION: "Exterior elevation", SITE_PLAN: "Site plan", CUSTOM: "Custom",
 };
 const ORDINAL = ["First", "Second", "Third", "Fourth", "Fifth"];
@@ -76,7 +77,11 @@ function floorLayers(n, name, s) {
   return [...structural,
     { id: `${f}-plan`, name: `${name} plan`, trade: "FLOOR_PLAN", levelId: f, visible: true },
     { id: `${f}-cabinets`, name: `${name} cabinets`, trade: "CABINETS", levelId: f, visible: true },
-    { id: `${f}-furniture`, name: `${name} furniture`, trade: "FURNITURE", levelId: f, visible: true }];
+    { id: `${f}-furniture`, name: `${name} furniture`, trade: "FURNITURE", levelId: f, visible: true },
+    // Each floor's electrical, HVAC and plumbing layers (the app's MEP library, Nov 27).
+    { id: `${f}-electrical`, name: `${name} electrical`, trade: "ELECTRICAL", levelId: f, visible: true },
+    { id: `${f}-mechanical`, name: `${name} mechanical`, trade: "MECHANICAL", levelId: f, visible: true },
+    { id: `${f}-plumbing`, name: `${name} plumbing`, trade: "PLUMBING", levelId: f, visible: true }];
 }
 
 /** The default layers, as Building.defaultLayers. */
@@ -107,6 +112,9 @@ function activeLayer(project) {
 function defaultLayerId(e) {
   if (M.kind(e) === "Symbol" && (e.category === "Cabinets" || e.category === "Closet")) return FLOOR1_CABINETS;
   if (M.kind(e) === "Symbol" && e.category === "Furniture") return FLOOR1_FURNITURE;
+  if (M.kind(e) === "Symbol" && e.category === "Electrical") return "floor1-electrical";
+  if (M.kind(e) === "Symbol" && e.category === "HVAC") return "floor1-mechanical";
+  if (M.kind(e) === "Symbol" && e.category === "Plumbing") return "floor1-plumbing";
   return FLOOR1_PLAN;
 }
 
@@ -120,7 +128,8 @@ function layerOf(e, project) {
 function layerForNew(e, project) {
   const active = activeLayer(project);
   if (active.trade === "FLOOR_PLAN" && M.kind(e) === "Symbol") {
-    const trade = (e.category === "Cabinets" || e.category === "Closet") ? "CABINETS" : e.category === "Furniture" ? "FURNITURE" : null;
+    const trade = (e.category === "Cabinets" || e.category === "Closet") ? "CABINETS" : e.category === "Furniture" ? "FURNITURE"
+      : e.category === "Electrical" ? "ELECTRICAL" : e.category === "HVAC" ? "MECHANICAL" : e.category === "Plumbing" ? "PLUMBING" : null;
     if (trade) { const l = effectiveLayers(project).find((x) => x.trade === trade && x.levelId === active.levelId); if (l) return l.id; }
   }
   return active.id;

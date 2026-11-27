@@ -133,8 +133,9 @@ object TileTakeoff {
             val benchLen = if (!hasBench) 0f else if (benchWall == Shower.BACK) wIn else dIn
             val benchD = Shower.prop(s, Shower.BENCH_D)
             val benchH = Shower.prop(s, Shower.BENCH_H)
+            val slabSeat = hasBench && Shower.isSlabBench(s)
             if (g.floorTile > 0f) {
-                val floorSqIn = abs(polygonArea(g.floor)) / sqIn - (if (hasBench) benchLen * benchD else 0f)
+                val floorSqIn = abs(polygonArea(g.floor)) / sqIn - (if (hasBench && !slabSeat) benchLen * benchD else 0f)
                 out += Row(room, "Shower floor", FillPattern.TILE, g.floorTile / inch, g.floorTileLength / inch, (floorSqIn / 144f).coerceAtLeast(0f))
             }
             val tileH = minOf(Shower.prop(s, Shower.TILE_H), Shower.prop(s, Shower.CEILING))
@@ -151,7 +152,20 @@ object TileTakeoff {
                 wallSqIn += run * (curbW + 2f * curbH)
                 notes += "curb"
             }
-            if (hasBench) { wallSqIn += benchLen * benchD; notes += "bench" }
+            // A full bench is tiled on its top and front; a slab seat is stone (no tile), the wall tile running on behind it.
+            if (hasBench && !slabSeat) { wallSqIn += benchLen * (benchD + benchH); notes += "bench" }
+            if (slabSeat) notes += "slab seat (stone, not tile)"
+            // Shelves: tiled ones add their top, bottom and edge; stone ones are noted.
+            val shelves = Shower.shelfHeights(s)
+            if (shelves.isNotEmpty()) {
+                val d = Shower.prop(s, Shower.SHELF_D)
+                val corner = Shower.code(s, Shower.SHELF_KIND) == Shower.SHELF_CORNER
+                val where = Shower.code(s, Shower.SHELF_WHERE)
+                val len = if (corner) d * sqrt(2f) else if (where == Shower.BACK) wIn else dIn
+                val top = if (corner) d * d / 2f else len * d
+                if (Shower.code(s, Shower.SHELF_MAT) == 1) { wallSqIn += shelves.size * (2f * top + len * Shower.shelfThickIn(s)); notes += "${shelves.size} tiled shelves" }
+                else notes += "${shelves.size} stone shelves (not tile)"
+            }
             val nicheWall = Shower.code(s, Shower.NICHE_WALL)
             if (nicheWall != Shower.NONE && nicheWall in Shower.solidFaces(t)) {
                 wallSqIn += 2f * (Shower.prop(s, Shower.NICHE_W) + Shower.prop(s, Shower.NICHE_T)) * 3.5f

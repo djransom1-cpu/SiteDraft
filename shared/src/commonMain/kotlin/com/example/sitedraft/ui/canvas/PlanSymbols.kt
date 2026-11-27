@@ -43,7 +43,7 @@ object PlanSymbols {
     const val APPLIANCES = "Appliances"
     const val HOODS = "Hoods"
     val categories = setOf(FIXTURES, DOORS_WINDOWS, WALLS, CABINETS, OUTDOOR, CLOSET, FURNITURE, SHOWERS, STAIRS, RAILINGS, APPLIANCES, HOODS,
-        Structure.FOUNDATION, Structure.FRAMING)
+        Structure.FOUNDATION, Structure.FRAMING, Mep.ELECTRICAL, Mep.HVAC, Mep.PLUMBING)
 
     /**
      * Closet parts, set against a closet wall with their backs at the top (like cabinets).
@@ -317,7 +317,7 @@ object PlanSymbols {
         // deep overall with the front 1 3/4" overhanging the island face; island cutout 35" x 22",
         // 10 1/8" deep; front panel 11" below the counter; hood 14 7/8" above it closed, 23 1/2" open.
         LYNX_36_GRILL to Pair(36f, LYNX_36_DEPTH)
-    ) + Shower.footprints + Stairs.footprints + Guards.footprints + Appliances.footprints + Structure.footprints
+    ) + Shower.footprints + Stairs.footprints + Guards.footprints + Appliances.footprints + Structure.footprints + Mep.footprints
 
     const val LYNX_36_DEPTH = 26.375f
     const val LYNX_36_FRONT_LIP = 1.75f
@@ -333,7 +333,8 @@ object PlanSymbols {
     /** Upper (wall) cabinets: above the cut plane, drawn dashed as an overlay on whatever is below. */
     fun isUpperCabinet(symbol: DrawingElement.Symbol) = symbol.category == CABINETS && symbol.symbolName.startsWith("Upper")
     /** Above the cut plane - upper cabinets, hoods, an over-the-range microwave: drawn dashed, last, without blanking. */
-    fun isOverlay(symbol: DrawingElement.Symbol) = isUpperCabinet(symbol) || Appliances.isOverlay(symbol)
+    // Electrical and HVAC symbols (Mep) blank nothing: the floor and its hatch show through round them.
+    fun isOverlay(symbol: DrawingElement.Symbol) = isUpperCabinet(symbol) || Appliances.isOverlay(symbol) || Mep.isMep(symbol)
 
     /**
      * Set into a counter (a cooktop, a drop-in or undermount sink): drawn over the cabinets whatever order they
@@ -662,6 +663,7 @@ fun DrawScope.drawPlanSymbol(
             element.category == PlanSymbols.RAILINGS -> with(Guards) { drawGuardPlan(element, w, h, inch, lineColor, line, thin) }
             element.category == PlanSymbols.APPLIANCES || element.category == PlanSymbols.HOODS ->
                 with(Appliances) { drawAppliancePlan(element, w, h, inch, lineColor, accentColor, faint, line, thin) }
+            Mep.isMep(element) -> with(Mep) { drawMepPlan(element, w, h, inch, lineColor, accentColor, faint, line, thin, state) }
             element.category == PlanSymbols.CABINETS -> drawCabinet(element, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.CLOSET -> drawClosetPart(name, w, h, inch, lineColor, accentColor, faint, line, thin)
             element.category == PlanSymbols.FURNITURE -> drawFurniture(name, w, h, inch, lineColor, accentColor, faint, line, thin)

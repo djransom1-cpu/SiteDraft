@@ -4,7 +4,7 @@
     "elements": [
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "38be5c4b-ca7c-4e43-952b-623be02b2eba",
+            "id": "f098e10c-76fb-4ab0-bd65-0e2f894eed87",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "750.0,15.8854",
@@ -19,7 +19,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "d6ff8b9a-a052-4879-8553-773524db5c66",
+            "id": "97127f17-74a2-409f-8807-37e0dbbc73f6",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "1484.1146,600.0",
@@ -34,7 +34,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "f016cc9d-aa1d-4912-8604-7d5445af44b9",
+            "id": "9b0824b1-63d2-4f56-a477-d403712efc9d",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "750.0,1184.1146",
@@ -49,7 +49,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "f15d58a7-298b-4b71-83f9-f76544d2b92e",
+            "id": "a391d335-d856-4c7c-a34d-96a422f392a4",
             "symbolName": "8\" Block Wall",
             "category": "Walls",
             "center": "15.8854,600.0",
@@ -64,7 +64,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "4d6b0cf2-f9c7-40b8-8897-ad6ef5664627",
+            "id": "f020ad81-81bb-4f51-90a1-01f5fc640d5c",
             "symbolName": "Base 24\"",
             "category": "Cabinets",
             "center": "416.6667,416.6667",
@@ -78,7 +78,7 @@
         },
         {
             "type": "com.example.sitedraft.ui.canvas.DrawingElement.Symbol",
-            "id": "00b92749-7d9d-4bbc-8f97-8e436bc0de27",
+            "id": "56d096eb-6cf9-4fb5-96f9-272de04135fb",
             "symbolName": "2x4 Wall",
             "category": "Walls",
             "center": "2083.3333,2083.3333",
@@ -88,7 +88,7 @@
                 "widthInches": 48,
                 "depthInches": 4.5
             },
-            "layerId": "custom-35868130"
+            "layerId": "custom-aa92f730"
         }
     ],
     "layers": [
@@ -123,6 +123,24 @@
             "levelId": "floor1"
         },
         {
+            "id": "floor1-electrical",
+            "name": "First floor electrical",
+            "trade": "ELECTRICAL",
+            "levelId": "floor1"
+        },
+        {
+            "id": "floor1-mechanical",
+            "name": "First floor mechanical",
+            "trade": "MECHANICAL",
+            "levelId": "floor1"
+        },
+        {
+            "id": "floor1-plumbing",
+            "name": "First floor plumbing",
+            "trade": "PLUMBING",
+            "levelId": "floor1"
+        },
+        {
             "id": "floor2-structural",
             "name": "Second floor structural",
             "trade": "FLOOR_STRUCTURAL",
@@ -144,6 +162,24 @@
             "id": "floor2-furniture",
             "name": "Second floor furniture",
             "trade": "FURNITURE",
+            "levelId": "floor2"
+        },
+        {
+            "id": "floor2-electrical",
+            "name": "Second floor electrical",
+            "trade": "ELECTRICAL",
+            "levelId": "floor2"
+        },
+        {
+            "id": "floor2-mechanical",
+            "name": "Second floor mechanical",
+            "trade": "MECHANICAL",
+            "levelId": "floor2"
+        },
+        {
+            "id": "floor2-plumbing",
+            "name": "Second floor plumbing",
+            "trade": "PLUMBING",
             "levelId": "floor2"
         },
         {
@@ -170,7 +206,7 @@
             "visible": false
         },
         {
-            "id": "custom-35868130",
+            "id": "custom-aa92f730",
             "name": "Electrical",
             "trade": "CUSTOM",
             "levelId": "floor1"

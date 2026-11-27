@@ -363,6 +363,10 @@ enum class LayerTrade(val label: String) {
     FLOOR_PLAN("Floor plan"),
     CABINETS("Cabinets"),
     FURNITURE("Furniture"),
+    /** Each floor's electrical, HVAC and plumbing layers (Mep, Dan Nov 27), worked on with its plan. */
+    ELECTRICAL("Electrical"),
+    MECHANICAL("Mechanical (HVAC)"),
+    PLUMBING("Plumbing"),
     ROOF_STRUCTURAL("Roof structural"),
     /** The roof plan for the A sheets (Dan, Nov 22): the same roof as the framing, drawn finished, with the roofing. */
     ROOF_PLAN("Roof plan"),
@@ -496,7 +500,10 @@ object Building {
         return structural + listOf(
             Layer("$f-plan", "$floorName plan", LayerTrade.FLOOR_PLAN, f),
             Layer("$f-cabinets", "$floorName cabinets", LayerTrade.CABINETS, f),
-            Layer("$f-furniture", "$floorName furniture", LayerTrade.FURNITURE, f)
+            Layer("$f-furniture", "$floorName furniture", LayerTrade.FURNITURE, f),
+            Layer("$f-electrical", "$floorName electrical", LayerTrade.ELECTRICAL, f),
+            Layer("$f-mechanical", "$floorName mechanical", LayerTrade.MECHANICAL, f),
+            Layer("$f-plumbing", "$floorName plumbing", LayerTrade.PLUMBING, f)
         )
     }
 
@@ -531,6 +538,9 @@ object Layers {
     fun defaultLayerId(e: DrawingElement): String = when {
         e is DrawingElement.Symbol && (e.category == PlanSymbols.CABINETS || e.category == PlanSymbols.CLOSET) -> Building.FLOOR1_CABINETS
         e is DrawingElement.Symbol && e.category == PlanSymbols.FURNITURE -> Building.FLOOR1_FURNITURE
+        e is DrawingElement.Symbol && e.category == Mep.ELECTRICAL -> "floor1-electrical"
+        e is DrawingElement.Symbol && e.category == Mep.HVAC -> "floor1-mechanical"
+        e is DrawingElement.Symbol && e.category == Mep.PLUMBING -> "floor1-plumbing"
         else -> Building.FLOOR1_PLAN
     }
 
@@ -554,6 +564,9 @@ object Layers {
             val trade = when (e.category) {
                 PlanSymbols.CABINETS, PlanSymbols.CLOSET -> LayerTrade.CABINETS
                 PlanSymbols.FURNITURE -> LayerTrade.FURNITURE
+                Mep.ELECTRICAL -> LayerTrade.ELECTRICAL
+                Mep.HVAC -> LayerTrade.MECHANICAL
+                Mep.PLUMBING -> LayerTrade.PLUMBING
                 else -> null
             }
             if (trade != null) state.effectiveLayers.firstOrNull { it.trade == trade && it.levelId == active.levelId }?.let { return it.id }
@@ -610,7 +623,7 @@ object Layers {
     /** How a layer shows on screen. */
     enum class Display { FULL, FAINT, HIDDEN }
 
-    private val PLAN_GROUP = setOf(LayerTrade.FLOOR_PLAN, LayerTrade.CABINETS, LayerTrade.FURNITURE)
+    private val PLAN_GROUP = setOf(LayerTrade.FLOOR_PLAN, LayerTrade.CABINETS, LayerTrade.FURNITURE, LayerTrade.ELECTRICAL, LayerTrade.MECHANICAL, LayerTrade.PLUMBING)
 
     /**
      * The layers worked on together, at full strength: a floor plan with that floor's cabinets,
@@ -692,6 +705,7 @@ object Layers {
             LayerTrade.FLOOR_PLAN -> 2
             LayerTrade.CABINETS -> 3
             LayerTrade.FURNITURE -> 4
+            LayerTrade.ELECTRICAL, LayerTrade.MECHANICAL, LayerTrade.PLUMBING -> 5
             LayerTrade.ROOF_STRUCTURAL -> 5
             LayerTrade.ROOF_PLAN -> 6
             LayerTrade.CUSTOM -> 7

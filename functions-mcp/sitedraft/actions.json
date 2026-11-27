@@ -168,6 +168,16 @@
             ]
         },
         {
+            "action": "ApplyCabinetStyleInRoom",
+            "about": "Gives every cabinet in [id]'s room the door style and hardware [id] has.",
+            "args": [
+                {
+                    "name": "id",
+                    "type": "text"
+                }
+            ]
+        },
+        {
             "action": "ApplyCalibration",
             "about": "The real length between the two calibration points, in document units (ft or m).",
             "args": [
@@ -191,6 +201,10 @@
         },
         {
             "action": "CloseRoom",
+            "args": []
+        },
+        {
+            "action": "CloseRoomElectrical",
             "args": []
         },
         {
@@ -277,6 +291,22 @@
         {
             "action": "DuplicateSelectedElement",
             "args": []
+        },
+        {
+            "action": "ElectricalToCode",
+            "about": "Electrical to code (ElectricalCode): every room on the active level, or with [x], [y] (world px) just the room there.",
+            "args": [
+                {
+                    "name": "x",
+                    "type": "number or null",
+                    "optional": true
+                },
+                {
+                    "name": "y",
+                    "type": "number or null",
+                    "optional": true
+                }
+            ]
         },
         {
             "action": "End",
@@ -491,6 +521,28 @@
                 {
                     "name": "name",
                     "type": "text"
+                }
+            ]
+        },
+        {
+            "action": "ReplaceSymbol",
+            "about": "Swaps symbol [id] for library symbol [name], [widthIn] x [depthIn], in the same spot and turn.",
+            "args": [
+                {
+                    "name": "id",
+                    "type": "text"
+                },
+                {
+                    "name": "name",
+                    "type": "text"
+                },
+                {
+                    "name": "widthIn",
+                    "type": "number"
+                },
+                {
+                    "name": "depthIn",
+                    "type": "number"
                 }
             ]
         },
@@ -1222,6 +1274,25 @@
             ]
         },
         {
+            "action": "SetCabinetKind",
+            "about": "Changes cabinet [id] to library cabinet [name] at [widthIn] (null = its stock width); its back stays against the wall.",
+            "args": [
+                {
+                    "name": "id",
+                    "type": "text"
+                },
+                {
+                    "name": "name",
+                    "type": "text"
+                },
+                {
+                    "name": "widthIn",
+                    "type": "number or null",
+                    "optional": true
+                }
+            ]
+        },
+        {
             "action": "SetLayerVisible",
             "args": [
                 {
@@ -1231,6 +1302,25 @@
                 {
                     "name": "visible",
                     "type": "true/false"
+                }
+            ]
+        },
+        {
+            "action": "SetOpeningKind",
+            "about": "Changes door or window [id] to library kind [name] at [widthIn] (null = its width now), in place; a door keeps its wall side.",
+            "args": [
+                {
+                    "name": "id",
+                    "type": "text"
+                },
+                {
+                    "name": "name",
+                    "type": "text"
+                },
+                {
+                    "name": "widthIn",
+                    "type": "number or null",
+                    "optional": true
                 }
             ]
         },
@@ -1331,6 +1421,83 @@
             ]
         },
         {
+            "action": "SetRoomElectrical",
+            "about": "Sets the electrical choices of the room at [x], [y] (world px) and lays that room out again.",
+            "args": [
+                {
+                    "name": "x",
+                    "type": "number"
+                },
+                {
+                    "name": "y",
+                    "type": "number"
+                },
+                {
+                    "name": "opts",
+                    "type": {
+                        "object": "RoomElectrical",
+                        "fields": [
+                            {
+                                "name": "id",
+                                "type": "text",
+                                "optional": true
+                            },
+                            {
+                                "name": "x",
+                                "type": "number",
+                                "optional": true
+                            },
+                            {
+                                "name": "y",
+                                "type": "number",
+                                "optional": true
+                            },
+                            {
+                                "name": "type",
+                                "type": "text",
+                                "optional": true
+                            },
+                            {
+                                "name": "light",
+                                "type": "text",
+                                "optional": true
+                            },
+                            {
+                                "name": "cans",
+                                "type": "whole number",
+                                "optional": true
+                            },
+                            {
+                                "name": "switchDoor",
+                                "type": "whole number",
+                                "optional": true
+                            },
+                            {
+                                "name": "threeWay",
+                                "type": "whole number",
+                                "optional": true
+                            },
+                            {
+                                "name": "extraPlugs",
+                                "type": "whole number",
+                                "optional": true
+                            },
+                            {
+                                "name": "floorPlug",
+                                "type": "true/false",
+                                "optional": true
+                            },
+                            {
+                                "name": "tvPlug",
+                                "type": "true/false",
+                                "optional": true
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
             "action": "SetWallCursor",
             "args": [
                 {
@@ -1367,6 +1534,34 @@
                             "DEMO"
                         ]
                     }
+                }
+            ]
+        },
+        {
+            "action": "SetWallKind",
+            "about": "Changes wall [id] to wall type [name] (its thickness), on the same centre line.",
+            "args": [
+                {
+                    "name": "id",
+                    "type": "text"
+                },
+                {
+                    "name": "name",
+                    "type": "text"
+                }
+            ]
+        },
+        {
+            "action": "SetWallLength",
+            "about": "Sets wall [id] to [lengthIn] long, its west (or north) end staying put.",
+            "args": [
+                {
+                    "name": "id",
+                    "type": "text"
+                },
+                {
+                    "name": "lengthIn",
+                    "type": "number"
                 }
             ]
         },
@@ -1746,6 +1941,10 @@
                                 ]
                             },
                             {
+                                "type": "com.example.sitedraft.ui.canvas.Placement.RoomElectrical",
+                                "fields": []
+                            },
+                            {
                                 "type": "com.example.sitedraft.ui.canvas.Placement.RoomElevations",
                                 "fields": [
                                     {
@@ -1860,6 +2059,20 @@
                 {
                     "name": "enabled",
                     "type": "true/false"
+                }
+            ]
+        },
+        {
+            "action": "ToggleSwitchLeg",
+            "about": "Switch [switchId] controls (or stops controlling) light or fan [deviceId].",
+            "args": [
+                {
+                    "name": "switchId",
+                    "type": "text"
+                },
+                {
+                    "name": "deviceId",
+                    "type": "text"
                 }
             ]
         },

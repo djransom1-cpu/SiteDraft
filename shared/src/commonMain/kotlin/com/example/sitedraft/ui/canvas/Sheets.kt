@@ -251,7 +251,12 @@ object Sheets {
                 LevelKind.FLOOR -> "${level.name} plan"
                 else -> "${level.name} plan"
             }
-            out += title to on.map { it.id }
+            val mep = setOf(LayerTrade.ELECTRICAL, LayerTrade.MECHANICAL, LayerTrade.PLUMBING)
+            out += title to on.filter { it.trade !in mep }.map { it.id }
+            // Electrical, mechanical and plumbing plans: the floor plan with that trade over it (Nov 27).
+            val plan = on.filter { it.trade == LayerTrade.FLOOR_PLAN }.map { it.id }
+            for ((trade, word) in listOf(LayerTrade.ELECTRICAL to "electrical", LayerTrade.MECHANICAL to "mechanical", LayerTrade.PLUMBING to "plumbing"))
+                on.filter { it.trade == trade }.takeIf { it.isNotEmpty() }?.let { out += "${level.name} $word plan" to plan + it.map { l -> l.id } }
         }
         layers.filter { it.levelId == null && it.trade != LayerTrade.EXTERIOR_ELEVATION && !isSheetNotes(it.id) }.forEach { out += "${it.name}" to listOf(it.id) }
         // The floor plans first (a plan sheet shouldn't pick up the foundation and framing by
@@ -313,6 +318,9 @@ object Sheets {
                 shown.all { it.trade == LayerTrade.FOUNDATION || it.trade == LayerTrade.FLOOR_STRUCTURAL } ->
                     Slot("S", 100 + floorNo(shown.firstOrNull { it.trade == LayerTrade.FLOOR_STRUCTURAL }?.levelId))
                 shown.all { it.trade in setOf(LayerTrade.FOUNDATION, LayerTrade.FLOOR_STRUCTURAL, LayerTrade.ROOF_STRUCTURAL) } -> Slot("S", 300)
+                shown.any { it.trade == LayerTrade.ELECTRICAL } -> Slot("E", 100 + floorNo(shown.first { it.trade == LayerTrade.ELECTRICAL }.levelId))
+                shown.any { it.trade == LayerTrade.MECHANICAL } -> Slot("M", 100 + floorNo(shown.first { it.trade == LayerTrade.MECHANICAL }.levelId))
+                shown.any { it.trade == LayerTrade.PLUMBING } -> Slot("P", 100 + floorNo(shown.first { it.trade == LayerTrade.PLUMBING }.levelId))
                 else -> {
                     val level = shown.firstOrNull { it.trade == LayerTrade.FLOOR_PLAN || it.trade == LayerTrade.CABINETS || it.trade == LayerTrade.FURNITURE }?.levelId
                         ?: shown.first().levelId

@@ -68,7 +68,7 @@ fun SymbolLibraryPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Symbol Library",
+                    text = "Library",
                     style = MaterialTheme.typography.headlineSmall
                 )
                 IconButton(onClick = onClose) {
@@ -99,8 +99,21 @@ fun SymbolLibraryPanel(
             SymbolCategory(com.example.sitedraft.ui.canvas.Porches.CATEGORY, Icons.Default.Foundation, com.example.sitedraft.ui.canvas.Porches.library, onEvent)
             // Section and detail callouts (Nov 23): numbered from the sheet set.
             SymbolCategory(com.example.sitedraft.ui.canvas.Callouts.CATEGORY, Icons.Default.Layers, com.example.sitedraft.ui.canvas.Callouts.library, onEvent)
-            SymbolCategory("Electrical", Icons.Default.ElectricBolt, listOf("Outlet", "Switch", "Light Fixture", "Junction Box"), onEvent)
-            SymbolCategory("Plumbing", Icons.Default.WaterDrop, listOf("Valve", "Faucet"), onEvent)
+            // Electrical to code in one press, and a room's own card (ElectricalCode, Nov 27).
+            Text("Electrical to code", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = { onEvent(DrawingEvent.ElectricalToCode()) }, modifier = Modifier.weight(1f)) { Text("Whole floor") }
+                OutlinedButton(onClick = { onEvent(DrawingEvent.StartPlacement(com.example.sitedraft.ui.canvas.Placement.RoomElectrical)) }, modifier = Modifier.weight(1f)) { Text("Room card") }
+            }
+            Text("Plugs, switches, lights, smoke/CO and bath fans to the job's code. Room card: tap a room to change it.", style = MaterialTheme.typography.bodySmall)
+            // Electrical and HVAC (Mep, Dan Nov 27): the kind, then its size.
+            if (state != null) SizedCategory(com.example.sitedraft.ui.canvas.Mep.ELECTRICAL, Icons.Default.ElectricBolt, com.example.sitedraft.ui.canvas.Mep.electricalGroups, state, onEvent)
+            else SymbolCategory(com.example.sitedraft.ui.canvas.Mep.ELECTRICAL, Icons.Default.ElectricBolt, com.example.sitedraft.ui.canvas.Mep.electrical, onEvent)
+            if (state != null) SizedCategory(com.example.sitedraft.ui.canvas.Mep.HVAC, Icons.Default.Air, com.example.sitedraft.ui.canvas.Mep.hvacGroups, state, onEvent)
+            else SymbolCategory(com.example.sitedraft.ui.canvas.Mep.HVAC, Icons.Default.Air, com.example.sitedraft.ui.canvas.Mep.hvac, onEvent)
+            // Plumbing rough-in (Mep, Nov 27): pipes and drain/water points.
+            if (state != null) SizedCategory(com.example.sitedraft.ui.canvas.Mep.PLUMBING, Icons.Default.WaterDrop, com.example.sitedraft.ui.canvas.Mep.plumbingGroups, state, onEvent)
+            else SymbolCategory(com.example.sitedraft.ui.canvas.Mep.PLUMBING, Icons.Default.WaterDrop, com.example.sitedraft.ui.canvas.Mep.plumbing, onEvent)
             SymbolCategory(PlanSymbols.FIXTURES, Icons.Default.Bathtub, PlanSymbols.fixtures, onEvent)
             SymbolCategory(PlanSymbols.SHOWERS, Icons.Default.Shower, com.example.sitedraft.ui.canvas.Shower.library, onEvent)
             SymbolCategory(PlanSymbols.APPLIANCES, Icons.Default.Microwave, com.example.sitedraft.ui.canvas.Appliances.appliances, onEvent)
@@ -120,7 +133,6 @@ fun SymbolLibraryPanel(
             SymbolCategory(PlanSymbols.WALLS, Icons.Default.Fence, PlanSymbols.walls, onEvent)
             if (!onFoundation) SymbolCategory(Structure.FOUNDATION, Icons.Default.Foundation, Structure.foundationLibrary, onEvent)
             if (!onFraming) SymbolCategory(Structure.FRAMING, Icons.Default.ViewWeek, Structure.framingLibrary, onEvent)
-            SymbolCategory("HVAC", Icons.Default.ElectricBolt, listOf("Vent", "AC Unit", "Thermostat"), onEvent)
             SymbolCategory("Lumber", Icons.Default.Square, listOf("2x4", "2x6", "2x8", "2x10", "2x12", "1x4", "1x6", "1x8"), onEvent)
             SymbolCategory("Plywood", Icons.Default.Layers, listOf("Plywood 7/16\"", "Plywood 1/2\"", "Plywood 5/8\"", "Plywood 3/4\""), onEvent)
             SymbolCategory("Structural", Icons.Default.Foundation, listOf("W-Beam (W12x26)", "W-Beam (W10x49)", "W-Beam (W8x31)", "W-Beam (W6x15)", "Custom W-Beam", "L-Channel", "Column", "Footing"), onEvent)

@@ -29,6 +29,8 @@ import com.example.sitedraft.ui.canvas.isLockedPlan
 import com.example.sitedraft.ui.canvas.selectionHasGroup
 import com.example.sitedraft.ui.canvas.selectionIsOneGroup
 import com.example.sitedraft.ui.canvas.activeLayer
+import com.example.sitedraft.ui.canvas.boundingRect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Offset
 import com.example.sitedraft.ui.components.*
 import com.example.sitedraft.ui.components.SettingsPanel
@@ -56,7 +58,17 @@ fun MainScreen(
     val importer = rememberFileImporter()
 
     val isMoveToolActive = state.currentTool == DrawingTool.MOVE || state.currentTool == DrawingTool.MOVE_PRECISE
-    val isPropertiesVisible = (state.selectedElementId != null && !isMoveToolActive) || (isExpanded && (currentNav == "Tools"))
+    // Context cards (Dan, Nov 27): tapping a symbol opens its small card by the item; All settings opens the full panel.
+    var fullProperties by remember { mutableStateOf(false) }
+    // Where the card was dragged to (screen px); once moved it stays there for the next items too.
+    var cardPinned by remember { mutableStateOf<Offset?>(null) }
+    LaunchedEffect(state.selectedElementId) { fullProperties = false }
+    val selectedElement = state.elements.find { it.id == state.selectedElementId }
+    val selectedSymbol = selectedElement as? DrawingElement.Symbol
+    // A floor hatch has its own card (Nov 27).
+    val selectedHatch = (selectedElement as? DrawingElement.Rectangle)?.takeIf { it.fill.pattern != com.example.sitedraft.ui.canvas.FillPattern.NONE && it.strokeWidth == 0f }
+    val showCard = (selectedSymbol != null || selectedHatch != null) && !fullProperties && !isMoveToolActive && state.selectedElementIds.isEmpty()
+    val isPropertiesVisible = (state.selectedElementId != null && !isMoveToolActive && !showCard) || (isExpanded && (currentNav == "Tools"))
     val isSettingsVisible = (currentNav == "Settings") && (!isPropertiesVisible)
     // Laser stays up even with a selection: applying a reading to the selected element is the point.
     val isLaserVisible = isExpanded && currentNav == "Laser"
@@ -100,8 +112,8 @@ fun MainScreen(
                 colors = railColors,
                 selected = currentNav == "Symbols",
                 onClick = { currentNav = if (currentNav == "Symbols") "Drawing" else "Symbols" },
-                icon = { Icon(Icons.Default.Widgets, contentDescription = "Symbols") },
-                label = { Text("Symbols") },
+                icon = { Icon(Icons.Default.Widgets, contentDescription = "Library") },
+                label = { Text("Library") },
             )
             NavigationRailItem(
                 colors = railColors,
@@ -401,11 +413,68 @@ fun MainScreen(
                         }
                     }
 
+                    // The selected item's context card, beside it on screen (Nov 27).
+                    if (showCard && selectedElement != null) {
+                        BoxWithConstraints(Modifier.fillMaxSize()) {
+                            val density = LocalDensity.current
+                            val r = selectedElement.boundingRect()
+                            val left = r.left * state.zoom + state.pan.x
+                            val right = r.right * state.zoom + state.pan.x
+                            val top = r.top * state.zoom + state.pan.y
+                            val bottom = r.bottom * state.zoom + state.pan.y
+                            val maxW = constraints.maxWidth.toFloat()
+                            val maxH = constraints.maxHeight.toFloat()
+                            val cardW = with(density) { 300.dp.toPx() }
+                            val gap = with(density) { 24.dp.toPx() }
+                            val topBand = with(density) { 72.dp.toPx() } // under the top bar and the move bar
+                            var cardH by remember { mutableStateOf(with(density) { 420.dp.toPx() }) }
+                            fun clampX(v: Float) = v.coerceIn(8f, (maxW - cardW - 8f).coerceAtLeast(8f))
+                            fun clampY(v: Float) = v.coerceIn(8f, (maxH - cardH - 8f).coerceAtLeast(8f))
+                            // Dan, Nov 27: it covered the item. Beside it with room to spare, else on the far side of the
+                            // screen from it; above or below it only when neither side clears it. Dragged: where he put it.
+                            val pos = cardPinned?.let { Offset(clampX(it.x), clampY(it.y)) } ?: run {
+                                val x = when {
+                                    right + gap + cardW <= maxW -> right + gap
+                                    left - gap - cardW >= 0f -> left - gap - cardW
+                                    (left + right) / 2f < maxW / 2f -> maxW - cardW - 8f
+                                    else -> 8f
+                                }
+                                val clearSide = x >= right || x + cardW <= left
+                                val y = if (clearSide) clampY(maxOf(topBand, top)) else if (top - gap - cardH >= 8f) top - gap - cardH else bottom + gap
+                                Offset(clampX(x), clampY(y))
+                            }
+                            val cardModifier = Modifier
+                                .offset { androidx.compose.ui.unit.IntOffset(pos.x.toInt(), pos.y.toInt()) }
+                                .onSizeChanged { cardH = it.height.toFloat() }
+                            val onCardDrag: (Offset) -> Unit = { d -> cardPinned = Offset(clampX(pos.x + d.x), clampY(pos.y + d.y)) }
+                            if (selectedSymbol != null) ContextCard(
+                                element = selectedSymbol, state = state, onEvent = viewModel::onEvent,
+                                onAllSettings = { fullProperties = true }, onDrag = onCardDrag, modifier = cardModifier
+                            ) else if (selectedHatch != null) HatchCard(
+                                hatch = selectedHatch, state = state, onEvent = viewModel::onEvent, onDrag = onCardDrag, modifier = cardModifier
+                            )
+                        }
+                    }
+
+                    // A room's electrical card (Nov 27): opened by tapping a room after "Room electrical".
+                    state.electricalRoom?.let { roomAt ->
+                        BoxWithConstraints(Modifier.fillMaxSize()) {
+                            val density = LocalDensity.current
+                            val maxW = constraints.maxWidth.toFloat()
+                            val cardW = with(density) { 300.dp.toPx() }
+                            val pos = cardPinned ?: Offset(maxW - cardW - with(density) { 16.dp.toPx() }, with(density) { 80.dp.toPx() })
+                            RoomElectricalCard(at = roomAt, state = state, onEvent = viewModel::onEvent,
+                                onDrag = { d -> cardPinned = Offset((pos.x + d.x).coerceIn(8f, (maxW - cardW - 8f).coerceAtLeast(8f)), (pos.y + d.y).coerceAtLeast(8f)) },
+                                modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset(pos.x.toInt(), pos.y.toInt()) })
+                        }
+                    }
+
                     // Floating Action Bar for Selected Element (or a box-selected group - it
                     // only offers Copy/Delete/Close for a group since Move/Pt-to-Pt there are
                     // single-element tools; the group itself is moved by dragging it directly
                     // with Select, same as any single element).
-                    if ((state.selectedElementId != null || state.selectedElementIds.isNotEmpty()) && currentNav == "Drawing") {
+                    // The card carries these buttons while it's open (Nov 27: the bar sat on top of it).
+                    if ((state.selectedElementId != null || state.selectedElementIds.isNotEmpty()) && currentNav == "Drawing" && !showCard) {
                         val explodeCandidate = state.elements.find { it.id == state.selectedElementId }
                         FloatingActionBar(
                             currentTool = state.currentTool,

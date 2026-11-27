@@ -39,6 +39,25 @@ object Trim {
     val casingChoices = listOf(2.25f, 3.25f)
     val baseChoices = listOf(3.25f, 4.25f, 5.25f)
 
+    /**
+     * An opening's own trim (Dan, Nov 27: a kitchen window by the tile may get different trim): set on its context card,
+     * these override the elevation's casing, head and window trim for that one door or window. Absent = as the room has it.
+     */
+    const val PROP_CASING_IN = "trimCasingIn"
+    const val PROP_HEAD = "trimHead"
+    const val PROP_WINDOW_TRIM = "trimWindow"
+
+    /** [spec] with [opening]'s own trim, where it has any. */
+    fun specFor(opening: DrawingElement.Symbol, spec: ElevationSpec): ElevationSpec {
+        val p = opening.properties
+        if (p[PROP_CASING_IN] == null && p[PROP_HEAD] == null && p[PROP_WINDOW_TRIM] == null) return spec
+        return spec.copy(
+            casingIn = p[PROP_CASING_IN]?.takeIf { it > 0f } ?: spec.casingIn,
+            headStyle = p[PROP_HEAD]?.toInt()?.coerceIn(0, headLabels.lastIndex) ?: spec.headStyle,
+            windowTrim = p[PROP_WINDOW_TRIM]?.toInt()?.coerceIn(0, windowLabels.lastIndex) ?: spec.windowTrim,
+        )
+    }
+
     /** The face width of a leg: the casing, plus the backband for backband and cornice heads. */
     fun legIn(spec: ElevationSpec): Float = spec.casingIn + if (spec.headStyle == HEAD_MITERED) 0f else BACKBAND_IN
 

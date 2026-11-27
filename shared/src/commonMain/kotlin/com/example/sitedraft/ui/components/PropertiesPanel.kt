@@ -1747,8 +1747,23 @@ private fun ShowerSection(shower: DrawingElement.Symbol, onEvent: (DrawingEvent)
     }
     chips("Bench on", Shower.BENCH_WALL, Shower.wallChoiceLabels, walls + Shower.NONE)
     if (Shower.code(shower, Shower.BENCH_WALL) != Shower.NONE) {
+        chips("Bench style", Shower.BENCH_STYLE, Shower.benchStyleLabels)
         inches("Bench height", Shower.BENCH_H)
         inches("Bench depth", Shower.BENCH_D)
+    }
+    // Shelves (Dan, Nov 27): corner shelves or a ledge, stone or tile.
+    chips("Shelves", Shower.SHELF_KIND, Shower.shelfKindLabels)
+    val shelfKind = Shower.code(shower, Shower.SHELF_KIND)
+    if (shelfKind != Shower.SHELF_NONE) {
+        if (shelfKind == Shower.SHELF_CORNER) chips("Which corner", Shower.SHELF_WHERE,
+            if (Shower.RIGHT in walls) Shower.cornerLabels else Shower.cornerLabels.take(1))
+        else chips("Along", Shower.SHELF_WHERE, Shower.wallChoiceLabels.take(3), walls)
+        chips("How many", Shower.SHELF_N, listOf("0", "1", "2", "3", "4"), listOf(1, 2, 3, 4))
+        chips("Material", Shower.SHELF_MAT, Shower.shelfMatLabels)
+        inches("Lowest shelf height", Shower.SHELF_H)
+        inches("Space between", Shower.SHELF_GAP)
+        inches(if (shelfKind == Shower.SHELF_CORNER) "Corner leg" else "Depth", Shower.SHELF_D)
+        if (Shower.shelfHeights(shower).isEmpty()) Text("That corner or wall isn't tiled on this shower: pick another.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
     OutlinedButton(onClick = { onEvent(DrawingEvent.AddShowerWalls(shower.id)) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Text("Add 2x4 walls around it")

@@ -374,6 +374,10 @@ sealed class DrawingElement {
     }
 }
 
+/** A switch leg (Nov 27): switch [switchId] controls light or fan [deviceId]; drawn as a dashed arc between them. */
+@Serializable
+data class SwitchLeg(val switchId: String, val deviceId: String)
+
 @Serializable
 data class CanvasState(
     val elements: List<DrawingElement> = emptyList(),
@@ -425,6 +429,8 @@ data class CanvasState(
     // user deleted, which it must not put back. New in 1.0.31.
     val generatedIds: Set<String> = emptySet(),
     val suppressedGenIds: Set<String> = emptySet(),
+    // Switch legs (Mep, Nov 27): which switch controls which lights and fans.
+    val switchLegs: List<SwitchLeg> = emptyList(),
     val zoom: Float = 1f,
     @Serializable(with = OffsetSerializer::class)
     val pan: Offset = Offset.Zero,
@@ -469,6 +475,12 @@ data class CanvasState(
     // Typed specs for the trade schedules (TradeSchedules, Nov 26): appliances and fixtures by element, cabinets by room.
     val itemSpecs: List<ItemSpec> = emptyList(),
     val cabinetSpecs: List<CabinetSpec> = emptyList(),
+    // Each room's electrical choices (ElectricalCode, Nov 27).
+    val roomElectrical: List<RoomElectrical> = emptyList(),
+    // The room whose electrical card is open: a point inside it. Session UI state.
+    @kotlinx.serialization.Transient
+    @Serializable(with = OffsetSerializer::class)
+    val electricalRoom: Offset? = null,
     // Live rubber-band rectangle while a box-select drag is in progress; null the rest of the
     // time. Both corners kept (not a Rect) since which corner is "start" matters for future
     // window-vs-crossing selection semantics.

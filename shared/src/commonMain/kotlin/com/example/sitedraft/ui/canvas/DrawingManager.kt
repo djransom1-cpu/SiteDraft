@@ -292,7 +292,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             is DrawingEvent.StartPlacement -> _state.value = _state.value.copy(pendingPlacement = event.placement, placementPreview = null)
             is DrawingEvent.PreviewPlacementAt -> _state.value.pendingPlacement?.let { pending ->
                 // Calibration points are not snapped, so neither is their crosshair.
-                val at = if (pending is Placement.Calibrate || pending is Placement.Plan || pending is Placement.Hatch || pending is Placement.DimensionRoom || pending is Placement.RoomElevations || pending is Placement.RoomFinish) event.point else findSnapPoint(event.point)
+                val at = if (pending is Placement.Calibrate || pending is Placement.Plan || pending is Placement.Hatch || pending is Placement.DimensionRoom || pending is Placement.RoomElevations || pending is Placement.RoomFinish || pending is Placement.RoomElectrical) event.point else findSnapPoint(event.point)
                 _state.value = _state.value.copy(placementPreview = at)
             }
             is DrawingEvent.PlaceAt -> _state.value.pendingPlacement?.let { pending ->
@@ -311,6 +311,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                     is Placement.Elevation -> placeElevation(point, pending)
                     is Placement.RoomElevations -> placeRoomElevations(event.point, pending.walls)
                     is Placement.RoomFinish -> addRoomFinish(event.point, pending.name)
+                    is Placement.RoomElectrical -> {
+                        if (ElectricalCode.roomAt(event.point, _state.value) == null) notify("No room there: tap inside a room with walls all around.")
+                        else _state.value = _state.value.copy(electricalRoom = event.point, selectedElementId = null)
+                    }
                     // Unsnapped: the tap only has to land inside the area.
                     is Placement.Hatch -> placeHatch(event.point, pending)
                     // One room's inside size, its strings outside its walls; tapping it again redoes them.
@@ -639,6 +643,138 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             // Door handing. Swapping the hinge mirrors the door in place; swinging it to the
             // other side turns it half round about its threshold (so it stays in the wall) and
             // mirrors it, so the hinge stays on the same jamb.
+            is DrawingEvent.ElectricalToCode -> {
+                // Electrical to code in one press (Nov 27): the whole level, or one room (its card's Redo).
+                val before = _state.value
+                val at = if (event.x != null && event.y != null) Offset(event.x, event.y) else null
+                ElectricalCode.refusal(before)?.let { notify(it); return }
+                if (ElectricalCode.rooms(before).isEmpty()) { notify("No rooms found: electrical goes in rooms with walls all around."); return }
+                pushUndoSnapshot()
+                val after = ElectricalCode.apply(before, at)
+                // Show the electrical layer so what was placed can be seen.
+                val elec = ElectricalCode.layerId(after)
+                _state.value = LayerEdits.setVisible(after, elec, true).state
+                notify(ElectricalCode.summary(before, after))
+                triggerAutoSave()
+            }
+            is DrawingEvent.SetRoomElectrical -> {
+                // The room card's choices, then that room laid out again with them.
+                val s0 = _state.value
+                val at = Offset(event.x, event.y)
+                val room = ElectricalCode.roomAt(at, s0) ?: run { notify("No room there."); return }
+                val old = ElectricalCode.optsFor(room.rect, s0)
+                val opts = event.opts.copy(id = old?.id ?: event.opts.id, x = room.rect.center.x, y = room.rect.center.y)
+                pushUndoSnapshot()
+                val withOpts = s0.copy(roomElectrical = s0.roomElectrical.filter { it.id != old?.id } + opts)
+                _state.value = ElectricalCode.apply(withOpts, room.rect.center)
+                triggerAutoSave()
+            }
+            DrawingEvent.CloseRoomElectrical -> _state.value = _state.value.copy(electricalRoom = null)
+            is DrawingEvent.ToggleSwitchLeg -> {
+                // A switch leg on or off (switch card, Nov 27).
+                val st = _state.value
+                val leg = SwitchLeg(event.switchId, event.deviceId)
+                pushUndoSnapshot()
+                _state.value = st.copy(switchLegs = if (leg in st.switchLegs) st.switchLegs - leg else st.switchLegs + leg)
+                triggerAutoSave()
+            }
+            is DrawingEvent.ReplaceSymbol -> {
+                // Another library symbol of the same kind in the same spot and turn (MEP card, Nov 27).
+                val o = _state.value.elements.find { it.id == event.id } as? DrawingElement.Symbol
+                val inch = _state.value.inchesToPx(1f)
+                if (o != null && inch > 0f && event.widthIn > 0f && event.depthIn > 0f) {
+                    pushUndoSnapshot()
+                    _state.value = _state.value.copy(elements = _state.value.elements.map {
+                        if (it.id == o.id) o.copy(symbolName = event.name, size = Size(event.widthIn * inch, event.depthIn * inch),
+                            properties = o.properties + mapOf("widthInches" to event.widthIn, "depthInches" to event.depthIn)) else it
+                    })
+                    triggerAutoSave()
+                }
+            }
+            is DrawingEvent.SetWallKind -> {
+                // Another wall type (2x4, 2x6...) in place, on the same centre line (wall card, Nov 27).
+                val w = _state.value.elements.find { it.id == event.id } as? DrawingElement.Symbol
+                val inch = _state.value.inchesToPx(1f)
+                val t = PlanSymbols.footprintInches[event.name]?.second
+                if (w != null && w.category == PlanSymbols.WALLS && t != null && inch > 0f) {
+                    val horizontal = w.size.width >= w.size.height
+                    val size = if (horizontal) Size(w.size.width, t * inch) else Size(t * inch, w.size.height)
+                    pushUndoSnapshot()
+                    _state.value = _state.value.copy(elements = _state.value.elements.map {
+                        if (it.id == w.id) w.copy(symbolName = event.name, size = size, properties = w.properties + ("depthInches" to t)) else it
+                    })
+                    triggerAutoSave()
+                }
+            }
+            is DrawingEvent.SetWallLength -> {
+                // A wall's length, its west (or north) end staying put (wall card, Nov 27).
+                val w = _state.value.elements.find { it.id == event.id } as? DrawingElement.Symbol
+                val inch = _state.value.inchesToPx(1f)
+                if (w != null && w.category == PlanSymbols.WALLS && event.lengthIn > 1f && inch > 0f) {
+                    val b = FloorPlan.bounds(w)
+                    val len = event.lengthIn * inch
+                    val horizontal = w.size.width >= w.size.height
+                    val updated = if (horizontal) w.copy(center = Offset(b.left + len / 2f, w.center.y), size = Size(len, w.size.height))
+                        else w.copy(center = Offset(w.center.x, b.top + len / 2f), size = Size(w.size.width, len))
+                    pushUndoSnapshot()
+                    _state.value = _state.value.copy(elements = _state.value.elements.map { if (it.id == w.id) updated.copy(properties = updated.properties + ("widthInches" to event.lengthIn)) else it })
+                    triggerAutoSave()
+                }
+            }
+            is DrawingEvent.SetCabinetKind -> {
+                // Another cabinet or width in place (cabinet card, Nov 27): the back stays against the wall.
+                val c = _state.value.elements.find { it.id == event.id } as? DrawingElement.Symbol
+                val inch = _state.value.inchesToPx(1f)
+                val fp = PlanSymbols.footprintInches[event.name]
+                if (c != null && c.category == PlanSymbols.CABINETS && fp != null && inch > 0f) {
+                    val wIn = event.widthIn ?: fp.first
+                    val size = Size(wIn * inch, fp.second * inch)
+                    // The back is the symbol's top edge (local -y): keep it where it is.
+                    val center = c.center + rotateAbout(Offset(0f, (size.height - c.size.height) / 2f), Offset.Zero, c.rotation)
+                    pushUndoSnapshot()
+                    _state.value = _state.value.copy(elements = _state.value.elements.map {
+                        if (it.id == c.id) c.copy(symbolName = event.name, size = size, center = center,
+                            properties = c.properties + mapOf("widthInches" to wIn, "depthInches" to fp.second)) else it
+                    })
+                    triggerAutoSave()
+                }
+            }
+            is DrawingEvent.ApplyCabinetStyleInRoom -> {
+                // This cabinet's door style and hardware for every cabinet in its room (Dan, Nov 27: "just in that room").
+                val c = _state.value.elements.find { it.id == event.id } as? DrawingElement.Symbol
+                val st = _state.value
+                val room = c?.let { CabinetList.roomAt(it.center, st)?.first }
+                if (c != null && room != null) {
+                    val style = PlanSymbols.doorStyle(c).toFloat()
+                    val hw = PlanSymbols.hardware(c).toFloat()
+                    pushUndoSnapshot()
+                    _state.value = st.copy(elements = st.elements.map { e ->
+                        if (e is DrawingElement.Symbol && PlanSymbols.hasStyleChoice(e) && room.contains(e.center))
+                            e.copy(properties = e.properties + (PlanSymbols.PROP_STYLE to style) + (PlanSymbols.PROP_HARDWARE to hw)) else e
+                    })
+                    triggerAutoSave()
+                }
+            }
+            is DrawingEvent.SetOpeningKind -> {
+                // Another kind or width of door or window, in place (context card, Nov 27): a door keeps its wall side
+                // where it is (its swing grows or shrinks into the room); a window stays centred in the wall.
+                val o = _state.value.elements.find { it.id == event.id } as? DrawingElement.Symbol
+                val inch = _state.value.inchesToPx(1f)
+                if (o != null && o.category == PlanSymbols.DOORS_WINDOWS && inch > 0f) {
+                    val wIn = event.widthIn ?: (o.size.width / inch)
+                    val fp = PlanSymbols.footprintAt(event.name, wIn)
+                    if (fp != null) {
+                        val size = Size(fp.first * inch, fp.second * inch)
+                        val center = if (PlanSymbols.isDoor(o.symbolName) || PlanSymbols.isDoor(event.name))
+                            o.center + rotateAbout(Offset(0f, (o.size.height - size.height) / 2f), Offset.Zero, o.rotation) else o.center
+                        val updated = o.copy(symbolName = event.name, size = size, center = center,
+                            properties = o.properties + mapOf("widthInches" to fp.first, "depthInches" to fp.second))
+                        pushUndoSnapshot()
+                        _state.value = _state.value.copy(elements = _state.value.elements.map { if (it.id == o.id) updated else it })
+                        triggerAutoSave()
+                    }
+                }
+            }
             is DrawingEvent.SwapDoorHinge, is DrawingEvent.SwingDoorOtherSide -> {
                 val id = if (event is DrawingEvent.SwapDoorHinge) event.id else (event as DrawingEvent.SwingDoorOtherSide).id
                 val door = _state.value.elements.find { it.id == id } as? DrawingElement.Symbol
@@ -2443,6 +2579,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             if (base != null && others.isEmpty() && before is DrawingElement.Symbol && before.category == PlanSymbols.WALLS && before.rotation == 0f) {
                 _state.value = _state.value.copy(elements = moveTyped(setOf(sel), d, base))
             }
+            // A return grille dropped back onto the stud/joist layout after a drag (Mep.alignToFraming).
+            if (after is DrawingElement.Symbol && after.symbolName.startsWith("Return Grille")) {
+                val aligned = Mep.alignToFraming(after, _state.value)
+                if (aligned.center != after.center) _state.value = _state.value.copy(elements = _state.value.elements.map { if (it.id == sel) aligned else it })
+            }
             lastDragElements = moveGestureBefore
             _state.value = _state.value.copy(lastMoveDir = dir, lastMoveDistanceIn = kotlin.math.abs(if (dir.x != 0f) d.x else d.y) / _state.value.inchesToPx(1f))
         }
@@ -2884,17 +3025,29 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             notify("No closed area there: hatch needs walls or lines on all four sides.")
             return
         }
+        // Dan, Nov 27: on the floor plan of the walls round it, not the active layer: drawn on the Exterior layer it sat
+        // over the tub and vanity instead of under them.
+        val inflated = Rect(area.left - 2f, area.top - 2f, area.right + 2f, area.bottom + 2f)
+        val planLayer = s.elements.filterIsInstance<DrawingElement.Symbol>()
+            .filter { it.category == PlanSymbols.WALLS && FloorPlan.bounds(it).overlaps(inflated) }
+            .map { Layers.layerOf(it, s) }.firstOrNull { it.trade == LayerTrade.FLOOR_PLAN }?.id ?: Building.FLOOR1_PLAN
         val hatch = DrawingElement.Rectangle(
             topLeft = area.topLeft, size = area.size, color = s.currentColor, strokeWidth = 0f,
             fill = Fill(
                 pattern = placement.pattern, spacing = s.inchesToPx(placement.sizeIn), lineWidth = 1f,
                 length = if (placement.lengthIn > 0f) s.inchesToPx(placement.lengthIn) else 0f
-            )
+            ),
+            layerId = planLayer
         )
-        val underlayEnd = s.elements.indexOfLast { it is DrawingElement.Pdf || it is DrawingElement.Image } + 1
+        // A hatch already filling that same area is replaced, not stacked (Dan, Nov 27: it made another over the first).
+        fun same(e: DrawingElement) = e is DrawingElement.Rectangle && e.fill.pattern != FillPattern.NONE && e.strokeWidth == 0f &&
+            kotlin.math.abs(e.topLeft.x - area.left) < 1f && kotlin.math.abs(e.topLeft.y - area.top) < 1f &&
+            kotlin.math.abs(e.size.width - area.width) < 1f && kotlin.math.abs(e.size.height - area.height) < 1f
+        val rest = s.elements.filterNot(::same)
+        val underlayEnd = rest.indexOfLast { it is DrawingElement.Pdf || it is DrawingElement.Image } + 1
         pushUndoSnapshot()
         _state.value = s.copy(
-            elements = s.elements.take(underlayEnd) + hatch + s.elements.drop(underlayEnd),
+            elements = rest.take(underlayEnd) + hatch + rest.drop(underlayEnd),
             pendingPlacement = null,
             placementPreview = null,
             selectedElementId = hatch.id,
@@ -3335,7 +3488,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             color = _state.value.currentColor,
             rotation = rotation,
             properties = properties
-        )
+        ).let { Mep.alignToFraming(it, _state.value) } // a return grille lands on the stud/joist layout
         pushUndoSnapshot()
         _state.value = _state.value.copy(
             elements = _state.value.elements + symbol,
@@ -3462,6 +3615,26 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             if (value.isBlank()) return@map element.copy(properties = element.properties - property)
                             val v = parseInches(value) ?: return@map element
                             if (v > 0f) element.copy(properties = element.properties + (property to v)) else element
+                        }
+                        // An electrical box's or grille's height to its bottom, inches (Mep, Nov 27): blank goes back to the default.
+                        // Airflow (CFM) on a register or duct, a device's circuit: 0 or blank clears it.
+                        Mep.CFM, Mep.CIRCUIT -> {
+                            if (element !is DrawingElement.Symbol || !Mep.isMep(element)) return@map element
+                            val v = value.trim().toFloatOrNull() ?: 0f
+                            if (v <= 0f) element.copy(properties = element.properties - property) else element.copy(properties = element.properties + (property to v))
+                        }
+                        Mep.MOUNT_H -> {
+                            if (element !is DrawingElement.Symbol || !Mep.isMep(element)) return@map element
+                            if (value.isBlank()) return@map element.copy(properties = element.properties - property)
+                            val v = parseInches(value) ?: return@map element
+                            if (v >= 0f) element.copy(properties = element.properties + (property to v)) else element
+                        }
+                        // A door's or window's own trim (context card, Nov 27): blank goes back to the room's.
+                        Trim.PROP_CASING_IN, Trim.PROP_HEAD, Trim.PROP_WINDOW_TRIM -> {
+                            if (element !is DrawingElement.Symbol || element.category != PlanSymbols.DOORS_WINDOWS) return@map element
+                            if (value.isBlank()) return@map element.copy(properties = element.properties - property)
+                            val v = parseInches(value) ?: return@map element
+                            if (v >= 0f) element.copy(properties = element.properties + (property to v)) else element
                         }
                         // A door's or window's own height / a window's sill, in inches ("6 1/2" welcome).
                         PlanSymbols.PROP_SILL_IN, PlanSymbols.PROP_HEIGHT_IN -> {
@@ -3663,6 +3836,8 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                         "fillPattern" -> element.fillOrNull()?.let { f -> element.withFill(f.copy(pattern = FillPattern.entries.firstOrNull { it.name == value } ?: f.pattern)) } ?: element
                         "fillColor" -> element.fillOrNull()?.let { f -> element.withFill(f.copy(color = if (value == "auto") null else (parseHexColor(value) ?: f.color))) } ?: element
                         "fillSpacing" -> element.fillOrNull()?.let { f -> element.withFill(f.copy(spacing = value.toFloatOrNull() ?: f.spacing)) } ?: element
+                        // The tile or plank's long side, px (0 = the pattern's own proportion).
+                        "fillLength" -> element.fillOrNull()?.let { f -> element.withFill(f.copy(length = value.toFloatOrNull()?.coerceAtLeast(0f) ?: f.length)) } ?: element
                         // Tile width and length typed in inches (feet-and-inches welcome); length 0 = the pattern's own proportion.
                         "fillWidthIn" -> element.fillOrNull()?.let { f ->
                             val v = parseInches(value)?.takeIf { it > 0f } ?: return@map element
@@ -4364,6 +4539,36 @@ sealed class DrawingEvent {
     /** Sets this door style and hardware on every cabinet in the drawing. */
     @Serializable
     data class ApplyCabinetStyle(val style: Int, val hardware: Int) : DrawingEvent()
+    /** Switch [switchId] controls (or stops controlling) light or fan [deviceId]. */
+    @Serializable
+    data class ToggleSwitchLeg(val switchId: String, val deviceId: String) : DrawingEvent()
+    /** Electrical to code (ElectricalCode): every room on the active level, or with [x], [y] (world px) just the room there. */
+    @Serializable
+    data class ElectricalToCode(val x: Float? = null, val y: Float? = null) : DrawingEvent()
+    /** Sets the electrical choices of the room at [x], [y] (world px) and lays that room out again. */
+    @Serializable
+    data class SetRoomElectrical(val x: Float, val y: Float, val opts: RoomElectrical) : DrawingEvent()
+    /** Closes the room electrical card. */
+    @Serializable
+    data object CloseRoomElectrical : DrawingEvent()
+    /** Swaps symbol [id] for library symbol [name], [widthIn] x [depthIn], in the same spot and turn. */
+    @Serializable
+    data class ReplaceSymbol(val id: String, val name: String, val widthIn: Float, val depthIn: Float) : DrawingEvent()
+    /** Changes wall [id] to wall type [name] (its thickness), on the same centre line. */
+    @Serializable
+    data class SetWallKind(val id: String, val name: String) : DrawingEvent()
+    /** Sets wall [id] to [lengthIn] long, its west (or north) end staying put. */
+    @Serializable
+    data class SetWallLength(val id: String, val lengthIn: Float) : DrawingEvent()
+    /** Changes cabinet [id] to library cabinet [name] at [widthIn] (null = its stock width); its back stays against the wall. */
+    @Serializable
+    data class SetCabinetKind(val id: String, val name: String, val widthIn: Float? = null) : DrawingEvent()
+    /** Gives every cabinet in [id]'s room the door style and hardware [id] has. */
+    @Serializable
+    data class ApplyCabinetStyleInRoom(val id: String) : DrawingEvent()
+    /** Changes door or window [id] to library kind [name] at [widthIn] (null = its width now), in place; a door keeps its wall side. */
+    @Serializable
+    data class SetOpeningKind(val id: String, val name: String, val widthIn: Float? = null) : DrawingEvent()
     /** Moves a hinged door's hinge to the other jamb, in place. */
     @Serializable
     data class SwapDoorHinge(val id: String) : DrawingEvent()
