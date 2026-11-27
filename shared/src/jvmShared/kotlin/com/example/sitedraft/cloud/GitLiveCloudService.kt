@@ -169,6 +169,15 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
     private data class ChunkFields(val index: Int, val json: String)
 
     @Serializable
+    private data class ClaudePresenceFields(val device: String, val project: String, val lastActiveAt: Long, val seenAt: Long)
+
+    @Serializable
+    private data class ClaudeRunningFields(val status: String, val runBy: String, val startedAt: Long)
+
+    @Serializable
+    private data class ClaudeDoneFields(val status: String, val runBy: String, val result: String, val finishedAt: Long)
+
+    @Serializable
     private data class RedeemFields(val accessCode: AccessCodeRedemption)
 
     @Serializable
@@ -275,9 +284,41 @@ open class GitLiveCloudService(private val startupError: String? = null) : Cloud
             batch.commit()
         }
 
+        override suspend fun projectUpdatedAt(uid: String, name: String): Long? = store("Checking '$name'") {
+            val snap = db.collection("users").document(uid).collection("projects").document(CloudDocs.encodeDocId(name)).get()
+            if (snap.exists) snap.field<Long>("updatedAt") else null
+        }
+
         override suspend fun projectStamp(uid: String, name: String): Long? = store("Checking '$name'") {
             val snap = db.collection("users").document(uid).collection("projectStamps").document(CloudDocs.encodeDocId(name)).get()
             if (snap.exists) snap.field<Long>("updatedAt") else null
+        }
+
+        override suspend fun writeClaudePresence(uid: String, deviceId: String, presence: ClaudePresence) = store("Telling Claude this device is open") {
+            db.collection("users").document(uid).collection("claudeDevices").document(CloudDocs.encodeDocId(deviceId))
+                .set(ClaudePresenceFields.serializer(), ClaudePresenceFields(presence.device, presence.project, presence.lastActiveAt, presence.seenAt), merge = true)
+        }
+
+        override suspend fun claudePendingCommand(uid: String, deviceId: String): String? = store("Checking for Claude's commands") {
+            val snap = db.collection("users").document(uid).collection("claudeDevices").document(CloudDocs.encodeDocId(deviceId)).get()
+            if (snap.exists) snap.field<String>("pendingCommand")?.takeIf { it.isNotBlank() } else null
+        }
+
+        override suspend fun readClaudeCommand(uid: String, id: String): ClaudeCommandDoc? = store("Reading Claude's command") {
+            val snap = db.collection("users").document(uid).collection("claudeCommands").document(CloudDocs.encodeDocId(id)).get()
+            if (!snap.exists) null else ClaudeCommandDoc(
+                id = id,
+                project = snap.field<String>("project") ?: "",
+                target = snap.field<String>("target") ?: "",
+                status = snap.field<String>("status") ?: "",
+                actions = snap.field<String>("actions") ?: "[]",
+            )
+        }
+
+        override suspend fun updateClaudeCommand(uid: String, id: String, status: String, result: String?, at: Long, device: String) = store("Answering Claude") {
+            val ref = db.collection("users").document(uid).collection("claudeCommands").document(CloudDocs.encodeDocId(id))
+            if (result == null) ref.set(ClaudeRunningFields.serializer(), ClaudeRunningFields(status, device, at), merge = true)
+            else ref.set(ClaudeDoneFields.serializer(), ClaudeDoneFields(status, device, result, at), merge = true)
         }
 
         override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? = store("Reading the sharing of '$name'") {

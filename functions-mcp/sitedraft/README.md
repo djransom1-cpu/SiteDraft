@@ -11,6 +11,19 @@ Deployed as the Cloud Function `sitedraftMcp` in the `sitedraft-djransom` Fireba
 codebase `mcp` (folder `functions-mcp`, so it never needs the Stripe functions' secrets);
 built the same way as Crewsync's `crewsyncMcp`.
 
+## The app runs Claude's commands (Nov 25, 2026)
+
+`app_status`, `list_actions`, `run_actions`, `command_status` (bridge.js): instead of more drawing code in
+JavaScript, Claude sends the app's own events (actions.json, generated from `DrawingEvent` by
+ConnectorExportTest) and the open app runs them with its own code (shared/.../ui/cloud/ClaudeBridge.kt,
+ui/canvas/ClaudeCommands.kt), saves, and answers with what changed. Any open copy (desktop, Android,
+web) can take a command; the connector picks the one with the project open that was used last.
+Needs the app open; the tools above still work with it closed.
+
+- `users/{uid}/claudeDevices/{deviceId}`: `{ device, project, lastActiveAt, seenAt }` from each open copy;
+  `pendingCommand` set by the connector on the copy it picks.
+- `users/{uid}/claudeCommands/{id}`: `{ project, target, status, actions, result, ... }`.
+
 ## Files
 
 | File | What it does |
@@ -21,6 +34,8 @@ built the same way as Crewsync's `crewsyncMcp`.
 | `model.js` | The project file format (kotlinx JSON, packed colours kept exactly), lengths, symbols |
 | `store.js` | Firestore: the app's chunked project documents, backups, the reload stamp |
 | `pdf.js` | PDF pages rendered at 72 DPI as the desktop app does (pdf.js + @napi-rs/canvas) |
+| `bridge.js` | Claude's commands for the open app: which copy, leave the batch, wait for the answer |
+| `actions.json` | Generated from the app by `ConnectorExportTest` (do not edit) |
 | `oauth.js` | OAuth provider, adapted from Crewsync |
 | `catalog.json`, `fixtures/sample-*`, `empty-project.json` | Generated from the app by `ConnectorExportTest` (do not edit) |
 | `fixtures/connector-*` | Written by `test/sitedraft-mcp.test.js`, opened with the app's code by `ConnectorCheckTest` |

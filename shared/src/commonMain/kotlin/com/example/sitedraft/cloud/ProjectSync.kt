@@ -183,7 +183,12 @@ class ProjectSync(
             if (ref == null) {
                 // Claude changed this project in the cloud since this device last saw it: these
                 // edits are kept as a copy and Claude's version is taken, so neither is lost.
-                if (connectorChangedSince(user, name, previous?.remoteUpdatedAt)) pullConnectorChange(user, name, keepLocal = true)
+                // Another device saved it since this one last saw the cloud copy (Dan, Nov 27: the desktop opened its
+                // older copy and wrote over the tablet's newer one): the same, these edits kept as a copy.
+                val seen = previous?.remoteUpdatedAt
+                val cloudAt = try { cloud.store.projectUpdatedAt(user, name) } catch (e: Exception) { null }
+                if (connectorChangedSince(user, name, seen) || (seen != null && cloudAt != null && cloudAt > seen))
+                    pullConnectorChange(user, name, keepLocal = true)
                 else push(user, name, json, savedAt, localName = name)
             }
             else push(ref.ownerUid, ref.cloudName, renameProjectJson(json, ref.cloudName), savedAt, localName = name)
@@ -269,6 +274,20 @@ class ProjectSync(
         withContext(Dispatchers.Main) {
             listener?.onProjectPulled(name)
             if (kept != null) listener?.onProjectListChanged()
+        }
+    }
+
+    /**
+     * Waits up to [timeoutMs] until the local copy of [name] is in the cloud (pushed, nothing
+     * pending), so Claude's next read sees what its commands did. True when it is.
+     */
+    suspend fun awaitPushed(name: String, timeoutMs: Long = 15_000L): Boolean {
+        val end = nowMillis() + timeoutMs
+        while (true) {
+            val m = readMeta(name)
+            if (m != null && !m.pendingPush && m.remoteUpdatedAt == m.updatedAt) return true
+            if (nowMillis() > end) return false
+            delay(250)
         }
     }
 

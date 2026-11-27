@@ -300,7 +300,14 @@ private fun AddViewChoices(state: CanvasState, existing: SheetLayout?, onDetail:
         }
         // The door and window schedules, read off the plan (once each per sheet).
         listOf(SheetViewKind.DOOR_SCHEDULE to "Door schedule", SheetViewKind.WINDOW_SCHEDULE to "Window schedule",
-            SheetViewKind.STRUCTURAL_CALCS to "Structural calculations").forEach { (kind, label) ->
+            SheetViewKind.STRUCTURAL_CALCS to "Structural calculations",
+            // The T sheets (Nov 25): the cover's index, project data and legend; the general notes.
+            SheetViewKind.SHEET_INDEX to "Sheet index", SheetViewKind.PROJECT_DATA to "Project data",
+            SheetViewKind.LEGEND to "Legend and symbols", SheetViewKind.GENERAL_NOTES to "General notes",
+            SheetViewKind.COVER_TITLE to "Cover title", SheetViewKind.PAINT_SCHEDULE to "Paint schedule",
+            SheetViewKind.FINISH_SCHEDULE to "Finish schedule", SheetViewKind.TRIM_SCHEDULE to "Trim schedule",
+            SheetViewKind.CABINET_SCHEDULE to "Cabinet & countertop schedule", SheetViewKind.APPLIANCE_SCHEDULE to "Appliance schedule",
+            SheetViewKind.PLUMBING_SCHEDULE to "Plumbing fixture schedule").forEach { (kind, label) ->
             if (existing == null || existing.views.none { it.kind == kind }) {
                 OutlinedButton(onClick = { onPick(SheetView(kind = kind, title = label), false) }) { Text(label) }
             }

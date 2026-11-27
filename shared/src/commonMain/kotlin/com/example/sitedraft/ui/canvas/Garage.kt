@@ -327,11 +327,12 @@ object Garages {
         val r = g.boundingRect()
         val att = attachment(g, fp, k)
         val hr = s.roof
-        val pitch = (hr?.pitch ?: 6f) / 12f
+        val isWing = Wings.isWing(g)
+        val pitch = (if (isWing) Wings.pitchOf(g, s) else (hr?.pitch ?: 6f)) / 12f
         val ov = (hr?.overhangIn ?: 12f) * k
         val rake = (hr?.rakeIn ?: 12f) * k
         val heel = hr?.heelIn ?: 4f
-        val atWall = plateIn(s) + heel
+        val atWall = (if (isWing) Wings.plateIn(g, s) else plateIn(s)) + heel
         val eaveZ = atWall - ov / k * pitch
         val style = prop(g, ROOF_STYLE).coerceIn(0, 2)
         val out = mutableListOf<Seg3>()
@@ -361,7 +362,9 @@ object Garages {
             Porches.Side.TOP -> !houseAcross && hr.endA == RoofEnd.HIP
             Porches.Side.BOTTOM -> !houseAcross && hr.endB == RoofEnd.HIP
         }
-        val houseEaveFaces = att != null && houseAcross != null && s.upperFloors.isEmpty() &&
+        // A one-story box on a two-story house dies into the house wall; a full-height wing ties into the house roof.
+        val sameHeight = s.upperFloors.isEmpty() || (isWing && Wings.fullHeight(g))
+        val houseEaveFaces = att != null && houseAcross != null && sameHeight &&
             (houseAcross == (att.first == Porches.Side.TOP || att.first == Porches.Side.BOTTOM) || hipEndFaces)
         // Hip: picked, or "continue the house roof" on a house whose end on that side is a hip (Dan: match the house).
         val houseEndHip = hr != null && att != null && when (att.first) {

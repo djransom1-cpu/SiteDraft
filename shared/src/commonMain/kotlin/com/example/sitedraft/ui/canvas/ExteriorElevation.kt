@@ -165,7 +165,16 @@ object ExteriorElevation {
     data class Mark(val name: String, val elevationIn: Float)
     data class Geometry(val segs: List<Seg>, val labels: List<Label>, val marks: List<Mark>, val extent: Rect, val textIn: Float)
 
+    private var tracedKey: Any? = null
+    private val tracedCache = HashMap<Face, Geometry?>()
+
     fun geometry(state: CanvasState, face: Face): Geometry? {
+        // A traced roof (RoofAreas, Dan Nov 26): its own elevation, worked out once per change.
+        if (RoofAreas.active(state)) {
+            val key = listOf(state.building, state.elements.hashCode(), state.inchesToPx(1f))
+            if (key != tracedKey) { tracedKey = key; tracedCache.clear() }
+            return tracedCache.getOrPut(face) { runCatching { tracedGeometry(state, face) }.getOrNull() }
+        }
         val fp = RoofPlan.footprint(state) ?: return null
         val k = state.inchesToPx(1f)
         if (fp.width <= 0f || fp.height <= 0f || k <= 0f) return null
@@ -252,7 +261,9 @@ object ExteriorElevation {
             val ov = r.overhangIn
             val eaveTop = roofAtWall - ov * pitch
             val soffit = eaveTop - FASCIA_IN
-            val ridge = roofAtWall + g.spanIn / 2f * pitch
+            // A flat on top (Dan, Nov 26): the slopes stop at the deck, [inset] in from the walls.
+            val inset = RoofPlan.deckInsetIn(state, r)
+            val ridge = RoofPlan.flatDeckIn(state, r) ?: (roofAtWall + g.spanIn / 2f * pitch)
             ridgeIn = ridge
             val eaveSide = g.ridgeAcross == horizontal
             if (eaveSide) {
@@ -263,8 +274,8 @@ object ExteriorElevation {
                 }
                 val eL = if (leftEnd == RoofEnd.HIP) -ov else -r.rakeIn
                 val eR = wallLen + if (rightEnd == RoofEnd.HIP) ov else r.rakeIn
-                var rL = if (leftEnd == RoofEnd.HIP) g.spanIn / 2f else eL
-                var rR = if (rightEnd == RoofEnd.HIP) wallLen - g.spanIn / 2f else eR
+                var rL = if (leftEnd == RoofEnd.HIP) (inset ?: (g.spanIn / 2f)) else eL
+                var rR = if (rightEnd == RoofEnd.HIP) wallLen - (inset ?: (g.spanIn / 2f)) else eR
                 if (rL > rR) { val m = (rL + rR) / 2f; rL = m; rR = m }
                 line(eL, eaveTop, rL, ridge, Pen.HEAVY)
                 line(rL, ridge, rR, ridge, Pen.HEAVY)
@@ -283,11 +294,15 @@ object ExteriorElevation {
                 val eL = -ov
                 val eR = wallLen + ov
                 val mid = wallLen / 2f
-                line(eL, eaveTop, mid, ridge, Pen.HEAVY)
-                line(mid, ridge, eR, eaveTop, Pen.HEAVY)
+                // With a flat on top the end is cut off level at the deck.
+                val tL = inset ?: mid
+                val tR = if (inset != null) wallLen - inset else mid
+                line(eL, eaveTop, tL, ridge, Pen.HEAVY)
+                if (tR > tL) line(tL, ridge, tR, ridge, Pen.HEAVY)
+                line(tR, ridge, eR, eaveTop, Pen.HEAVY)
                 if (end == RoofEnd.HIP) {
                     // The hip comes down to the eave: fascia straight across, the wall stops at the soffit.
-                    hatch(listOf(eL to eaveTop, mid to ridge, eR to eaveTop), r)
+                    hatch(listOfNotNull(eL to eaveTop, tL to ridge, (tR to ridge).takeIf { tR > tL }, eR to eaveTop), r)
                     rect(eL, soffit, eR, eaveTop, Pen.MEDIUM)
                     wallTopEnds = soffit
                 } else {
@@ -352,8 +367,11 @@ object ExteriorElevation {
             val layer = of(o)
             if (layer.trade != LayerTrade.FLOOR_PLAN) continue
             val host = OpeningPosition.hostWall(o, state) ?: continue
-            if (host.symbolName != FloorPlan.EXTERIOR_WALL) continue
+            if (!HouseOutline.isExterior(host, state)) continue
             if (Wings.isWingPart(host)) continue   // a wing's own walls: drawn with the wing
+            if (Wings.drawnWingOf(o, host, state, fp, k) != null) continue   // in a wing on the plan's own walls: drawn with it
+            // An old house's outside wall (any type): only the face that looks out this way.
+            if (host.symbolName != FloorPlan.EXTERIOR_WALL && side !in HouseOutline.facing(host, state)) continue
             val a = Elevation.openingAnchor(o)
             val near = listOf(
                 ViewerSide.ABOVE to (a.y - fp.top), ViewerSide.BELOW to (fp.bottom - a.y),
@@ -392,7 +410,7 @@ object ExteriorElevation {
                     else -> line(x1, mid, x2, mid, Pen.THIN) // double hung: the meeting rail
                 }
             } else {
-                val head = base + (o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: PlanSymbols.DOOR_HEIGHT_IN)
+                val head = base + (o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: state.building.doorHeadIn)
                 rect(x1, base, x2, head, Pen.MEDIUM)
                 // Casing up the sides and across the head.
                 line(x1 - CASING_IN, base, x1 - CASING_IN, head + CASING_IN, Pen.THIN)
@@ -550,7 +568,7 @@ object ExteriorElevation {
 
         // Level marks down the right, highest first; a label is pushed down when it would overlap the one above.
         val marks = mutableListOf<Mark>()
-        ridgeIn?.let { marks += Mark("RIDGE", it) }
+        ridgeIn?.let { marks += Mark(if (s.roof?.let { RoofPlan.flatDeckIn(state, it) } != null) "FLAT ROOF" else "RIDGE", it) }
         marks += Mark("TOP OF PLATE", plate)
         s.upperFloors.reversed().forEach { marks += Mark(it.name.uppercase(), it.elevationIn) }
         marks += Mark(if (s.foundation == FoundationType.SLAB) "TOP OF SLAB" else "FIRST FLOOR", s.datumIn)
@@ -575,6 +593,156 @@ object ExteriorElevation {
             take(lb.at)
             take(lb.at + Offset(lb.text.length * textIn * 0.62f, textIn * 1.3f))
         }
+        val margin = 12f
+        return Geometry(segs, labels, marks, Rect(l - margin, t - margin, rr + margin, b + margin), textIn)
+    }
+
+    /**
+     * An exterior elevation for a traced roof (RoofAreas, Dan Nov 26: the Ransom House). Everything is projected onto the
+     * face: the roof's ridges, hips, valleys, flat edge, eaves and rakes, the fascia under each eave, each outside wall's
+     * corners on the foundation, and the doors and windows; anything behind something nearer (the roof or the house in
+     * front of it) is left out. Each part stands at its own area's plate, so a one-story wing reads lower than the house.
+     */
+    private fun tracedGeometry(state: CanvasState, face: Face): Geometry? {
+        val built = RoofAreas.built(state) ?: return null
+        val fp = RoofPlan.footprint(state) ?: Rect(built.bounds.left * state.inchesToPx(1f), built.bounds.top * state.inchesToPx(1f),
+            built.bounds.right * state.inchesToPx(1f), built.bounds.bottom * state.inchesToPx(1f))
+        val k = state.inchesToPx(1f)
+        if (k <= 0f) return null
+        val s = state.building
+        val side = face.side
+        val textIn = TEXT_PAPER_IN * DENOMINATOR
+        val segs = mutableListOf<Seg>()
+        fun y(e: Float) = -e
+        fun line(x1: Float, e1: Float, x2: Float, e2: Float, pen: Pen) { segs += Seg(Offset(x1, y(e1)), Offset(x2, y(e2)), pen) }
+        val areas = built.areas
+        fun along(p: Offset) = Elevation.alongOf(fp, side, p * k) / k
+        // Toward the viewer, one step in plan.
+        val toward = when (side) { ViewerSide.BELOW -> Offset(0f, 1f); ViewerSide.ABOVE -> Offset(0f, -1f); ViewerSide.RIGHT -> Offset(1f, 0f); ViewerSide.LEFT -> Offset(-1f, 0f) }
+        val fTop = foundationTopIn(s)
+        val grade = gradeIn(s)
+        val bx0 = built.bounds.left - 4f; val bx1 = built.bounds.right + 4f
+        val by0 = built.bounds.top - 4f; val by1 = built.bounds.bottom + 4f
+        val g = 2f
+        // What stands in front of a point: the house (inside its walls, solid up to the roof) or an overhang (a thin band).
+        fun hidden(p: Offset, z: Float): Boolean {
+            var q = p + toward * (g * 1.5f)
+            var n = 0
+            while (q.x in bx0..bx1 && q.y in by0..by1 && n < 2000) {
+                val t = RoofAreas.top(areas, q.x, q.y)
+                if (t != null) {
+                    val solid = areas.any { RoofAreas.inside(it.poly, q.x, q.y) }
+                    if (solid && z < t.first - 0.75f) return true
+                    if (!solid && z < t.first - 0.75f && z > t.first - FASCIA_IN - 4f) return true
+                }
+                q += toward * g; n++
+            }
+            return false
+        }
+        /** A line in plan with heights, drawn on the face where it can be seen. */
+        fun see(a: Offset, za: Float, b: Offset, zb: Float, pen: Pen) {
+            val len = max(kotlin.math.abs(along(b) - along(a)), kotlin.math.abs(zb - za)).coerceAtLeast((b - a).getDistance())
+            val n = (len / 2f).toInt().coerceIn(1, 600)
+            var runStart: Int? = null
+            fun pt(i: Int): Triple<Offset, Float, Float> { val f = i / n.toFloat(); val p = a + (b - a) * f; return Triple(p, za + (zb - za) * f, along(p)) }
+            for (i in 0..n) {
+                val (p, z, _) = pt(i)
+                val vis = !hidden(p, z)
+                if (vis && runStart == null) runStart = i
+                if ((!vis || i == n) && runStart != null) {
+                    val end = if (vis) i else i - 1
+                    if (end > runStart!!) { val (_, z1, a1) = pt(runStart!!); val (_, z2, a2) = pt(end); line(a1, z1, a2, z2, pen) }
+                    runStart = null
+                }
+            }
+        }
+        // The roof.
+        var ridge = -Float.MAX_VALUE
+        for (l in built.lines) {
+            ridge = max(ridge, max(l.za, l.zb))
+            when (l.what) {
+                RoofAreas.What.MEMBER, RoofAreas.What.WALL -> {}
+                RoofAreas.What.EAVE -> {
+                    see(l.a, l.za, l.b, l.zb, Pen.HEAVY)
+                    see(l.a, l.za - FASCIA_IN, l.b, l.zb - FASCIA_IN, Pen.MEDIUM)
+                }
+                RoofAreas.What.RAKE -> {
+                    see(l.a, l.za, l.b, l.zb, Pen.HEAVY)
+                    see(l.a, l.za - FASCIA_IN, l.b, l.zb - FASCIA_IN, Pen.MEDIUM)
+                }
+                else -> see(l.a, l.za, l.b, l.zb, Pen.HEAVY)
+            }
+        }
+        // The outside walls: their corners, from the foundation up to the plate, and the foundation along them.
+        val walls = built.lines.filter { it.what == RoofAreas.What.WALL }
+        for (w in walls) {
+            val area = areas.minByOrNull { a -> kotlin.math.abs(a.base - w.za) } ?: continue
+            val plate = area.base - (s.roof?.heelIn ?: 0f)
+            for (p in listOf(w.a, w.b)) {
+                val out = p + toward * 0.5f
+                see(out, fTop, out, plate, Pen.HEAVY)
+                see(out, grade, out, fTop, Pen.MEDIUM)
+            }
+            see(w.a + toward * 0.5f, fTop, w.b + toward * 0.5f, fTop, Pen.MEDIUM)
+        }
+        // Doors and windows in the outside walls that look this way, where nothing stands in front of them.
+        val of = Layers.resolver(state)
+        val levelById = state.levels.associateBy { it.id }
+        for (o in state.elements.filterIsInstance<DrawingElement.Symbol>()) {
+            val kind = Schedules.kindOf(o) ?: continue
+            val layer = of(o)
+            if (layer.trade != LayerTrade.FLOOR_PLAN) continue
+            val host = OpeningPosition.hostWall(o, state) ?: continue
+            if (!HouseOutline.isExterior(host, state)) continue
+            if (host.symbolName != FloorPlan.EXTERIOR_WALL && side !in HouseOutline.facing(host, state)) continue
+            val aPx = Elevation.openingAnchor(o)
+            val anchor = Offset(aPx.x / k, aPx.y / k)
+            val thick = min(host.size.width, host.size.height) / k
+            val front = anchor + toward * (thick / 2f + 1f)
+            val base = levelById[layer.levelId]?.elevationIn ?: s.datumIn
+            val c = along(anchor)
+            val w = Schedules.widthAlongPx(o) / k
+            val x1 = c - w / 2f; val x2 = c + w / 2f
+            val (lo, hi) = if (kind == Schedules.Kind.WINDOW) {
+                val sill = base + (o.properties[PlanSymbols.PROP_SILL_IN] ?: 36f)
+                sill to sill + (o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: 48f)
+            } else base to base + (o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: s.doorHeadIn)
+            if (hidden(front, (lo + hi) / 2f)) continue
+            line(x1, lo, x2, lo, Pen.MEDIUM); line(x2, lo, x2, hi, Pen.MEDIUM); line(x2, hi, x1, hi, Pen.MEDIUM); line(x1, hi, x1, lo, Pen.MEDIUM)
+            line(x1 - CASING_IN, if (kind == Schedules.Kind.WINDOW) lo - 1.5f else lo, x1 - CASING_IN, hi + CASING_IN, Pen.THIN)
+            line(x1 - CASING_IN, hi + CASING_IN, x2 + CASING_IN, hi + CASING_IN, Pen.THIN)
+            line(x2 + CASING_IN, hi + CASING_IN, x2 + CASING_IN, if (kind == Schedules.Kind.WINDOW) lo - 1.5f else lo, Pen.THIN)
+            if (kind == Schedules.Kind.WINDOW) {
+                line(x1 - CASING_IN, lo - 1.5f, x2 + CASING_IN, lo - 1.5f, Pen.THIN)
+                line(x1, (lo + hi) / 2f, x2, (lo + hi) / 2f, Pen.THIN)
+            }
+        }
+        // Grade across everything, a little past each end.
+        val xs = segs.flatMap { listOf(it.a.x, it.b.x) }
+        if (xs.isEmpty()) return null
+        line(xs.min() - GRADE_RUN_IN, grade, xs.max() + GRADE_RUN_IN, grade, Pen.HEAVY)
+        // Level marks down the right.
+        val marks = mutableListOf<Mark>()
+        if (ridge > -Float.MAX_VALUE) marks += Mark("RIDGE", ridge)
+        areas.mapNotNull { it.flat?.c0 }.maxOrNull()?.let { marks += Mark("FLAT ROOF", it) }
+        areas.map { it.base - (s.roof?.heelIn ?: 0f) }.distinct().sortedDescending().forEachIndexed { i, p -> marks += Mark(if (i == 0) "TOP OF PLATE" else "TOP OF PLATE (WING)", p) }
+        s.upperFloors.reversed().forEach { marks += Mark(it.name.uppercase(), it.elevationIn) }
+        marks += Mark(if (s.foundation == FoundationType.SLAB) "TOP OF SLAB" else "FIRST FLOOR", s.datumIn)
+        if (s.foundation != FoundationType.SLAB) marks += Mark("TOP OF FOUNDATION", fTop)
+        marks += Mark("GRADE", grade)
+        val labels = mutableListOf<Label>()
+        val x0 = xs.max() + 24f
+        var lastTop = Float.MAX_VALUE
+        for (m in marks.sortedByDescending { it.elevationIn }) {
+            line(x0, m.elevationIn, x0 + 18f, m.elevationIn, Pen.THIN)
+            val textTop = min(m.elevationIn + textIn * 1.1f, lastTop - textIn * 0.2f)
+            labels += Label("${m.name} ${Building.elevationText(m.elevationIn)}", Offset(x0 + 22f, y(textTop)))
+            lastTop = textTop - textIn * 1.1f
+        }
+        var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var rr = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
+        fun take(p: Offset) { l = min(l, p.x); t = min(t, p.y); rr = max(rr, p.x); b = max(b, p.y) }
+        segs.forEach { take(it.a); take(it.b) }
+        labels.forEach { lb -> take(lb.at); take(lb.at + Offset(lb.text.length * textIn * 0.62f, textIn * 1.3f)) }
         val margin = 12f
         return Geometry(segs, labels, marks, Rect(l - margin, t - margin, rr + margin, b + margin), textIn)
     }

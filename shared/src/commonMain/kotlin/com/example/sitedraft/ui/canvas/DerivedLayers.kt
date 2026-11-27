@@ -77,11 +77,16 @@ object DerivedLayers {
 
     /** Brings the generated layers in line with the plan. Returns [state] itself when nothing changes. */
     fun sync(state: CanvasState): CanvasState {
-        if (!state.building.autoLayers) return state
+        // The floors above (UpperFloors, Nov 27): their outside walls and the stair coming up, whether or not the
+        // layers under the plan are built from it.
+        val upper = UpperFloors.parts(state)
+        if (!state.building.autoLayers && upper.isEmpty() && state.elements.none { it.id.startsWith(GEN_PREFIX + "up") }) return state
         // Stairs open the floor framing at their top (Stairs.floorOpening, Nov 24).
         // Section and detail markers go where their drawings belong once the drawings are in the model (CalloutsAuto, Nov 24).
-        val parts = planParts(state)
-        val desired = (parts + Stairs.floorOpenings(state) + Guards.forStairs(state) + CalloutsAuto.forPlan(state, parts)).map { stamped(it) }
+        val desired = if (!state.building.autoLayers) (upper + Guards.forStairs(state)).map { stamped(it) } else {
+            val parts = planParts(state)
+            (parts + Stairs.floorOpenings(state) + Guards.forStairs(state) + CalloutsAuto.forPlan(state, parts) + upper).map { stamped(it) }
+        }
         val current = state.elements.filter { isGenerated(it) }
         val currentIds = current.map { it.id }.toSet()
         val suppressed = state.suppressedGenIds + (state.generatedIds - currentIds)

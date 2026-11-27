@@ -19,6 +19,6 @@
     "pdfkit": "^0.20.2"
   },
   "scripts": {
-    "test": "node test/sitedraft-mcp.test.js"
+    "test": "node test/sitedraft-mcp.test.js && node test/claude-bridge.test.js"
   }
 }

@@ -91,6 +91,20 @@ class ShowerTest {
     }
 
     @Test
+    fun `door plus panel can hinge off the panel`() {
+        // Door at the right end (the default): hinged on the wall it's at the run's far end; off the panel, at its near end.
+        val s = shower("Alcove Shower 60x32")
+        val onWall = Shower.runLayout(s, 60f).first { it.kind == Shower.Pane.DOOR }
+        assertEquals(false, onWall.hingeAtFrom)
+        val onPanel = Shower.runLayout(s.copy(properties = s.properties + (Shower.HINGE_ON to 1f)), 60f).first { it.kind == Shower.Pane.DOOR }
+        assertEquals(true, onPanel.hingeAtFrom)
+        assertEquals(36f, onPanel.from, 0.01f)
+        // Door at the left end: the panel is on its right.
+        val left = s.copy(properties = s.properties + (Shower.DOOR_SIDE to 0f) + (Shower.HINGE_ON to 1f))
+        assertEquals(false, Shower.runLayout(left, 60f).first { it.kind == Shower.Pane.DOOR }.hingeAtFrom)
+    }
+
+    @Test
     fun `every face of every shower type builds`() {
         for (name in Shower.library) {
             val s = shower(name, mapOf(Shower.BENCH_WALL to 0f))

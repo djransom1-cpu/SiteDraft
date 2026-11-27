@@ -46,9 +46,11 @@ class GuardsTest {
 
     @Test
     fun `a stair down to the basement gets a guard on its open sides`() {
-        val (s, st) = stairOn(BuildingSettings(autoLayers = true), goes = 2)
+        val (s0, st) = stairOn(BuildingSettings(autoLayers = true), goes = 2)
+        // Stairs come in bare now (Nov 27): give this one its own guard on the right, as the test was written for.
+        val s = s0.copy(properties = s0.properties + (Stairs.RAIL_RIGHT to Stairs.RAIL_GUARD.toFloat()))
         val g = Guards.forStair(s, st)
-        // The far end and the left side (a handrail only); the right side already has the stair's own guard.
+        // The far end and the left side (no rail); the right side already has the stair's own guard.
         assertEquals(setOf("end", "left"), g.map { it.id.substringAfterLast(":") }.toSet())
         assertTrue(g.all { it.layerId == "floor1-plan" && it.category == PlanSymbols.RAILINGS })
         assertEquals(36f, g.first().properties[Guards.HEIGHT]!!, 0.01f)

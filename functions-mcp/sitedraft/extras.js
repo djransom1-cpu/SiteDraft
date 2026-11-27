@@ -6,6 +6,7 @@
 const M = require("./model");
 const G = require("./geometry");
 const L = require("./layers");
+const T = require("./tools");
 
 const fail = (msg) => { throw new M.UserError(msg); };
 const len = (v, what) => { const x = M.parseLength(v); if (x == null || isNaN(x)) fail(`${what}: "${v}" isn't a length.`); return x; };
@@ -74,9 +75,18 @@ function setExteriorFinish(project, a) {
 
 /** The house: the bounds of the first-floor 2x6 exterior walls, px. */
 function houseBounds(state) {
-  const ext = G.walls(state).filter((w) => /2x6/i.test(w.symbolName || ""));
-  if (!ext.length) fail("There are no 2x6 exterior walls to put it against. Draw the house first.");
-  const bs = ext.map(G.bounds);
+  // An old house drawn room by room has no 2x6 walls (Dan, Nov 26): its walls' extent, less the wings on its own walls.
+  const twoBySix = G.walls(state).filter((w) => /2x6/i.test(w.symbolName || ""));
+  const wingRects = (state.elements || []).filter((e) => M.kind(e) === "Symbol" && e.category === "Wing" && Number((e.properties || {}).wgWalls) === 1).map(G.bounds);
+  // Each wall less what's inside a wing (HouseOutline.minus in the app).
+  const minus = (a, cuts) => cuts.reduce((pieces, c) => pieces.flatMap((p) => {
+    const x0 = Math.max(p.left, c.left), x1 = Math.min(p.right, c.right), y0 = Math.max(p.top, c.top), y1 = Math.min(p.bottom, c.bottom);
+    if (x0 >= x1 || y0 >= y1) return [p];
+    return [G.rect(p.left, p.top, p.right, y0), G.rect(p.left, y1, p.right, p.bottom), G.rect(p.left, y0, x0, y1), G.rect(x1, y0, p.right, y1)]
+      .filter((q) => q.width > 0.01 && q.height > 0.01);
+  }), [a]);
+  const bs = (twoBySix.length ? twoBySix : G.walls(state)).flatMap((w) => minus(G.bounds(w), wingRects));
+  if (!bs.length) fail("There are no walls to put it against. Draw the house first.");
   return G.rect(Math.min(...bs.map((b) => b.left)), Math.min(...bs.map((b) => b.top)), Math.max(...bs.map((b) => b.right)), Math.max(...bs.map((b) => b.bottom)));
 }
 
@@ -157,6 +167,88 @@ function placeGarage(state, a) {
     doorSide: Object.keys(DOOR_SIDES)[props.gaDoorSide] }, note: "Site Draft builds the garage's walls, slab, footings and roof when it reloads the project." } };
 }
 
+// ---------------------------------------------------------------- wings (Wing.kt)
+
+const WING_ENDS = { "match the house": 0, match: 0, gable: 1, hip: 2 };
+const WING_FOUND = { "match the house": 0, match: 0, basement: 0, crawl: 1, "crawl space": 1, slab: 2 };
+
+/**
+ * A wing: a part of the house that sticks out (Dan, Nov 23; Nov 26 for a house as it stands). Either
+ * rooms (room labels) already drawn - the wing covers their outline and uses those walls - or an
+ * outline in plan inches, or side/width/depth against the house like a garage, building its own walls.
+ */
+function placeWing(state, a) {
+  const inch = M.pxPerInch(state);
+  let r, drawn;
+  if (a.rooms && a.rooms.length) {
+    const names = Array.isArray(a.rooms) ? a.rooms : String(a.rooms).split(",");
+    const areas = names.map((n) => {
+      const p = T.roomPoint(state, { room: String(n).trim() }, inch);
+      const area = p && G.areaAt(p, state);
+      if (!area) fail(`Couldn't find the walls round "${n}".`);
+      return area;
+    });
+    const same = (x, y) => Math.abs(x.left - y.left) < 1 && Math.abs(x.top - y.top) < 1 && Math.abs(x.right - y.right) < 1 && Math.abs(x.bottom - y.bottom) < 1;
+    const walls = G.walls(state).map(G.bounds);
+    // Each room's side out to the outside face of its wall when outside is past it; at its own face when another
+    // room of the house is (that wall stays with the house).
+    const grow = (ar) => {
+      const out = { left: ar.left, top: ar.top, right: ar.right, bottom: ar.bottom };
+      const sides = [
+        ["left", (w) => Math.abs(w.right - ar.left) < 1.5 * inch && w.bottom > ar.top + inch && w.top < ar.bottom - inch, (w) => w.left, (x) => ({ x: x - 2 * inch, y: ar.cy })],
+        ["right", (w) => Math.abs(w.left - ar.right) < 1.5 * inch && w.bottom > ar.top + inch && w.top < ar.bottom - inch, (w) => w.right, (x) => ({ x: x + 2 * inch, y: ar.cy })],
+        ["top", (w) => Math.abs(w.bottom - ar.top) < 1.5 * inch && w.right > ar.left + inch && w.left < ar.right - inch, (w) => w.top, (y) => ({ x: ar.cx, y: y - 2 * inch })],
+        ["bottom", (w) => Math.abs(w.top - ar.bottom) < 1.5 * inch && w.right > ar.left + inch && w.left < ar.right - inch, (w) => w.bottom, (y) => ({ x: ar.cx, y: y + 2 * inch })],
+      ];
+      for (const [side, touches, face, past] of sides) {
+        const ws = walls.filter(touches);
+        if (!ws.length) continue;
+        const f = side === "left" || side === "top" ? Math.min(...ws.map(face)) : Math.max(...ws.map(face));
+        const beyond = G.areaAt(past(f), state);
+        const otherRoom = beyond && beyond.width < 2400 * inch && beyond.height < 2400 * inch && !areas.some((x) => same(x, beyond));
+        if (!otherRoom || areas.some((x) => same(x, beyond))) out[side] = f;
+      }
+      return out;
+    };
+    const gs = areas.map(grow);
+    r = G.rect(Math.min(...gs.map((g) => g.left)), Math.min(...gs.map((g) => g.top)), Math.max(...gs.map((g) => g.right)), Math.max(...gs.map((g) => g.bottom)));
+    drawn = true;
+  } else if (a.outline) {
+    const o = a.outline;
+    r = G.rect(len(o.left, "outline.left") * inch, len(o.top, "outline.top") * inch, len(o.right, "outline.right") * inch, len(o.bottom, "outline.bottom") * inch);
+    if (!(r.width > 0 && r.height > 0)) fail("outline: left < right and top < bottom (plan inches, y down).");
+    drawn = a.walls !== "build";
+  } else {
+    const wIn = a.width != null ? len(a.width, "width") : 168, dIn = a.depth != null ? len(a.depth, "depth") : 240;
+    r = againstHouse(state, a, wIn * inch, dIn * inch, inch).r;
+    drawn = a.walls === "drawn";
+  }
+  const props = { wgFound: 0, wgEnd: 0, wgJoists: 0, wgWalls: drawn ? 1 : 0, wgFull: 0, wgWallH: 0, wgPitch: 0 };
+  if (a.end) { const t = WING_ENDS[String(a.end).toLowerCase()]; if (t == null) fail("end: gable, hip or match the house."); props.wgEnd = t; }
+  if (a.foundation) { const t = WING_FOUND[String(a.foundation).toLowerCase()]; if (t == null) fail("foundation: match the house, crawl space or slab."); props.wgFound = t; }
+  if (a.height) {
+    const h = String(a.height).toLowerCase();
+    if (/full|two|2/.test(h)) props.wgFull = 1;
+    else if (!/one|1|single/.test(h)) fail("height: one story or full height.");
+  }
+  if (a.wall_height != null) { props.wgWallH = len(a.wall_height, "wall_height"); props.wgFull = 0; }
+  if (a.pitch != null) { const p = Number(String(a.pitch).split("/")[0]); if (!(p > 0 && p <= 24)) fail("pitch: rise per 12."); props.wgPitch = p; }
+  // Which side of the house it's on decides along/out; the app works the rest out from where it sits.
+  const fp = houseBounds({ ...state, elements: [...(state.elements || []), { type: M.typeOf("Symbol"), category: "Wing", properties: props, center: M.ptText({ x: r.cx, y: r.cy }), size: M.sizeText(r.width, r.height) }] });
+  const gap = { north: fp.top - r.bottom, south: r.top - fp.bottom, west: fp.left - r.right, east: r.left - fp.right };
+  const side = Object.entries(gap).sort((x, y) => Math.abs(x[1]) - Math.abs(y[1]))[0];
+  if (Math.abs(side[1]) > 6 * inch) fail(`That doesn't touch the main house (it's ${r2(Math.abs(side[1]) / inch)}" off its ${side[0]} side). A wing has to stand against it.`);
+  const horiz = side[0] === "north" || side[0] === "south";
+  const sym = M.makeSymbol({ name: "Wing", category: "Wing", center: { x: r.cx, y: r.cy }, widthPx: r.width, depthPx: r.height, color: ink(state),
+    properties: { ...props, widthInches: r2((horiz ? r.width : r.height) / inch), depthInches: r2((horiz ? r.height : r.width) / inch) } });
+  return { state: { ...state, elements: [...(state.elements || []), sym] }, result: { placed: {
+    id: sym.id, side: side[0], outline: { leftIn: r2(r.left / inch), topIn: r2(r.top / inch), rightIn: r2(r.right / inch), bottomIn: r2(r.bottom / inch) },
+    walls: drawn ? "the walls drawn on the plan" : "builds its own 2x6 walls", height: props.wgFull ? "full height (the house's top plate)" : props.wgWallH ? `one story, ${M.formatLength(props.wgWallH)} walls` : "one story (the house's wall height)",
+    end: ["match the house", "gable", "hip"][props.wgEnd], pitch: props.wgPitch ? `${props.wgPitch}/12` : "the house's" },
+    mainHouse: { leftIn: r2(fp.left / inch), topIn: r2(fp.top / inch), rightIn: r2(fp.right / inch), bottomIn: r2(fp.bottom / inch) },
+    note: "Site Draft builds the wing's roof (tied into the house roof, or into the house wall when it's lower) and puts it on the exterior elevations when it reloads." } };
+}
+
 // ---------------------------------------------------------------- the sheet set (Sheets.kt)
 
 const PAPER = { "arch d": ["ARCH_D", 36, 24], "24x36": ["ARCH_D", 36, 24], "arch c": ["ARCH_C", 24, 18], "18x24": ["ARCH_C", 24, 18], "arch e1": ["ARCH_E1", 42, 30], "30x42": ["ARCH_E1", 42, 30], tabloid: ["TABLOID", 17, 11], "11x17": ["TABLOID", 17, 11] };
@@ -186,8 +278,13 @@ function buildSheets(state, a) {
   const view = (kind, title, extra = {}) => ({ id: id(), kind, title, scale, xIn: cx, yIn: cy, ...extra });
   const skipped = [];
 
-  sheet("Cover Sheet, Legend and Symbols", []);
-  sheet("General Notes", []);
+  // The T sheets are drawn live by the app (CoverSheet.kt, Nov 25): sheet index, project data and legend; general notes.
+  sheet("Cover Sheet, Legend and Symbols", [
+    view("COVER_TITLE", "Project", { xIn: (pw - strip) * 0.45, yIn: ph * 0.1 }),
+    view("SHEET_INDEX", "Sheet Index", { xIn: (pw - strip) * 0.2, yIn: ph * 0.35 }),
+    view("PROJECT_DATA", "Project Data", { xIn: (pw - strip) * 0.62, yIn: ph * 0.25 }),
+    view("LEGEND", "Legend and Symbols", { xIn: (pw - strip) * 0.62, yIn: ph * 0.65 })]);
+  sheet("General Notes", [view("GENERAL_NOTES", "General Notes", { xIn: cx, yIn: ph * 0.4 })]);
 
   const site = layers.filter((l) => l.trade === "SITE_PLAN");
   if (has(site) || L.settingsOf(state).site) sheet("Site Plan", [view("PLAN", "Site Plan", { layerIds: site.map((l) => l.id), scale: "ENG_20" })]);
@@ -252,10 +349,16 @@ function buildSheets(state, a) {
   const series = (t) => (/cover|notes/i.test(t) ? "T" : /site/i.test(t) ? "C" : /foundation|framing|section|structural/i.test(t) ? "S" : "A");
   for (const s of sheets) { const k = series(s.title); counters[k] = (counters[k] || 0) + 1; s.number = `${k}-${counters[k]}`; }
 
+  // only: just the sheets asked for (e.g. the cover and notes), added to a set already made (Nov 25).
+  const only = typeof a.only === "string" ? a.only.replace(/[\[\]"]/g, "").split(/[,\s]+/).filter(Boolean) : a.only;
+  if (Array.isArray(only) && only.length) {
+    const words = only.map((w) => String(w).toLowerCase());
+    for (let i = sheets.length - 1; i >= 0; i--) if (!words.some((w) => sheets[i].title.toLowerCase().includes(w))) sheets.splice(i, 1);
+  }
   const existing = state.sheets || [];
   let kept = existing;
   if (existing.length && !a.replace) {
-    const titles = new Set(existing.map((s) => String(s.title).toLowerCase()));
+    const titles = new Set(existing.map((s) => String(s.title ?? "Floor Plan").toLowerCase()));
     const add = sheets.filter((s) => !titles.has(s.title.toLowerCase()));
     kept = [...existing, ...add];
     return { state: { ...state, sheets: kept }, result: { added: add.map((s) => `${s.number} ${s.title}`), alreadyThere: existing.map((s) => `${s.number} ${s.title}`), notMade: skipped,
@@ -266,7 +369,9 @@ function buildSheets(state, a) {
 }
 
 function listSheets(state) {
-  return { sheets: (state.sheets || []).map((s) => ({ id: s.id, number: s.number, title: s.title, paper: s.paper || "ARCH_D", views: (s.views || []).map((v) => `${v.title} (${(v.kind || "").toLowerCase()}, ${v.scale || "QUARTER"})`) })) };
+  return { sheets: (state.sheets || []).map((s) => ({ id: s.id,
+    // The app leaves a value out when it is the default (SheetLayout: "A-1", "Floor Plan"), so a missing one is that.
+    number: s.number ?? "A-1", title: s.title ?? "Floor Plan", paper: s.paper || "ARCH_D", views: (s.views || []).map((v) => `${v.title} (${(v.kind || "").toLowerCase()}, ${v.scale || "QUARTER"})`) })) };
 }
 
-module.exports = { setStructure, setExteriorFinish, placePorch, placeGarage, buildSheets, listSheets, houseBounds };
+module.exports = { setStructure, setExteriorFinish, placePorch, placeGarage, placeWing, buildSheets, listSheets, houseBounds };

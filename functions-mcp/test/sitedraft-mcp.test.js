@@ -160,6 +160,53 @@ async function main() {
   assert.strictEqual(shared.created.length, 3);
   assert.strictEqual(shared.skippedSegments.length, 1);
 
+  // Ransom House, Nov 26: a family room wall runs on past the living room's east wall. Only the part
+  // past it is drawn; room labels read in feet and inches; redrawing a room replaces its old label.
+  {
+  await call(client, "create_project", { name: "Overlap" });
+  await call(client, "draw_walls", { project: "Overlap", measured: "inside", close: true, room_name: "Living",
+    start: { x: 0, y: 0 }, segments: [{ length: "10'" }, { length: "10'", turn: "right" }, { length: "10'", turn: "right" }, { length: "10'", turn: "right" }] });
+  // Walk north up the living room's east wall from 4' down, 13' long: 4' of it is the living room's wall, 9' sticks out north.
+  const run = await call(client, "draw_walls", { project: "Overlap", measured: "inside", room_side: "right",
+    start: { x: "10'4 1/2\"", y: "4'" }, start_direction: "north", segments: [{ length: "13'" }] });
+  assert.strictEqual(run.created.length, 1, JSON.stringify(run));
+  assert(run.partlyThere && run.partlyThere.length === 1, JSON.stringify(run));
+  assert.strictEqual(run.created[0].lengthIn, 108);
+  assert(Math.abs(run.created[0].to.yIn - 0) < 0.01 && Math.abs(run.created[0].from.yIn + 108) < 0.01, JSON.stringify(run.created[0]));
+  // A closet 2'-6 1/8" x 4'-10 1/2", then corrected to 2'-11 3/4" deep: one label, in feet and inches.
+  const c1 = await call(client, "draw_walls", { project: "Overlap", measured: "inside", close: true, room_name: "Laundry",
+    start: { x: "30'", y: 0 }, segments: [{ length: "35 3/4\"" }, { length: "58 1/2\"", turn: "right" }, { length: "35 3/4\"", turn: "right" }, { length: "58 1/2\"", turn: "right" }] });
+  await call(client, "delete_elements", { project: "Overlap", ids: c1.created.map((w) => w.id) });
+  const c2 = await call(client, "draw_walls", { project: "Overlap", measured: "inside", close: true, room_name: "Laundry",
+    start: { x: "30'", y: 0 }, segments: [{ length: "30 1/8\"" }, { length: "58 1/2\"", turn: "right" }, { length: "30 1/8\"", turn: "right" }, { length: "58 1/2\"", turn: "right" }] });
+  assert.strictEqual(c2.replacedLabels.length, 1);
+  const od = await call(client, "read_drawing", { project: "Overlap" });
+  const laundry = od.roomLabels.filter((r) => r.label.startsWith("LAUNDRY") || r.label.startsWith("Laundry"));
+  assert.strictEqual(laundry.length, 1, JSON.stringify(od.roomLabels));
+  assert.strictEqual(laundry[0].label, "Laundry\n2'-6 1/8\" x 4'-10 1/2\"");
+  assert(od.roomLabels.some((r) => r.label === "Living\n10' x 10'"), JSON.stringify(od.roomLabels));
+  }
+
+  // A wing over rooms already drawn (Dan, Nov 26): a one-story back room off a 10' x 10' living room.
+  {
+  await call(client, "create_project", { name: "Wing Rooms" });
+  await call(client, "draw_walls", { project: "Wing Rooms", measured: "inside", close: true, room_name: "Living", start: { x: 0, y: 0 },
+    segments: [{ length: "10'" }, { length: "10'", turn: "right" }, { length: "10'", turn: "right" }, { length: "10'", turn: "right" }] });
+  await call(client, "draw_walls", { project: "Wing Rooms", measured: "inside", close: true, room_name: "Back", start: { x: "10'4 1/2\"", y: 0 },
+    segments: [{ length: "10'" }, { length: "8'", turn: "right" }, { length: "10'", turn: "right" }, { length: "8'", turn: "right" }] });
+  const wg = await call(client, "place_wing", { project: "Wing Rooms", rooms: ["Back"], height: "one story", wall_height: "85 1/2\"", pitch: 8, end: "gable" });
+  assert(!wg.error, wg.error);
+  assert.strictEqual(wg.placed.side, "east");
+  // West: the living room is past that wall, so it stays with the house; the rest out to the outside faces.
+  assert.deepStrictEqual(wg.placed.outline, { leftIn: 124.5, topIn: -4.5, rightIn: 249, bottomIn: 100.5 });
+  assert.strictEqual(wg.mainHouse.rightIn, 124.5);
+  const st = (await S.readProject(db, uid, "Wing Rooms")).state;
+  const sym = st.elements.find((e) => e.category === "Wing");
+  assert.strictEqual(sym.properties.wgWalls, 1); assert.strictEqual(sym.properties.wgWallH, 85.5); assert.strictEqual(sym.properties.wgPitch, 8);
+  const fl = await call(client, "set_roof", { project: "Wing Rooms", pitch: 12, ends: "hip", flat_top: true });
+  assert(fl.roof.flat_top.includes("gable"), JSON.stringify(fl));
+  }
+
   // Framing measurements: the finished room is 1" smaller each way.
   await call(client, "create_project", { name: "Framing" });
   const fr = await call(client, "draw_walls", { project: "Framing", measured: "framing", close: true, segments: [{ length: "10'" }, { length: "10'", turn: "right" }, { length: "10'", turn: "right" }, { length: "10'", turn: "right" }] });

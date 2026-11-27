@@ -41,14 +41,28 @@ object RoofPlan {
 
     fun isRoofFinish(e: DrawingElement): Boolean = e is DrawingElement.Symbol && e.category == CATEGORY && e.symbolName == FINISH_SYMBOL
 
-    /** The outside of the first-floor exterior walls, world px; null when the plan has none. */
+    /**
+     * The outside of the first-floor exterior walls, world px (the main house rectangle); null when the plan has none.
+     * A house drawn without 2x6 walls (Dan, Nov 26: an old house measured room by room) uses its outside walls, found
+     * from the plan ([HouseOutline]), once the job has a roof, exterior elevations or a wing. Wings on the plan's own
+     * walls stand for that part of the house, so what's inside them is left out.
+     */
     fun footprint(state: CanvasState): Rect? {
         val of = Layers.resolver(state)
         val walls = state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
             it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL && of(it).id == Building.FLOOR1_PLAN && !DerivedLayers.isGenerated(it)
         }
-        if (walls.isEmpty()) return null
-        return walls.map { FloorPlan.bounds(it) }.reduce { a, r -> Rect(min(a.left, r.left), min(a.top, r.top), max(a.right, r.right), max(a.bottom, r.bottom)) }
+        val drawnWings = Wings.drawnWallWings(state)
+        if (walls.isNotEmpty() && drawnWings.isEmpty())
+            return walls.map { FloorPlan.bounds(it) }.reduce { a, r -> Rect(min(a.left, r.left), min(a.top, r.top), max(a.right, r.right), max(a.bottom, r.bottom)) }
+        val outside = walls.ifEmpty {
+            val s = state.building
+            val houseJob = s.roof != null || s.gradeExposureIn != null || Wings.wings(state).isNotEmpty()
+            if (!houseJob) return null
+            HouseOutline.planWalls(state).filter { HouseOutline.isExterior(it, state) }
+        }
+        if (outside.isEmpty()) return null
+        return HouseOutline.mainBody(state, outside)
     }
 
     /** A line of the roof plan, world px, and how it is drawn. */
@@ -84,6 +98,32 @@ object RoofPlan {
         return ((raw / oc).roundToInt() * oc).coerceIn(oc, most)
     }
 
+    /**
+     * The flat deck's elevation when the roof has a flat on top: as set, or the main gable's ridge (the highest
+     * full-height wing's). Null when it peaks (no flat, or the deck would be at or above the ridge).
+     */
+    fun flatDeckIn(state: CanvasState, r: RoofSettings): Float? {
+        if (!r.flatTop) return null
+        val s = state.building
+        val k = state.inchesToPx(1f).takeIf { it > 0f } ?: return null
+        val fp = footprint(state) ?: return null
+        val deck = r.flatAtIn ?: Wings.wings(state).filter { Wings.fullHeight(it) }.mapNotNull { g ->
+            val fr = Wings.frame(g, fp, k) ?: return@mapNotNull null
+            Wings.plateIn(g, s) + r.heelIn + (fr.pu2 - fr.pu1) / k / 2f * Wings.pitchOf(g, s) / 12f
+        }.maxOrNull() ?: return null
+        val across = (fp.width >= fp.height) != r.turnRidge
+        val span = (if (across) fp.height else fp.width) / k
+        val roofAtWall = ExteriorElevation.plateIn(s) + r.heelIn
+        val ridge = roofAtWall + span / 2f * r.pitch / 12f
+        return deck.takeIf { it > roofAtWall + 1f && it < ridge - 0.5f }
+    }
+
+    /** How far in from the walls the slopes reach the flat deck, inches (null with no flat). */
+    fun deckInsetIn(state: CanvasState, r: RoofSettings): Float? {
+        val deck = flatDeckIn(state, r) ?: return null
+        return (deck - ExteriorElevation.plateIn(state.building) - r.heelIn) / (r.pitch / 12f)
+    }
+
     fun geometry(state: CanvasState, r: RoofSettings): Geometry? {
         val fp = footprint(state) ?: return null
         val k = state.inchesToPx(1f)
@@ -100,8 +140,11 @@ object RoofPlan {
         val ev2 = L.bottom + ov
         val span = L.height
         val vc = L.center.y
-        var ru1 = if (r.endA == RoofEnd.HIP) L.left + span / 2f else eu1
-        var ru2 = if (r.endB == RoofEnd.HIP) L.right - span / 2f else eu2
+        // A flat on top: the slopes stop [inset] in from the walls, the deck between (Dan, Nov 26).
+        val inset = deckInsetIn(state, r)?.let { it * k }
+        val reachTop = if (inset != null) inset + ov else vc - ev1
+        var ru1 = if (r.endA == RoofEnd.HIP) L.left + (inset ?: (span / 2f)) else eu1
+        var ru2 = if (r.endB == RoofEnd.HIP) L.right - (inset ?: (span / 2f)) else eu2
         if (ru1 > ru2) { val m = (ru1 + ru2) / 2f; ru1 = m; ru2 = m }
         val lines = mutableListOf<Line>()
         fun line(u1: Float, v1: Float, u2: Float, v2: Float, kind: Kind) { lines += Line(page(u1, v1), page(u2, v2), kind) }
@@ -110,9 +153,18 @@ object RoofPlan {
         line(eu2, ev2, eu1, ev2, Kind.EAVE); line(eu1, ev2, eu1, ev1, Kind.EAVE)
         line(L.left, L.top, L.right, L.top, Kind.WALL); line(L.right, L.top, L.right, L.bottom, Kind.WALL)
         line(L.right, L.bottom, L.left, L.bottom, Kind.WALL); line(L.left, L.bottom, L.left, L.top, Kind.WALL)
-        line(ru1, vc, ru2, vc, Kind.RIDGE)
-        if (r.endA == RoofEnd.HIP) { line(eu1, ev1, ru1, vc, Kind.HIP); line(eu1, ev2, ru1, vc, Kind.HIP) }
-        if (r.endB == RoofEnd.HIP) { line(eu2, ev1, ru2, vc, Kind.HIP); line(eu2, ev2, ru2, vc, Kind.HIP) }
+        if (inset != null) {
+            // The deck's edge all round (its ends at a gable run out to the rakes); the hips run up to its corners.
+            val dv1 = L.top + inset; val dv2 = L.bottom - inset
+            line(ru1, dv1, ru2, dv1, Kind.RIDGE); line(ru1, dv2, ru2, dv2, Kind.RIDGE)
+            line(ru1, dv1, ru1, dv2, Kind.RIDGE); line(ru2, dv1, ru2, dv2, Kind.RIDGE)
+            if (r.endA == RoofEnd.HIP) { line(eu1, ev1, ru1, dv1, Kind.HIP); line(eu1, ev2, ru1, dv2, Kind.HIP) }
+            if (r.endB == RoofEnd.HIP) { line(eu2, ev1, ru2, dv1, Kind.HIP); line(eu2, ev2, ru2, dv2, Kind.HIP) }
+        } else {
+            line(ru1, vc, ru2, vc, Kind.RIDGE)
+            if (r.endA == RoofEnd.HIP) { line(eu1, ev1, ru1, vc, Kind.HIP); line(eu1, ev2, ru1, vc, Kind.HIP) }
+            if (r.endB == RoofEnd.HIP) { line(eu2, ev1, ru2, vc, Kind.HIP); line(eu2, ev2, ru2, vc, Kind.HIP) }
+        }
         // Trusses or rafters at their spacing from the end wall, eave to ridge on each side; in a hip
         // end they stop at the hip (jacks), which runs at 45 deg from the eave corner.
         val oc = max(r.ocIn, 4f) * k
@@ -135,8 +187,8 @@ object RoofPlan {
             // How far in from each eave the hip reaches at this point (0 outside a hip end).
             val inA = if (r.endA == RoofEnd.HIP && u < limA - 0.01f) (u - eu1) else Float.MAX_VALUE
             val inB = if (r.endB == RoofEnd.HIP && u > limB + 0.01f) (eu2 - u) else Float.MAX_VALUE
-            val reach = min(min(inA, inB), vc - ev1)
-            if (reach >= vc - ev1) { line(u, ev1, u, ev2, Kind.MEMBER); continue }
+            val reach = min(min(inA, inB), reachTop)
+            if (inset == null && reach >= vc - ev1) { line(u, ev1, u, ev2, Kind.MEMBER); continue }
             line(u, ev1, u, ev1 + reach, Kind.MEMBER)
             line(u, ev2, u, ev2 - reach, Kind.MEMBER)
         }
@@ -153,7 +205,7 @@ object RoofPlan {
             while (vc - i * oc >= L.top - 0.01f) { add(vc - i * oc); add(vc + i * oc); i++ }
         }.filter { it >= L.top - 0.01f && it <= L.bottom + 0.01f }
         for (v in endPositions) {
-            val reach = min(v - ev1, ev2 - v)
+            val reach = min(min(v - ev1, ev2 - v), reachTop)
             if (r.endA == RoofEnd.HIP) line(eu1, v, eu1 + min(reach, limA - eu1), v, Kind.MEMBER)
             if (r.endB == RoofEnd.HIP) line(eu2, v, eu2 - min(reach, eu2 - limB), v, Kind.MEMBER)
         }
@@ -275,6 +327,7 @@ object RoofPlan {
     /** Draws the roof plan for the building's roof settings, [ink] black on paper or a light canvas, white on blueprint. */
     fun DrawScope.drawRoof(state: CanvasState, ink: Color) {
         drawPorchRoofs(state, ink, finish = false)
+        if (RoofAreas.active(state)) { with(RoofAreas) { drawTraced(state, ink, framing = true) }; return }
         val r = state.building.roof ?: return
         val g = geometry(state, r) ?: return
         val k = state.inchesToPx(1f)
@@ -319,6 +372,7 @@ object RoofPlan {
      */
     fun DrawScope.drawRoofFinish(state: CanvasState, ink: Color) {
         drawPorchRoofs(state, ink, finish = true)
+        if (RoofAreas.active(state)) { with(RoofAreas) { drawTraced(state, ink, framing = false) }; return }
         val r = state.building.roof ?: return
         val g = geometry(state, r) ?: return
         val k = state.inchesToPx(1f)

@@ -28,7 +28,7 @@ class WallFramingTest {
     }
 
     @Test
-    fun `a wall meeting the middle of another gets a wall buck there, a corner doesn't`() {
+    fun `a wall meeting the middle of another gets a wall buck there, a corner gets Dan's L`() {
         val (wall, s0) = state()
         // A 2x4 wall coming in from the south at 80" along (a T), and one at the wall's east end (an L).
         val tee = DrawingElement.Symbol(id = "t", symbolName = "2x4 Wall", category = PlanSymbols.WALLS, color = Color.White,
@@ -37,18 +37,23 @@ class WallFramingTest {
             center = Offset((168f - 2.25f) * inch, (4.5f + 48f) * inch), size = Size(4.5f * inch, 96f * inch))
         val s = s0.copy(elements = s0.elements + tee + ell)
         val bucks = com.example.sitedraft.ui.canvas.FramingLayout.bucks(s)["w"]!!
-        assertEquals(1, bucks.size)
-        assertEquals(80f, bucks[0].centerPx / inch, 0.01f)
-        assertEquals(1, bucks[0].side)   // the south face
+        // The T, and the L at the east end (Dan, Nov 25: end stud plus a flat one beside it, for drywall backing).
+        assertEquals(2, bucks.size)
+        val t = bucks.single { it.corner == 0 }
+        assertEquals(80f, t.centerPx / inch, 0.01f)
+        assertEquals(1, t.side)   // the south face
+        assertEquals(1, bucks.single { it.corner != 0 }.corner)
         val plain = WallFraming.frame(wall, s0)
         val f = WallFraming.frame(wall, s)
-        assertEquals(1, f.flats.size)
+        assertEquals(2, f.flats.size)
         assertEquals(3.5f, f.flats[0].second, 0.01f)          // a 2x4 wall's flat stud is 3 1/2" long
+        // The L's flat stud right beside the east end stud: 168 - 1 1/2 - 3 1/2 = 163.
+        assertTrue(f.flats.any { kotlin.math.abs(it.first - 163f) < 0.01f })
         // Two studs side by side and the flat one: 80" centred, so the pair from 76 3/4" to 79 3/4", the flat to 83 1/4".
         assertTrue(f.studs.any { kotlin.math.abs(it - 76.75f) < 0.01f } && f.studs.any { kotlin.math.abs(it - 78.25f) < 0.01f })
-        assertEquals(79.75f, f.flats[0].first, 0.01f)
+        assertTrue(f.flats.any { kotlin.math.abs(it.first - 79.75f) < 0.01f })
         assertTrue(f.studCount > plain.studCount)
-        assertTrue(WallFraming.countText(f).contains("1 wall buck"))
+        assertTrue(WallFraming.countText(f).contains("2 wall bucks"))
     }
 
     @Test

@@ -33,6 +33,19 @@ class CalloutsAutoTest {
     private fun co(s: CanvasState, key: String) = s.elements.firstOrNull { it.id == DerivedLayers.GEN_PREFIX + "co:" + key } as DrawingElement.Symbol?
 
     @Test
+    fun `markers don't size a sheet's plan view`() {
+        val base = CanvasState(elements = house + stair, building = BuildingSettings(autoLayers = true))
+        val view = com.example.sitedraft.ui.canvas.SheetView(kind = com.example.sitedraft.ui.canvas.SheetViewKind.PLAN, title = "Plan")
+        val plain = com.example.sitedraft.ui.canvas.Sheets.fullWorldBounds(view, DerivedLayers.sync(base))!!
+        val wallDetail = DetailKit.newSymbol(base, DetailKit.Detail.HOUSE_WALL, Offset(5000f, 0f))
+        val s = DerivedLayers.sync(base.copy(elements = base.elements + wallDetail))
+        assertNotNull(co(s, "wall"))
+        val withCut = com.example.sitedraft.ui.canvas.Sheets.fullWorldBounds(view, s)!!
+        // The 10' cut runs 8' past the south wall, but the view stays the size of the plan.
+        assertEquals(plain.bottom / inch, withCut.bottom / inch, 0.6f)
+    }
+
+    @Test
     fun `markers go on the plan once their drawings are in the model`() {
         val base = CanvasState(elements = house + stair, building = BuildingSettings(autoLayers = true))
         val none = DerivedLayers.sync(base)
@@ -46,7 +59,9 @@ class CalloutsAutoTest {
         assertEquals(Callouts.SECTION, cut!!.symbolName)
         assertEquals(listOf(Callouts.Target.HOUSE_WALL), Callouts.targets(cut))
         // Through the south wall, square to it.
-        assertEquals(284.75f, cut.center.y / inch, 0.6f)
+        // Starts 2' inside the south wall and runs out past the dimension strings (Nov 25).
+        assertEquals(284.75f - 24f, (cut.center.y - cut.size.width / 2f) / inch, 0.6f)
+        assertEquals(120f, cut.size.width / inch, 0.01f)
         assertEquals(90f, cut.rotation, 0.01f)
         val st = co(s, "stair")
         assertNotNull(st)

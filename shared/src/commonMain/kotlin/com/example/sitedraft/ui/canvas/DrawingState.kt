@@ -296,7 +296,10 @@ sealed class DrawingElement {
         val size: Size,
         override val rotation: Float = 0f,
         // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
-        override val layerId: String? = null
+        override val layerId: String? = null,
+        /** How much of the picture is used, from its top-left (a wallpaper tile cut short at the wall's edge). */
+        val srcW: Float = 1f,
+        val srcH: Float = 1f
     ) : DrawingElement() {
         @Serializable(with = ColorSerializer::class)
         override val color: Color = Color.Transparent
@@ -450,6 +453,14 @@ data class CanvasState(
     // Saved groups of element ids (Group button): tapping any member selects the whole group.
     // An id is in at most one group; ids of deleted elements are ignored where groups are read.
     val groups: List<Set<String>> = emptyList(),
+    // Pictures for art and wallpaper (WallDecor, Nov 25), and the art and wallpaper on the wall faces.
+    val pictures: List<Picture> = emptyList(),
+    val wallDecor: List<WallDecor> = emptyList(),
+    // The rooms in the finish schedule (FinishSchedule, Nov 26).
+    val roomFinishes: List<RoomFinish> = emptyList(),
+    // Typed specs for the trade schedules (TradeSchedules, Nov 26): appliances and fixtures by element, cabinets by room.
+    val itemSpecs: List<ItemSpec> = emptyList(),
+    val cabinetSpecs: List<CabinetSpec> = emptyList(),
     // Live rubber-band rectangle while a box-select drag is in progress; null the rest of the
     // time. Both corners kept (not a Rect) since which corner is "start" matters for future
     // window-vs-crossing selection semantics.

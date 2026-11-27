@@ -181,6 +181,29 @@ fun PropertiesPanel(
                             }, style = MaterialTheme.typography.bodySmall)
                             wingChoice("Floor joists", wg.JOISTS, wg.joistChoices)
                             wingChoice("Roof, far end", wg.END, wg.ends)
+                            // Dan, Nov 26 (the Ransom House): a house as it stands, its parts already drawn wall by wall.
+                            wingChoice("Walls", wg.WALLS, wg.wallChoices)
+                            wingChoice("Height", wg.FULL, wg.heightChoices)
+                            if (!wg.fullHeight(sym)) {
+                                var wallH by remember(sym.id, sym.properties[wg.WALL_H]) {
+                                    mutableStateOf((sym.properties[wg.WALL_H] ?: 0f).takeIf { it > 0f }?.let { com.example.sitedraft.ui.canvas.formatInches(it) } ?: "")
+                                }
+                                OutlinedTextField(wallH, { v ->
+                                    wallH = v
+                                    val inches = if (v.isBlank()) 0f else com.example.sitedraft.ui.canvas.parseInches(v)
+                                    if (inches != null) onEvent(DrawingEvent.UpdateElementProperty(sym.id, wg.WALL_H, "$inches"))
+                                }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("Wall height, inches (blank = the house's)") })
+                            }
+                            var pitch by remember(sym.id, sym.properties[wg.PITCH]) {
+                                mutableStateOf((sym.properties[wg.PITCH] ?: 0f).takeIf { it > 0f }?.let { com.example.sitedraft.ui.canvas.formatInches(it) } ?: "")
+                            }
+                            OutlinedTextField(pitch, { v ->
+                                pitch = v
+                                val p = if (v.isBlank()) 0f else com.example.sitedraft.ui.canvas.parseInches(v.substringBefore('/'))
+                                if (p != null && p >= 0f && p <= 24f) onEvent(DrawingEvent.UpdateElementProperty(sym.id, wg.PITCH, "$p"))
+                            }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Roof pitch, rise per 12 (blank = the house's)") })
                         }
                         if (com.example.sitedraft.ui.canvas.Porches.isPorch(selectedElement)) {
                             val pc = com.example.sitedraft.ui.canvas.Porches
@@ -572,6 +595,8 @@ fun PropertiesPanel(
                         }
                     }
                     is DrawingElement.Symbol -> {
+                        // An appliance or plumbing fixture: its mark and what's typed for its schedule (Nov 26).
+                        if (ItemSchedules.kindOf(selectedElement) != null) ItemSpecFields(selectedElement, state, onEvent)
                         if (selectedElement.category == "Lumber") {
                             val w = selectedElement.size.width / state.scale.ratio
                             val h = selectedElement.size.height / state.scale.ratio
@@ -745,6 +770,33 @@ fun PropertiesPanel(
                             if (selectedElement.category == PlanSymbols.SHOWERS) {
                                 ShowerSection(selectedElement, onEvent)
                             }
+                            // An alcove tub as a tub/shower: surround tile, valve end, heights (TubShower, Nov 25).
+                            if (TubShower.isAlcoveTub(selectedElement)) {
+                                val tub = selectedElement
+                                Text(text = "Tub / shower", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf("Tub only", "Tub / shower").forEachIndexed { i, label ->
+                                        FilterChip(selected = (if (TubShower.isOn(tub)) 1 else 0) == i, onClick = {
+                                            onEvent(DrawingEvent.UpdateElementProperty(tub.id, TubShower.ON, i.toString()))
+                                        }, label = { Text(label) })
+                                    }
+                                }
+                                if (TubShower.isOn(tub)) {
+                                    Text(text = "Valve at (seen from the front)", style = MaterialTheme.typography.bodySmall)
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        listOf("Left end", "Right end").forEachIndexed { i, label ->
+                                            FilterChip(selected = TubShower.prop(tub, TubShower.VALVE_END).toInt() == i, onClick = {
+                                                onEvent(DrawingEvent.UpdateElementProperty(tub.id, TubShower.VALVE_END, i.toString()))
+                                            }, label = { Text(label) })
+                                        }
+                                    }
+                                    listOf("Tile height (in)" to TubShower.TILE_H, "Valve height (in)" to TubShower.VALVE_H, "Spout height (in)" to TubShower.SPOUT_H, "Showerhead height (in)" to TubShower.HEAD_H).forEach { (label, key) ->
+                                        EditableProperty(label, formatInches(TubShower.prop(tub, key))) {
+                                            onEvent(DrawingEvent.UpdateElementProperty(tub.id, key, it))
+                                        }
+                                    }
+                                }
+                            }
                             if (selectedElement.category == PlanSymbols.STAIRS) {
                                 StairSection(selectedElement, onEvent)
                             }
@@ -906,6 +958,14 @@ fun PropertiesPanel(
                                 }
                                 val h = selectedElement.properties[PlanSymbols.PROP_HEIGHT_IN] ?: (if (isWindow) 48f else 80f)
                                 EditableProperty(if (isWindow) "Window height (in)" else "Opening height (in)", formatInches(h)) {
+                                    // A window keeps its head where it is (lined up with the door heads, Dan's rule):
+                                    // a taller window drops its sill instead of running up to the ceiling (Nov 25).
+                                    val newH = it.trim().toFloatOrNull()
+                                    if (isWindow && newH != null && newH > 0f) {
+                                        val sillNow = selectedElement.properties[PlanSymbols.PROP_SILL_IN] ?: 36f
+                                        val newSill = (sillNow + h - newH).coerceAtLeast(0f)
+                                        onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_SILL_IN, newSill.toString()))
+                                    }
                                     onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_HEIGHT_IN, it))
                                 }
                                 // The schedule's mark and rough opening (Schedules): Dan's rule unless the supplier's is entered.
@@ -1049,6 +1109,94 @@ fun PropertiesPanel(
                             EditableProperty("Tile to (in)", formatInches(spec.tileToIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileToIn", it)) }
                             EditableProperty("Tile height (in)", formatInches(spec.tileSizeIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileSizeIn", it)) }
                             EditableProperty("Tile length (in, 0 = square)", formatInches(spec.tileLengthIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "tileLengthIn", it)) }
+                        }
+                        // Just a length of the wall (Nov 25): inches along it from the viewer's left end; 0 and 0 = the whole wall.
+                        if (spec.showerFace < 0 && spec.islandFace < 0 && spec.stairSide < 0 && !spec.framing) {
+                            Text(text = "Length of wall shown (in from the left end; 0 to 0 = whole wall)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                            EditableProperty("Show from (in)", formatInches(spec.fromIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "fromIn", it)) }
+                            EditableProperty("Show to (in)", formatInches(spec.toIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "toIn", it)) }
+                        }
+                        // Wainscot on this face of the wall (Wainscot, Nov 25). Kept on the wall, so every elevation of
+                        // this face shows it; set wall by wall.
+                        val wsWall = state.elements.firstOrNull { it.id == spec.wallId } as? DrawingElement.Symbol
+                        if (wsWall != null && wsWall.category == PlanSymbols.WALLS && spec.showerFace < 0 && spec.islandFace < 0 && spec.stairSide < 0 && !spec.framing) {
+                            val ws = com.example.sitedraft.ui.canvas.Wainscot
+                            val cur = ws.specOf(wsWall, spec.side)
+                            Text(text = "Wainscot", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                ws.styleLabels.forEachIndexed { i, label ->
+                                    FilterChip(selected = (cur?.style ?: 0) == i, onClick = {
+                                        onEvent(DrawingEvent.UpdateElementProperty(wsWall.id, ws.styleKey(spec.side), i.toString()))
+                                    }, label = { Text(label) })
+                                }
+                            }
+                            if (cur != null) {
+                                EditableProperty("Height to top of cap (in)", formatInches(cur.heightIn)) {
+                                    onEvent(DrawingEvent.UpdateElementProperty(wsWall.id, ws.heightKey(spec.side), it))
+                                }
+                                // The rooms along this wall (between the walls that butt in): tick where it goes.
+                                val rooms = ws.roomSpans(wsWall, spec.side, state)
+                                if (rooms.size > 1) {
+                                    Text(text = "Rooms on this wall (left to right as seen)", style = MaterialTheme.typography.bodySmall)
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        rooms.forEachIndexed { i, (a, b) ->
+                                            FilterChip(selected = cur.inRoom(i), onClick = {
+                                                val all = (1 shl rooms.size) - 1
+                                                val now = if (cur.rooms == 0) all else cur.rooms
+                                                val next = (now xor (1 shl i)).let { if (it == all) 0 else it }
+                                                // Unticking the last room takes the wainscot off this face.
+                                                if (next == 0 && now == (1 shl i)) onEvent(DrawingEvent.UpdateElementProperty(wsWall.id, ws.styleKey(spec.side), "0"))
+                                                else onEvent(DrawingEvent.UpdateElementProperty(wsWall.id, ws.roomsKey(spec.side), next.toString()))
+                                            }, label = { Text("${formatInches(a)}–${formatInches(b)}") })
+                                        }
+                                    }
+                                }
+                                if (cur.style == ws.FLAT_PANEL || cur.style == ws.RAISED_PANEL || cur.style == ws.SHADOW_BOXES) {
+                                    EditableProperty(if (cur.style == ws.SHADOW_BOXES) "Boxes on this wall (0 = auto)" else "Panels on this wall (0 = auto)", cur.count.toString()) {
+                                        onEvent(DrawingEvent.UpdateElementProperty(wsWall.id, ws.countKey(spec.side), it))
+                                    }
+                                }
+                            }
+                        }
+                        // Art and wallpaper on this face of the wall (WallDecor, Nov 25): kept on the wall, like the wainscot.
+                        if (wsWall != null && wsWall.category == PlanSymbols.WALLS && spec.showerFace < 0 && spec.islandFace < 0 && spec.stairSide < 0 && !spec.framing) {
+                            val importer = com.example.sitedraft.platform.rememberFileImporter()
+                            Text(text = "Art & wallpaper", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(onClick = { importer.pickImage { onEvent(DrawingEvent.AddWallArt(selectedElement.id, it)) } }) { Text("Add art") }
+                                OutlinedButton(onClick = { importer.pickImage { onEvent(DrawingEvent.AddWallpaper(selectedElement.id, it)) } }) { Text("Wallpaper") }
+                            }
+                            Text("Pick a picture: art hangs centred on this view at 60\" (30\" wide, its own shape); a wallpaper swatch repeats across the wall above any wainscot, with doors, windows and cabinets cutting through.",
+                                style = MaterialTheme.typography.bodySmall)
+                            if (state.pictures.isNotEmpty()) {
+                                Text("Hang a picture again:", style = MaterialTheme.typography.bodySmall)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    state.pictures.forEachIndexed { i, p ->
+                                        FilterChip(selected = false, onClick = { onEvent(DrawingEvent.UsePicture(selectedElement.id, p.id, 0)) },
+                                            label = { Text(p.name.ifBlank { "Picture ${i + 1}" }) })
+                                    }
+                                }
+                            }
+                            WallDecorations.on(state, wsWall.id, spec.side).filter { it.kind != WallDecor.PAINT }.forEach { d ->
+                                if (d.kind == WallDecor.WALLPAPER) {
+                                    Text("Wallpaper", style = MaterialTheme.typography.bodySmall)
+                                    EditableProperty("Repeat width (in)", formatInches(d.repeatIn)) { onEvent(DrawingEvent.UpdateWallDecor(d.id, "repeatIn", it)) }
+                                } else {
+                                    Text("Art", style = MaterialTheme.typography.bodySmall)
+                                    EditableProperty("Width (in)", formatInches(d.widthIn)) { onEvent(DrawingEvent.UpdateWallDecor(d.id, "widthIn", it)) }
+                                    EditableProperty("Height (in)", formatInches(d.heightIn)) { onEvent(DrawingEvent.UpdateWallDecor(d.id, "heightIn", it)) }
+                                    EditableProperty("Left edge from the wall's left end (in)", formatInches(d.xIn)) { onEvent(DrawingEvent.UpdateWallDecor(d.id, "xIn", it)) }
+                                    EditableProperty("Bottom off the floor (in)", formatInches(d.bottomIn)) { onEvent(DrawingEvent.UpdateWallDecor(d.id, "bottomIn", it)) }
+                                    EditableProperty("Frame (in, 0 = none)", formatInches(d.frameIn)) { onEvent(DrawingEvent.UpdateWallDecor(d.id, "frameIn", it)) }
+                                }
+                                androidx.compose.material3.TextButton(onClick = { onEvent(DrawingEvent.RemoveWallDecor(d.id)) }) { Text("Remove") }
+                            }
+                        }
+                        // Paint on this wall face (Nov 26): Sherwin-Williams colours by number or name, or any hex.
+                        if (wsWall != null && wsWall.category == PlanSymbols.WALLS && !spec.framing) {
+                            PaintPicker(WallDecorations.on(state, wsWall.id, spec.side).firstOrNull { it.kind == WallDecor.PAINT },
+                                onPick = { hex, code, name -> onEvent(DrawingEvent.SetWallPaint(selectedElement.id, hex, code, name)) },
+                                onRemove = { onEvent(DrawingEvent.RemoveWallDecor(it)) })
                         }
                         // Crown on the uppers, and a valance over the sink.
                         Text(text = "Crown molding", style = MaterialTheme.typography.labelLarge)
@@ -1408,6 +1556,29 @@ private fun EditableProperty(label: String, value: String, onUpdate: (String) ->
     }
 }
 
+/**
+ * An appliance's or plumbing fixture's lines on its schedule (TradeSchedules, Nov 26): its mark (A1, P2...) and the
+ * make, model, finish and notes, one line each, Enter or Set saves.
+ */
+@Composable
+private fun ItemSpecFields(sym: DrawingElement.Symbol, state: CanvasState, onEvent: (DrawingEvent) -> Unit) {
+    val kind = ItemSchedules.kindOf(sym) ?: return
+    val mark = ItemSchedules.markOf(sym, state)
+    val what = if (kind == ItemSchedules.Kind.APPLIANCE) "Appliance schedule" else "Plumbing fixture schedule"
+    Text(if (mark != null) "$what: $mark" else "$what (a duplicate at this spot: not listed)", style = MaterialTheme.typography.titleSmall)
+    val sp = ItemSchedules.spec(state, sym.id)
+    val values = listOf(sp.make, sp.model, sp.finish, sp.notes)
+    ItemSchedules.fields.zip(ItemSchedules.labels).zip(values).forEach { (fl, value) ->
+        val (field, label) = fl
+        var text by remember(sym.id, field, value) { mutableStateOf(value) }
+        OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onEvent(DrawingEvent.UpdateItemSpec(sym.id, field, text)) }),
+            trailingIcon = { TextButton(onClick = { onEvent(DrawingEvent.UpdateItemSpec(sym.id, field, text)) }) { Text("Set") } })
+    }
+}
+
 // Wrapping chip row: pattern names vary in width (and the panel is only 300dp), so a fixed
 // N-per-row grid either clips or squeezes a label into a vertical column of letters.
 @OptIn(ExperimentalLayoutApi::class)
@@ -1538,6 +1709,8 @@ private fun ShowerSection(shower: DrawingElement.Symbol, onEvent: (DrawingEvent)
         chips(if (glass == 3) "Opening at" else "Door at", Shower.DOOR_SIDE, listOf("Left", "Right"))
         inches(if (glass == 3) "Opening width" else "Door width", Shower.DOOR_W)
     }
+    // Door + panel: the door can swing off the fixed panel and latch at the wall (Dan, Nov 25).
+    if (glass == 0) chips("Door hinged on", Shower.HINGE_ON, listOf("Wall", "Panel"))
     inches("Glass height", Shower.GLASS_H)
     inches("Curb height (0 = curbless)", Shower.CURB_H)
     inches("Curb width", Shower.CURB_W)
@@ -1642,7 +1815,10 @@ private fun StairSection(stair: DrawingElement.Symbol, onEvent: (DrawingEvent) -
         val l = Stairs.layout(stair)
         EditableProperty("Risers before the landing", l.flight1.toString()) { set(Stairs.FLIGHT1, it) }
     }
-    if (type == Stairs.Type.L_LANDING) chips("Turns", Stairs.TURN, listOf("Right", "Left"))
+    if (type == Stairs.Type.L_LANDING) {
+        chips("Turns", Stairs.TURN, listOf("Right", "Left"))
+        chips("Corner", Stairs.WINDERS, Stairs.winderLabels)
+    }
     if (type == Stairs.Type.SPIRAL) {
         EditableProperty("Treads per full turn", Stairs.code(stair, Stairs.PER_TURN).toString()) { set(Stairs.PER_TURN, it) }
         chips("Outer rail", Stairs.RAIL_RIGHT, Stairs.railLabels)
@@ -1738,4 +1914,44 @@ private fun StructureSection(s: DrawingElement.Symbol, state: CanvasState, onEve
             }
         }
     }
+}
+
+
+/**
+ * Paint for the wall face an elevation shows (Nov 26): the colour on it now with a swatch, a search of the
+ * Sherwin-Williams colours by number or name, and any colour by hex with a name of your own.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PaintPicker(current: WallDecor?, onPick: (hex: String, code: String, name: String) -> Unit, onRemove: (String) -> Unit) {
+    Text(text = "Paint", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+    if (current != null) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(28.dp).clip(CircleShape).background(Color(0xFF000000.toInt() or current.rgb)).border(1.dp, Color.Gray, CircleShape))
+            Text(current.paintLabel, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = { onRemove(current.id) }) { Text("Remove") }
+        }
+    }
+    var query by remember { mutableStateOf("") }
+    OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+        label = { Text("Sherwin-Williams number or name") })
+    val found = remember(query) { PaintColors.search(query) }
+    if (query.isNotBlank() && found.isEmpty()) {
+        Text(if (PaintColors.all.isEmpty()) "The colour list isn't loaded yet: type a hex below." else "No colour matches.", style = MaterialTheme.typography.bodySmall)
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        found.forEach { c ->
+            FilterChip(selected = current?.colorCode == c.code, onClick = { onPick(c.hex, c.code, c.name) },
+                leadingIcon = { Box(Modifier.size(16.dp).clip(CircleShape).background(Color(0xFF000000.toInt() or c.rgb)).border(1.dp, Color.Gray, CircleShape)) },
+                label = { Text("${c.code} ${c.name}", style = MaterialTheme.typography.labelSmall, maxLines = 1) })
+        }
+    }
+    var hex by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    Text("Or any colour:", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(value = hex, onValueChange = { hex = it }, singleLine = true, modifier = Modifier.width(110.dp), label = { Text("Hex") })
+        OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, modifier = Modifier.weight(1f), label = { Text("Name") })
+    }
+    TextButton(enabled = WallDecorations.parseHex(hex) != null, onClick = { onPick(hex, "", name) }) { Text("Use this colour") }
 }

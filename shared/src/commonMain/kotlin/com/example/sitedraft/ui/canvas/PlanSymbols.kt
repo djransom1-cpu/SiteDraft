@@ -116,6 +116,11 @@ object PlanSymbols {
     val doorsWindows = listOf(
         "Door 2'-6\"", "Door 2'-8\"", "Door 3'-0\"", "Sliding Door 6'-0\"",
         "Pocket Door 2'-6\"", "Pocket Door 2'-8\"", "Pocket Door 3'-0\"",
+        // Dan, Nov 27: bifold, double (French) and barn doors, kept as styles of the hinged door so the wall cut,
+        // framing, schedule and placing work as they do for a door.
+        "Door 2'-0\" Bifold", "Door 2'-6\" Bifold", "Door 3'-0\" Bifold", "Door 4'-0\" Bifold", "Door 5'-0\" Bifold", "Door 6'-0\" Bifold",
+        "Door 5'-0\" Double", "Door 5'-4\" Double", "Door 6'-0\" Double",
+        "Door 3'-0\" Barn", "Door 3'-6\" Barn", "Door 4'-0\" Barn", "Door 6'-0\" Barn Bi-parting",
         "Opening 2'-6\"", "Opening 3'-0\"", "Opening 4'-0\"", "Opening 6'-0\"",
         "Window 3'-0\"", "Window 4'-0\"", "Window 6'-0\""
     )
@@ -159,6 +164,14 @@ object PlanSymbols {
         "Door 2'-8\"" to Pair(32f, 32f),
         "Door 3'-0\"" to Pair(36f, 36f),
         "Sliding Door 6'-0\"" to Pair(72f, WINDOW_DEPTH_IN),
+        // A bifold: as deep as its panels stand folded half open (one pair of panels to a jamb up to 3', a pair each side over).
+        "Door 2'-0\" Bifold" to Pair(24f, 11f), "Door 2'-6\" Bifold" to Pair(30f, 13f), "Door 3'-0\" Bifold" to Pair(36f, 16f),
+        "Door 4'-0\" Bifold" to Pair(48f, 11f), "Door 5'-0\" Bifold" to Pair(60f, 13f), "Door 6'-0\" Bifold" to Pair(72f, 16f),
+        // A double door: two leaves, each half the width, so the swing is half as deep.
+        "Door 5'-0\" Double" to Pair(60f, 30f), "Door 5'-4\" Double" to Pair(64f, 32f), "Door 6'-0\" Double" to Pair(72f, 36f),
+        // A barn door hangs on the wall face: the panel and its track.
+        "Door 3'-0\" Barn" to Pair(36f, 3f), "Door 3'-6\" Barn" to Pair(42f, 3f), "Door 4'-0\" Barn" to Pair(48f, 3f),
+        "Door 6'-0\" Barn Bi-parting" to Pair(72f, 3f),
         // A pocket door: the footprint is the opening; the pocket (as long again) is drawn inside the wall beside it.
         "Pocket Door 2'-6\"" to Pair(30f, WINDOW_DEPTH_IN),
         "Pocket Door 2'-8\"" to Pair(32f, WINDOW_DEPTH_IN),
@@ -265,7 +278,30 @@ object PlanSymbols {
     /** Above the cut plane - upper cabinets, hoods, an over-the-range microwave: drawn dashed, last, without blanking. */
     fun isOverlay(symbol: DrawingElement.Symbol) = isUpperCabinet(symbol) || Appliances.isOverlay(symbol)
 
+    /**
+     * Set into a counter (a cooktop, a drop-in or undermount sink): drawn over the cabinets whatever order they
+     * were placed in, so the base cabinet under it doesn't blank it out (Dan, Nov 25: a cooktop placed before
+     * its base cabinet never showed).
+     */
+    fun sitsOnCounter(symbol: DrawingElement.Symbol) =
+        Appliances.isCooktop(symbol.symbolName) || (symbol.category == FIXTURES && symbol.symbolName in counterSinks)
+
+    /** Plan drawing order: 0 everything else, 1 set into the counter, 2 overlays (uppers, hoods) on top. */
+    fun planTier(e: DrawingElement): Int = when {
+        e !is DrawingElement.Symbol -> 0
+        isOverlay(e) -> 2
+        sitsOnCounter(e) -> 1
+        else -> 0
+    }
+
     fun isDoor(name: String) = name.startsWith("Door ")
+    /** Door styles (Dan, Nov 27): all are doors ([isDoor]); these say how they're drawn and scheduled. */
+    fun isBifold(name: String) = isDoor(name) && name.endsWith("Bifold")
+    fun isDoubleDoor(name: String) = isDoor(name) && name.endsWith("Double")
+    fun isBarnDoor(name: String) = isDoor(name) && name.contains(" Barn")
+    fun isBiParting(name: String) = isBarnDoor(name) && name.endsWith("Bi-parting")
+    /** A bifold wider than 3': a pair, folding to both jambs. */
+    fun isBifoldPair(name: String, widthIn: Float) = isBifold(name) && widthIn > 40f
     /** A hinged door's hinge jamb: off = the left jamb seen from the side it swings into. */
     const val PROP_HINGE_RIGHT = "hingeRight"
     fun hingeRight(symbol: DrawingElement.Symbol) = (symbol.properties[PROP_HINGE_RIGHT] ?: 0f) >= 0.5f
@@ -550,6 +586,9 @@ fun DrawScope.drawPlanSymbol(
                 val back = if (inWall) cutTop + cutDepth - margin else hh
                 if (inWall) for (x in listOf(-hw, hw)) drawLine(color = lineColor, start = Offset(x, face), end = Offset(x, back), strokeWidth = thin.width)
                 drawLine(color = faint, start = Offset(-hw, (face + back) / 2f), end = Offset(hw, (face + back) / 2f), strokeWidth = thin.width)
+                if (PlanSymbols.isBifold(name) || PlanSymbols.isDoubleDoor(name) || PlanSymbols.isBarnDoor(name)) {
+                    drawDoorStyle(name, w, face, inch, PlanSymbols.hingeRight(element), lineColor, accentColor, faint, line, thin)
+                } else
                 // Hinged on the right jamb: the same door mirrored, leaf up the right edge.
                 if (PlanSymbols.hingeRight(element)) {
                     drawRect(color = lineColor, topLeft = Offset(hw - leaf, face - w), size = Size(leaf, w), style = line)
@@ -789,6 +828,69 @@ fun DrawScope.drawPlanSymbol(
                 val flip = r > 90.5f && r <= 270.5f
                 val size = minOf(inch * 4f, w * 1.6f / text.length, h * 0.4f)
                 drawLabel(text, at, size, lineColor, rotationDegrees = if (flip) 180f else 0f)
+            }
+        }
+    }
+}
+
+/**
+ * A bifold, double or barn door (Dan, Nov 27) of width [w], its threshold at [face] (the wall face on the side it opens to),
+ * opening toward -y, centred on x = 0. [right]: a single bifold folds to the right jamb; a barn door slides right.
+ */
+private fun DrawScope.drawDoorStyle(
+    name: String, w: Float, face: Float, inch: Float, right: Boolean,
+    lineColor: Color, accentColor: Color, faint: Color, line: Stroke, thin: Stroke
+) {
+    val hw = w / 2f
+    val dashed = Stroke(width = thin.width, pathEffect = PathEffect.dashPathEffect(floatArrayOf(inch * 2f, inch * 1.5f)))
+    when {
+        PlanSymbols.isDoubleDoor(name) -> {
+            // Two leaves hinged at the jambs, their swings meeting in the middle.
+            val leaf = inch * 1.75f
+            val l = hw
+            drawRect(color = lineColor, topLeft = Offset(-hw, face - l), size = Size(leaf, l), style = line)
+            drawArc(color = accentColor, startAngle = -90f, sweepAngle = 90f, useCenter = false, topLeft = Offset(-hw - l, face - l), size = Size(2f * l, 2f * l), style = thin)
+            drawRect(color = lineColor, topLeft = Offset(hw - leaf, face - l), size = Size(leaf, l), style = line)
+            drawArc(color = accentColor, startAngle = -90f, sweepAngle = -90f, useCenter = false, topLeft = Offset(hw - l, face - l), size = Size(2f * l, 2f * l), style = thin)
+        }
+        PlanSymbols.isBifold(name) -> {
+            // Panels standing folded half open, a V from each jamb they fold to; the track dashed across the opening.
+            drawLine(color = faint, start = Offset(-hw, face), end = Offset(hw, face), strokeWidth = thin.width, pathEffect = dashed.pathEffect)
+            val pair = PlanSymbols.isBifoldPair(name, w / inch)
+            val panel = if (pair) w / 4f else w / 2f
+            val ang = 60.0 * kotlin.math.PI / 180.0
+            val dx = panel * kotlin.math.cos(ang).toFloat()
+            val dy = panel * kotlin.math.sin(ang).toFloat()
+            fun vee(jamb: Float, dir: Float) {
+                val fold = Offset(jamb + dir * dx, face - dy)
+                val end = Offset(jamb + dir * 2f * dx, face)
+                drawLine(color = lineColor, start = Offset(jamb, face), end = fold, strokeWidth = line.width * 1.6f)
+                drawLine(color = lineColor, start = fold, end = end, strokeWidth = line.width * 1.6f)
+            }
+            if (pair) { vee(-hw, 1f); vee(hw, -1f) } else if (right) vee(hw, -1f) else vee(-hw, 1f)
+        }
+        PlanSymbols.isBarnDoor(name) -> {
+            // The panel hung just off the wall face, lapping the opening 1" each side; the track above it running out to
+            // where it slides open, and the panel dashed there.
+            val slab = inch * 1.375f
+            val gap = inch * 0.5f
+            val lap = inch * 1f
+            val top = face - gap - slab
+            fun panel(x1: Float, x2: Float) = drawRect(color = lineColor, topLeft = Offset(x1, top), size = Size(x2 - x1, slab), style = line)
+            fun open(x1: Float, x2: Float) = drawRect(color = faint, topLeft = Offset(x1, top), size = Size(x2 - x1, slab), style = dashed)
+            val trackY = top - inch * 0.75f
+            if (PlanSymbols.isBiParting(name)) {
+                val each = hw + lap
+                panel(-hw - lap, 0f); panel(0f, hw + lap)
+                open(-hw - lap - each, -hw - lap); open(hw + lap, hw + lap + each)
+                drawLine(color = accentColor, start = Offset(-hw - lap - each, trackY), end = Offset(hw + lap + each, trackY), strokeWidth = thin.width)
+            } else {
+                val pw = w + 2f * lap
+                panel(-hw - lap, hw + lap)
+                if (right) open(hw + lap, hw + lap + pw) else open(-hw - lap - pw, -hw - lap)
+                val t1 = if (right) -hw - lap else -hw - lap - pw
+                val t2 = if (right) hw + lap + pw else hw + lap
+                drawLine(color = accentColor, start = Offset(t1, trackY), end = Offset(t2, trackY), strokeWidth = thin.width)
             }
         }
     }
@@ -1216,6 +1318,12 @@ internal fun wallStudXs(hw: Float, inch: Float, firstStud: Float?, openings: Lis
     xs += hw - studW
     // Wall bucks (Dan, Nov 24): the pair of studs, the layout studs the buck covers taken out (the flat third: [buckFlats]).
     for (b in bucks) {
+        if (b.corner != 0) {
+            // A corner buck: the end stud stays; layout studs under the flat one beside it come out.
+            val f0 = buckFlatX(hw, inch, b, depthPx)
+            xs.removeAll { x -> x > -hw + 0.01f && x + studW < hw - 0.01f && x + studW > f0 + 0.01f && x < f0 + depthPx - 0.01f }
+            continue
+        }
         val p0 = -hw + b.centerPx - (2f * studW + depthPx) / 2f
         xs.removeAll { x -> x + studW > p0 + 0.01f && x < p0 + 2f * studW + depthPx - 0.01f }
         xs += p0; xs += p0 + studW
@@ -1231,8 +1339,12 @@ internal fun wallStudXs(hw: Float, inch: Float, firstStud: Float?, openings: Lis
 }
 
 /** A wall buck's flat stud: its left edge along the wall (wall centred on 0, px), as long as the studs are deep ([depthPx]). */
-internal fun buckFlatX(hw: Float, inch: Float, b: FramingLayout.Buck, depthPx: Float): Float =
-    -hw + b.centerPx - (3f * inch + depthPx) / 2f + 3f * inch
+internal fun buckFlatX(hw: Float, inch: Float, b: FramingLayout.Buck, depthPx: Float): Float = when {
+    // A corner buck's flat stud: right beside the end stud (Dan's L).
+    b.corner < 0 -> -hw + 1.5f * inch
+    b.corner > 0 -> hw - 1.5f * inch - depthPx
+    else -> -hw + b.centerPx - (3f * inch + depthPx) / 2f + 3f * inch
+}
 
 /** The house layout's first stud for a plan wall, px from its start (west or north end); null when it isn't square. */
 internal fun wallFirstStud(element: DrawingElement.Symbol, state: CanvasState, inch: Float): Float? {

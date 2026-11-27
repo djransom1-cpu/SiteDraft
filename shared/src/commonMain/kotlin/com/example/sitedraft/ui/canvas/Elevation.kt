@@ -4,8 +4,10 @@ import com.example.sitedraft.util.format
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.math.min
 
 /** Which side of a wall the viewer stands on when looking at its elevation (screen directions: up = north). */
@@ -62,6 +64,12 @@ data class ElevationSpec(
     val friezeIn: Float = 5.5f,
     /** Baseboard height, inches; 0 = none. */
     val baseIn: Float = 0f,
+    /**
+     * The stretch of the wall shown, inches along it from the viewer's left end (Dan, Nov 25: elevations by room,
+     * or any length of wall). [toIn] <= [fromIn] = the whole wall.
+     */
+    val fromIn: Float = 0f,
+    val toIn: Float = 0f,
 )
 
 /**
@@ -142,10 +150,10 @@ object Elevation {
      * cabinet, the refrigerator or open wall.
      */
     fun tileSpans(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): List<Pair<Float, Float>> {
-        val length = lengthPx(wall)
+        val length = cropPx(wall, spec, state).let { it.second - it.first }
         if (spec.tileExtent != 1) return listOf(0f to length)
         val inch = state.inchesToPx(1f)
-        val runs = itemsOnWall(wall, spec.side, state)
+        val runs = itemsInView(wall, spec, state)
             .filter { it.kind == Kind.FIXTURE && sitsAtCounter(it.symbol) }
             .map { it.from to it.to }.sortedBy { it.first }
         val merged = mutableListOf<Pair<Float, Float>>()
@@ -199,7 +207,7 @@ object Elevation {
         else if (spec.stairSide >= 0 && wall.category == PlanSymbols.STAIRS) Stairs.elevationSize(wall, spec.stairSide, state)
         else if (spec.islandFace >= 0 && PlanSymbols.isIsland(wall)) islandSize(wall, spec, state)
         else if (spec.framing && wall.category == PlanSymbols.WALLS) WallFraming.elevationSize(wall, state)
-        else Size(lengthPx(wall), state.inchesToPx(spec.wallHeightIn))
+        else Size(cropPx(wall, spec, state).let { it.second - it.first }, state.inchesToPx(spec.wallHeightIn))
 
     /** Where a point sits along the wall, measured from the end on the viewer's LEFT. */
     fun alongOf(wall: Rect, side: ViewerSide, p: Offset): Float = when (side) {
@@ -228,6 +236,62 @@ object Elevation {
         ViewerSide.ABOVE -> Pair(wall.right - b.right, wall.right - b.left)
         ViewerSide.RIGHT -> Pair(wall.bottom - b.bottom, wall.bottom - b.top)
         ViewerSide.LEFT -> Pair(b.top - wall.top, b.bottom - wall.top)
+    }
+
+    /**
+     * A cabinet, vanity or appliance whose front faces across this view rather than at it (Dan, Nov 25: the J&J
+     * vanity against the west wall showed its doors and faucet on the north wall's elevation). Seen end-on, it
+     * shows its end panel. Corner cabinets face both walls, so they never count.
+     */
+    fun endOn(s: DrawingElement.Symbol, side: ViewerSide): Boolean {
+        if (s.category != PlanSymbols.CABINETS && s.category != PlanSymbols.APPLIANCES) return false
+        if (s.symbolName.startsWith("Corner") || s.symbolName.startsWith("Island")) return false
+        // A symbol's front faces south at 0 degrees, west at 90, north at 180, east at 270.
+        val facingViewer = when (side) {
+            ViewerSide.BELOW -> 0
+            ViewerSide.ABOVE -> 180
+            ViewerSide.RIGHT -> 270
+            ViewerSide.LEFT -> 90
+        }
+        return (quarter(s) - facingViewer + 360) % 180 == 90
+    }
+
+    private fun quarter(s: DrawingElement.Symbol) = (((s.rotation % 360f) + 360f) % 360f / 90f).roundToInt() % 4 * 90
+
+    /** An end-on item's front is at the right-hand end of its end panel, as this view sees it. */
+    fun frontOnRight(s: DrawingElement.Symbol, side: ViewerSide): Boolean = quarter(s) == when (side) {
+        ViewerSide.BELOW -> 270
+        ViewerSide.ABOVE -> 90
+        ViewerSide.RIGHT -> 180
+        ViewerSide.LEFT -> 0
+    }
+
+    /** How tall an item stands, for its end panel (inches, bottom to top). */
+    fun endPanelSpan(s: DrawingElement.Symbol, spec: ElevationSpec): Pair<Float, Float> = when {
+        PlanSymbols.isUpperCabinet(s) -> upperSpan(s, spec)
+        PlanSymbols.isVanity(s.symbolName) -> 0f to PlanSymbols.vanityTop(s)
+        s.symbolName.startsWith("Pantry") -> 0f to PlanSymbols.PANTRY_HEIGHT_IN
+        Appliances.isFridge(s.symbolName) -> 0f to 70f
+        Appliances.isWallOven(s.symbolName) -> 0f to PlanSymbols.PANTRY_HEIGHT_IN
+        else -> 0f to spec.counterHeightIn
+    }
+
+    /** The stretch of the wall an elevation shows, px along it from the viewer's left end. */
+    fun cropPx(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): Pair<Float, Float> {
+        val len = lengthPx(wall)
+        if (spec.toIn <= spec.fromIn) return 0f to len
+        val inch = state.inchesToPx(1f)
+        val a = (spec.fromIn * inch).coerceIn(0f, len)
+        val b = (spec.toIn * inch).coerceIn(0f, len)
+        return if (b - a < inch) 0f to len else a to b
+    }
+
+    /** What stands on the wall within the elevation's stretch, measured from the stretch's left end. */
+    fun itemsInView(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): List<WallItem> {
+        val (a, b) = cropPx(wall, spec, state)
+        val all = itemsOnWall(wall, spec.side, state)
+        if (a <= 0f && b >= lengthPx(wall)) return all
+        return all.mapNotNull { if (it.to <= a + 0.5f || it.from >= b - 0.5f) null else it.copy(from = (it.from - a).coerceAtLeast(0f), to = (it.to - a).coerceAtMost(b - a)) }
     }
 
     fun itemsOnWall(wall: DrawingElement.Symbol, side: ViewerSide, state: CanvasState): List<WallItem> {
@@ -330,7 +394,9 @@ object Elevation {
         freeStanding: Boolean = false, title: String? = null, counterExtendIn: Pair<Float, Float> = 0f to 0f
     ): List<DrawingElement> {
         val inch = state.inchesToPx(1f)
-        val length = lengthPx(wall)
+        // The stretch of the wall shown (Nov 25): the whole wall, a room's part of it, or a length typed in.
+        val (cropA, _) = cropPx(wall, spec, state)
+        val length = cropPx(wall, spec, state).let { it.second - it.first }
         val heavy = 3f
         val medium = 2f
         val light = 1f
@@ -342,7 +408,13 @@ object Elevation {
         }
         // With wall tile on, everything standing in front of the wall hides the tile behind it.
         val tiled = spec.tileToIn > spec.tileFromIn
-        val opaque = if (tiled) Fill(pattern = FillPattern.SOLID, color = state.backgroundColor) else Fill()
+        // Wainscot on this face of the wall (Wainscot, Nov 25): kept on the wall, so it's here on every rebuild.
+        val wainscot = if (!freeStanding && spec.showerFace < 0 && spec.islandFace < 0 && spec.stairSide < 0 && !spec.framing)
+            Wainscot.specOf(wall, spec.side) else null
+        // Art and wallpaper on this face of the wall (WallDecor, Nov 25), kept on the wall like the wainscot.
+        val decor = if (!freeStanding && spec.showerFace < 0 && spec.islandFace < 0 && spec.stairSide < 0 && !spec.framing)
+            WallDecorations.on(state, wall.id, spec.side) else emptyList()
+        val opaque = if (tiled || wainscot != null || decor.isNotEmpty()) Fill(pattern = FillPattern.SOLID, color = state.backgroundColor) else Fill()
         fun rect(xFrom: Float, xTo: Float, hBottom: Float, hTop: Float, sw: Float = medium, fill: Fill = opaque) {
             if (xTo <= xFrom || hTop <= hBottom) return
             out += DrawingElement.Rectangle(topLeft = px(xFrom, hTop), size = Size(xTo - xFrom, (hTop - hBottom) * inch), color = color, strokeWidth = sw, fill = fill)
@@ -487,7 +559,89 @@ object Elevation {
         val counterRuns = mutableListOf<Pair<Float, Float>>()
         // Uppers and pantries (from, to, bottom, top), for the crown and the valance.
         val upperRuns = mutableListOf<FloatArray>()
-        val items = itemsOnWall(wall, spec.side, state)
+        val items = itemsInView(wall, spec, state)
+        // Wallpaper (above the wainscot when there is one) and art, behind everything standing in front of the wall;
+        // doors, windows, trim and cabinets are drawn over them with a solid fill, so they cut through.
+        // Wallpaper first, then art, so the art hangs on the paper whichever was added first.
+        // Paint first (Nov 26), then wallpaper over it, then art on top.
+        for (d in decor.sortedBy { when (it.kind) { WallDecor.PAINT -> 0; WallDecor.WALLPAPER -> 1; else -> 2 } }) {
+            if (d.kind == WallDecor.PAINT) {
+                // The paint colour over the wall face above any wainscot, its number and name in the top corner.
+                val paint = Color(0xFF000000.toInt() or d.rgb)
+                val bottom = wainscot?.heightIn?.coerceAtMost(spec.wallHeightIn) ?: 0f
+                // Just its rooms along the wall (0 = the whole face), cut to this view's length.
+                val spansPx = if (d.rooms == 0) listOf(0f to length) else Wainscot.roomSpans(wall, spec.side, state)
+                    .filterIndexed { i, _ -> (d.rooms shr i) and 1 == 1 }
+                    .map { (f, t) -> (f * inch - cropA).coerceIn(0f, length) to (t * inch - cropA).coerceIn(0f, length) }
+                    .filter { it.second - it.first > inch }
+                if (spansPx.isEmpty()) continue
+                for ((x1, x2) in spansPx) rect(x1, x2, bottom, spec.wallHeightIn, 0.5f, Fill(pattern = FillPattern.SOLID, color = paint))
+                val tag = (inch * 3f).coerceIn(8f, 24f)
+                val dark = (0.299f * paint.red + 0.587f * paint.green + 0.114f * paint.blue) < 0.5f
+                out += DrawingElement.Text(text = "PAINT: " + d.paintLabel.uppercase(), topLeft = Offset(origin.x + spansPx.first().first + 3f * inch, px(0f, spec.wallHeightIn - 3f).y),
+                    fontSize = tag, color = if (dark) Color.White else color)
+                continue
+            }
+            val pic = WallDecorations.picture(state, d.pictureId) ?: continue
+            if (d.kind == WallDecor.WALLPAPER) {
+                val bottom = wainscot?.heightIn?.coerceAtMost(spec.wallHeightIn) ?: 0f
+                val rh = WallDecorations.heightFor(pic, d.repeatIn)
+                for (t in WallDecorations.tiles(0f, length / inch, bottom, spec.wallHeightIn, d.repeatIn, rh)) {
+                    out += DrawingElement.Image(bitmap = pic.bitmap, topLeft = px(t[0] * inch, t[1] + t[3]),
+                        size = Size(t[2] * inch, t[3] * inch), srcW = t[4], srcH = t[5])
+                }
+            } else {
+                val x = d.xIn * inch - cropA
+                if (x + d.widthIn * inch <= 0f || x >= length) continue
+                // The frame is solid, so the wallpaper stops at its outside edge (Dan, Nov 25); the picture goes on it.
+                val f = d.frameIn.coerceAtLeast(0f)
+                if (f > 0f) rect(x - f * inch, x + (d.widthIn + f) * inch, d.bottomIn - f, d.bottomIn + d.heightIn + f, medium,
+                    Fill(pattern = FillPattern.SOLID, color = state.backgroundColor))
+                out += DrawingElement.Image(bitmap = pic.bitmap, topLeft = px(x, d.bottomIn + d.heightIn), size = Size(d.widthIn * inch, d.heightIn * inch))
+                if (f > 0f) rect(x, x + d.widthIn * inch, d.bottomIn, d.bottomIn + d.heightIn, light, Fill())
+            }
+        }
+        // Wainscot behind everything standing in front of the wall: it stops at the door casings and runs
+        // under the windows whose trim comes below it (Dan's rules, Wainscot).
+        if (wainscot != null) {
+            val doorsIn = mutableListOf<Pair<Float, Float>>()
+            val windowsIn = mutableListOf<Wainscot.Window>()
+            val rawWindows = mutableListOf<FloatArray>()
+            for (o in items.filter { it.kind == Kind.OPENING }) {
+                val win = PlanSymbols.isWindow(o.symbol.symbolName)
+                if (!win) {
+                    val (a, b) = if (spec.trimOn) Trim.outerEdges(o.from, o.to, false, spec, inch) else (o.from to o.to)
+                    doorsIn += a / inch to b / inch; continue
+                }
+                val sill = o.symbol.properties[PlanSymbols.PROP_SILL_IN] ?: spec.sillIn
+                val top = sill + (o.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.windowHeightIn)
+                rawWindows += floatArrayOf(o.from, o.to, sill, top)
+            }
+            // A gang of windows is one unit here too, so the wainscot runs under it in one piece (Nov 25).
+            for (g in Trim.gangs(rawWindows, inch)) {
+                val first = rawWindows[g.minBy { rawWindows[it][0] }]
+                val last = rawWindows[g.maxBy { rawWindows[it][1] }]
+                val sill = first[2]
+                val (a, b) = if (spec.trimOn) Trim.outerEdges(first[0], last[1], true, spec, inch) else (first[0] to last[1])
+                val trimBottom = if (!spec.trimOn) sill else if (spec.windowTrim == 1) sill - Trim.STOOL_IN - spec.casingIn else sill - spec.casingIn
+                windowsIn += Wainscot.Window(a / inch, b / inch, trimBottom)
+            }
+            // Walls butting into this one cut it too, and it goes only in the rooms picked along the wall.
+            val cuts = items.filter { it.kind == Kind.CUT_WALL }.map { it.from / inch to it.to / inch }
+            doorsIn += cuts
+            // Rooms are counted along the whole wall, then moved to this elevation's stretch.
+            Wainscot.roomSpans(wall, spec.side, state).forEachIndexed { i, r -> if (!wainscot.inRoom(i)) doorsIn += (r.first - cropA / inch) to (r.second - cropA / inch) }
+            // It stops behind base cabinets, counters, tall units and floor-standing appliances.
+            for (it in items.filter { it.kind == Kind.FIXTURE && Wainscot.stopsBehind(it.symbol, wainscot.style) }) doorsIn += it.from / inch to it.to / inch
+            val top = wainscot.heightIn.coerceAtMost(spec.wallHeightIn)
+            val stretches = Wainscot.stretches(length / inch, top, doorsIn, windowsIn)
+            for (m in Wainscot.marks(wainscot, stretches, spec.baseIn)) when (m) {
+                is Wainscot.Mark.Box -> if (m.tile) rect(m.x1 * inch, m.x2 * inch, m.h1, m.h2, light, Fill(
+                    pattern = FillPattern.BRICK, spacing = Wainscot.TILE_COURSE_IN * inch, lineWidth = 0.75f, length = Wainscot.TILE_LENGTH_IN * inch))
+                    else rect(m.x1 * inch, m.x2 * inch, m.h1, m.h2, if (m.heavy) medium else light, Fill())
+                is Wainscot.Mark.Seg -> line(m.x1 * inch, m.h1, m.x2 * inch, m.h2)
+            }
+        }
         // Vanities carry their own top height; sinks set into a vanity sit at that height
         // instead of the kitchen counter's. Vanity tops are kept apart from the counter runs.
         val vanities = items.filter { it.kind == Kind.FIXTURE && it.symbol.category == PlanSymbols.CABINETS && PlanSymbols.isVanity(it.symbol.symbolName) }
@@ -498,10 +652,10 @@ object Elevation {
         val sinkItems = items.filter { it.kind == Kind.FIXTURE && it.symbol.category == PlanSymbols.FIXTURES && it.symbol.symbolName in PlanSymbols.counterSinks }
         val aprons = sinkItems.filter { it.symbol.symbolName == PlanSymbols.FARMHOUSE_SINK }
         /** A faucet standing on a top at [topIn]: spout up and over the bowl. */
-        fun faucet(xc: Float, topIn: Float, tall: Float = 8f) {
-            line(xc, topIn, xc, topIn + tall, medium)
-            line(xc, topIn + tall, xc + 4f * inch, topIn + tall - 1.5f, medium)
-        }
+        // Faucets stand in front of the wall and its trim: drawn last, after the window trim (Dan, Nov 25: the
+        // kitchen faucet was cut off by the trim of the window over the sink).
+        val faucets = mutableListOf<FloatArray>()
+        fun faucet(xc: Float, topIn: Float, tall: Float = 8f) { faucets += floatArrayOf(xc, topIn, tall) }
         // The appliance and hood drawings use this builder's own helpers.
         val rectFn: (Float, Float, Float, Float, Float, Fill) -> Unit = { a, b, c, d, e, f -> rect(a, b, c, d, e, f) }
         val lineFn: (Float, Float, Float, Float, Float) -> Unit = { a, b, c, d, e -> line(a, b, c, d, e) }
@@ -516,7 +670,7 @@ object Elevation {
             override fun doors(x1: Float, x2: Float, h1: Float, h2: Float, count: Int, knobsLow: Boolean) = doorsFn(x1, x2, h1, h2, count, knobsLow)
             override fun drawers(x1: Float, x2: Float, h1: Float, h2: Float, n: Int) = drawersFn(x1, x2, h1, h2, n)
             override fun blank(x1: Float, x2: Float, h1: Float, h2: Float) {
-                if (!tiled || x2 <= x1 || h2 <= h1) return
+                if (!(tiled || wainscot != null || decor.isNotEmpty()) || x2 <= x1 || h2 <= h1) return
                 out += DrawingElement.Rectangle(
                     topLeft = px(x1, h2), size = Size(x2 - x1, (h2 - h1) * inch),
                     color = androidx.compose.ui.graphics.Color.Transparent, strokeWidth = 0f, fill = opaque
@@ -524,6 +678,19 @@ object Elevation {
             }
         }
         for (item in items) {
+            // Seen end-on: just its end panel - toe kick and the edge of the top on a base or vanity (Nov 25).
+            if (item.kind == Kind.FIXTURE && endOn(item.symbol, spec.side)) {
+                val (bottom, top) = endPanelSpan(item.symbol, spec)
+                val onFloor = bottom <= 0.5f
+                if (onFloor && top <= spec.counterHeightIn + 0.5f) {
+                    // Base or vanity: the box over a 4" x 3" toe kick, the top 1 1/2" over it.
+                    if (frontOnRight(item.symbol, spec.side)) rect(item.from, item.to - 3f * inch, 0f, 4f, light)
+                    else rect(item.from + 3f * inch, item.to, 0f, 4f, light)
+                    rect(item.from, item.to, 4f, top - 1.5f, medium)
+                    rect(item.from - 0.5f * inch, item.to + 0.5f * inch, top - 1.5f, top, medium)
+                } else rect(item.from, item.to, bottom, top, medium)
+                continue
+            }
             doorStyle = PlanSymbols.doorStyle(item.symbol)
             hardware = PlanSymbols.hardware(item.symbol)
             val from = item.from
@@ -593,6 +760,33 @@ object Elevation {
                         val px = if (latchAtTo) to - 2.5f * inch else from + 2.5f * inch
                         rect(px - 0.75f * inch, px + 0.75f * inch, 34f, 40f, light)
                     }
+                    PlanSymbols.isBarnDoor(name) -> {
+                        // Dan, Nov 27: the panel hung over the opening, lapping it 1" each side, the track and hangers above.
+                        val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
+                        rect(from - inch, to + inch, 0f, doorH + 1f, medium)
+                        if (PlanSymbols.isBiParting(name)) line(xc, 0f, xc, doorH + 1f)
+                        val span = to - from + 2f * inch
+                        val t1 = if (PlanSymbols.isBiParting(name)) from - inch - span / 2f else from - inch - span
+                        val t2 = if (PlanSymbols.isBiParting(name)) to + inch + span / 2f else to + inch + span
+                        rect(t1, t2, doorH + 3f, doorH + 4.5f, light)
+                        for (hx in listOf(from + 4f * inch, to - 4f * inch)) line(hx, doorH + 1f, hx, doorH + 3f)
+                    }
+                    PlanSymbols.isBifold(name) -> {
+                        // The panels' joints, each panel a quarter (a pair) or half of the opening.
+                        val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
+                        rect(from, to, 0f, doorH, medium)
+                        val n = if (PlanSymbols.isBifoldPair(name, (to - from) / inch)) 4 else 2
+                        for (i in 1 until n) { val x = from + (to - from) * i / n; line(x, 0f, x, doorH) }
+                    }
+                    PlanSymbols.isDoubleDoor(name) -> {
+                        // Two leaves, each with its panel, meeting at the middle.
+                        val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
+                        rect(from, to, 0f, doorH, medium)
+                        line(xc, 0f, xc, doorH)
+                        rect(from + 3f * inch, xc - 3f * inch, 8f, doorH - 8f, light)
+                        rect(xc + 3f * inch, to - 3f * inch, 8f, doorH - 8f, light)
+                        circle(xc - 2f * inch, 36f, 1f); circle(xc + 2f * inch, 36f, 1f)
+                    }
                     PlanSymbols.isSlidingDoor(name) -> {
                         val doorH = item.symbol.properties[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
                         rect(from, to, 0f, doorH, medium)
@@ -658,9 +852,8 @@ object Elevation {
                         counterRuns += Pair(from, to)
                     }
                     name == "Kitchen Sink" -> {
-                        // The sink sits in the counter: show the faucet.
-                        line(xc, counterTop, xc, counterTop + 10f, medium)
-                        line(xc, counterTop + 10f, xc + 5f * inch, counterTop + 8f, medium)
+                        // The sink sits in the counter: show the faucet (drawn last, solid, in front of any window trim).
+                        faucet(xc, counterTop, 10f)
                         counterRuns += Pair(from, to)
                     }
                     PlanSymbols.isVanity(name) -> {
@@ -783,9 +976,31 @@ object Elevation {
                         rect(xc - bowlW / 2f, xc + bowlW / 2f, 0f, 15f)
                     }
                     name == "Bathtub" -> {
-                        rect(from, to, 0f, 18f)
-                        line(from + 6f * inch, 18f, from + 6f * inch, 30f, medium)
-                        line(from + 6f * inch, 30f, from + 10f * inch, 28f, medium)
+                        val tub = item.symbol
+                        if (TubShower.isOn(tub)) {
+                            // Tub/shower (Nov 25): tile from the rim up the walls around it, over whatever is behind.
+                            val rim = TubShower.RIM_IN
+                            val tileTop = TubShower.prop(tub, TubShower.TILE_H).coerceIn(rim, spec.wallHeightIn)
+                            rect(from, to, rim, tileTop, light, Fill(pattern = FillPattern.SOLID, color = state.backgroundColor))
+                            rect(from, to, rim, tileTop, light, Fill(pattern = FillPattern.BRICK, spacing = TubShower.TILE_COURSE_IN * inch,
+                                lineWidth = 0.75f, length = TubShower.TILE_LENGTH_IN * inch))
+                            // The valve end: spout over the rim, the lever, the showerhead on its arm.
+                            if (TubShower.valveHere(tub, spec.side)) {
+                                val spout = TubShower.prop(tub, TubShower.SPOUT_H)
+                                val valveH = TubShower.prop(tub, TubShower.VALVE_H)
+                                val headH = TubShower.prop(tub, TubShower.HEAD_H)
+                                rect(xc - 1.5f * inch, xc + 1.5f * inch, spout, spout + 2f, medium)
+                                circle(xc, valveH, 3.5f, medium)
+                                line(xc, valveH, xc + 2.5f * inch, valveH + 2.5f, medium) // lever
+                                line(xc, headH, xc, headH - 2f, medium) // arm
+                                circle(xc, headH - 4f, 2.5f, medium)
+                            }
+                            rect(from, to, 0f, rim)
+                        } else {
+                            rect(from, to, 0f, 18f)
+                            line(from + 6f * inch, 18f, from + 6f * inch, 30f, medium)
+                            line(from + 6f * inch, 30f, from + 10f * inch, 28f, medium)
+                        }
                     }
                     name == PlanSymbols.CLAWFOOT_TUB -> {
                         // The tub on four feet: rolled rim at 25", the body curving in to its bottom at 8".
@@ -929,15 +1144,31 @@ object Elevation {
                 Kind.OPENING -> Unit
             }
         }
+        // Windows side by side with the same head and sill are trimmed as one unit (Trim.gangs, Dan Nov 25).
+        val windowSpans = mutableListOf<FloatArray>()
         for (o in openings) {
             val props = o.symbol.properties
             val window = PlanSymbols.isWindow(o.symbol.symbolName)
             val bottom = if (window) props[PlanSymbols.PROP_SILL_IN] ?: spec.sillIn else 0f
             val top = if (window) bottom + (props[PlanSymbols.PROP_HEIGHT_IN] ?: spec.windowHeightIn) else props[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
-            if (spec.trimOn) Trim.drawOpening(appliancePen, o.from, o.to, bottom, top, window, spec)
-            if (!window) blocked += if (spec.trimOn) Trim.outerEdges(o.from, o.to, false, spec, inch) else (o.from to o.to)
+            if (window) { windowSpans += floatArrayOf(o.from, o.to, bottom, top); continue }
+            if (spec.trimOn) Trim.drawOpening(appliancePen, o.from, o.to, bottom, top, false, spec)
+            blocked += if (spec.trimOn) Trim.outerEdges(o.from, o.to, false, spec, inch) else (o.from to o.to)
+        }
+        if (spec.trimOn) for (g in Trim.gangs(windowSpans, inch)) {
+            val w0 = windowSpans[g.first()]
+            if (g.size == 1) Trim.drawOpening(appliancePen, w0[0], w0[1], w0[2], w0[3], true, spec)
+            else Trim.drawGang(appliancePen, g.map { windowSpans[it][0] to windowSpans[it][1] }, w0[2], w0[3], spec)
         }
         Trim.drawBase(appliancePen, length, blocked, spec)
+        // Each faucet a solid shape - base, body and spout - filled so nothing behind it (window trim) runs through it.
+        val solid = Fill(pattern = FillPattern.SOLID, color = state.backgroundColor)
+        for ((xc, topIn, tall) in faucets.map { Triple(it[0], it[1], it[2]) }) {
+            rect(xc - 1.25f * inch, xc + 1.25f * inch, topIn, topIn + 1f, medium, solid)            // base
+            rect(xc - 0.6f * inch, xc + 0.6f * inch, topIn + 1f, topIn + tall, medium, solid)        // body
+            rect(xc - 0.6f * inch, xc + 4.5f * inch, topIn + tall - 1.2f, topIn + tall, medium, solid) // spout
+            rect(xc + 3.6f * inch, xc + 4.5f * inch, topIn + tall - 2.5f, topIn + tall - 1.2f, medium, solid) // spout tip
+        }
 
         // Crown molding along the tops of the uppers and pantries: one piece per stretch at the
         // same top, returned 1 1/2" past each open end, stopping at the ceiling.

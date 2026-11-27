@@ -323,6 +323,9 @@ function setRoof(project, a) {
   if (a.end_a) r.endA = end(a.end_a, "end_a");
   if (a.end_b) r.endB = end(a.end_b, "end_b");
   if (a.turn_ridge != null) r.turnRidge = !!a.turn_ridge;
+  // A flat on top (Dan, Nov 26): the slopes stop at a deck, by default at the main gable's ridge height.
+  if (a.flat_top != null) { r.flatTop = !!a.flat_top; if (!a.flat_top) delete r.flatAtIn; }
+  if (a.flat_top_height != null) { r.flatTop = true; r.flatAtIn = len(a.flat_top_height, "flat_top_height"); }
   if (a.covering) {
     const c = COVERINGS[String(a.covering).toLowerCase()];
     if (!c) throw new M.UserError(`covering: ${Object.keys(COVERINGS).join(", ")}.`);
@@ -335,8 +338,74 @@ function setRoof(project, a) {
   const shown = { framing: (r.framing || "TRUSSES").toLowerCase(), pitch: `${r.pitch ?? 6}/12`, overhang: inchText(r.overhangIn ?? 12), rake: inchText(r.rakeIn ?? 12),
     heel: inchText(r.heelIn ?? 4), spacing: `${inchText(r.ocIn ?? 24)} o.c.`, garage_and_wing_trusses: `${inchText(r.addOnOcIn ?? 24)} o.c.`,
     hip_girder_at_truss_height: (r.framing || "TRUSSES") === "TRUSSES" ? inchText(r.girderHeightIn ?? 60) : undefined, ends: `${(r.endA || "GABLE").toLowerCase()} / ${(r.endB || "GABLE").toLowerCase()}`,
-    ridge: r.turnRidge ? "turned (runs the short way)" : "runs the long way", covering: (r.covering || "ARCH_SHINGLES").toLowerCase().replace(/_/g, " ") };
-  return { state: project, result: { roof: shown, note: "Site Draft builds the roof plan and framing over the first-floor 2x6 exterior walls when it reloads the project (within a few seconds if it's open)." } };
+    ridge: r.turnRidge ? "turned (runs the short way)" : "runs the long way",
+    flat_top: r.flatTop ? (r.flatAtIn != null ? `flat deck at ${inchText(r.flatAtIn)}` : "flat deck at the main gable's ridge height") : undefined, covering: (r.covering || "ARCH_SHINGLES").toLowerCase().replace(/_/g, " ") };
+  return { state: project, result: { roof: shown, note: "Site Draft builds the roof plan and framing over the main house (its outside walls, less any wings; the plate on the top floor) when it reloads the project (within a few seconds if it's open)." } };
+}
+
+/**
+ * A traced roof area (RoofAreas.kt, Dan Nov 26): corners in plan inches (outside faces of the walls), what each side is
+ * (eave, gable, or open where it runs into another roof), pitch, wall height, overhangs, a flat. Once there are areas the
+ * app builds the roof from them instead of the rectangle over the main house: each eave a plane at the pitch, the lowest
+ * plane in an area wins (ridges, hips), a flat caps them, and where areas overlap the highest roof wins (valleys).
+ */
+function setRoofArea(project, a) {
+  const s = { ...settingsOf(project) };
+  const r = { ...(s.roof || {}) };
+  let areas = [...(r.areas || [])];
+  const len = (v, what) => { const x = M.parseLength(v); if (x == null || isNaN(x)) throw new M.UserError(`${what}: "${v}" isn't a length.`); return x; };
+  const name = String(a.name || "").trim();
+  if (a.clear_all) areas = [];
+  else {
+    if (!name) throw new M.UserError("name: what to call this roof area, e.g. \"Main\", \"West gable\", \"East wing\".");
+    const at = areas.findIndex((x) => x.id === name || (x.name || "").toLowerCase() === name.toLowerCase());
+    if (a.remove) {
+      if (at < 0) throw new M.UserError(`No roof area named ${name}. There are: ${areas.map((x) => x.name || x.id).join(", ") || "none"}.`);
+      areas.splice(at, 1);
+    } else {
+      const old = at >= 0 ? areas[at] : { id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || `area-${areas.length + 1}`, name };
+      const area = { ...old, name };
+      if (a.outline) {
+        const pts = a.outline.map((p, i) => {
+          const x = Array.isArray(p) ? p[0] : p.x; const y = Array.isArray(p) ? p[1] : p.y;
+          const X = typeof x === "number" ? x : len(x, `outline[${i}].x`); const Y = typeof y === "number" ? y : len(y, `outline[${i}].y`);
+          return [X, Y];
+        });
+        if (pts.length < 3) throw new M.UserError("outline: at least 3 corners, in order around the area.");
+        area.xs = pts.map((p) => p[0]); area.ys = pts.map((p) => p[1]);
+      }
+      if (!area.xs) throw new M.UserError("outline: the area's corners, in order around it (plan inches, outside faces of the walls).");
+      if (a.edges) {
+        const E = { eave: "EAVE", gable: "GABLE", rake: "GABLE", open: "OPEN" };
+        area.edges = a.edges.map((e, i) => { const v = E[String(e).toLowerCase()]; if (!v) throw new M.UserError(`edges[${i}]: eave, gable or open.`); return v; });
+      }
+      const n = area.xs.length;
+      if (!area.edges || area.edges.length !== n) throw new M.UserError(`edges: one for each side (${n} sides; side 1 runs from corner 1 to corner 2, the last from the last corner back to the first): eave, gable or open.`);
+      if (a.pitch != null) { const p = Number(String(a.pitch).split("/")[0]); if (!(p > 0 && p <= 24)) throw new M.UserError("pitch: rise per 12, e.g. 12 for a 12/12."); area.pitch = p; }
+      if (a.wall_height != null) area.wallHeightIn = len(a.wall_height, "wall_height");
+      if (a.overhang != null) area.overhangIn = len(a.overhang, "overhang");
+      if (a.rake != null) area.rakeIn = len(a.rake, "rake");
+      if (a.flat_height != null) { area.flatRiseIn = len(a.flat_height, "flat_height"); delete area.flatAtRidgeOf; }
+      if (a.flat_at_ridge_of != null) {
+        if (a.flat_at_ridge_of === "" || a.flat_at_ridge_of === false) delete area.flatAtRidgeOf;
+        else { area.flatAtRidgeOf = String(a.flat_at_ridge_of); delete area.flatRiseIn; }
+      }
+      if (a.no_flat) { delete area.flatRiseIn; delete area.flatAtRidgeOf; }
+      if (at >= 0) areas[at] = area; else areas.push(area);
+    }
+  }
+  r.areas = areas;
+  if (!areas.length) delete r.areas;
+  materialize(project);
+  project.building = { ...s, roof: r };
+  reconcile(project);
+  compact(project);
+  const side = (e) => String(e).toLowerCase();
+  return { state: project, result: {
+    roofAreas: areas.map((x) => ({ name: x.name || x.id, corners: x.xs.map((v, i) => [Math.round(v * 100) / 100, Math.round(x.ys[i] * 100) / 100]),
+      sides: (x.edges || []).map(side), pitch: `${x.pitch ?? r.pitch ?? 6}/12`, wallHeight: x.wallHeightIn != null ? inchText(x.wallHeightIn) : "the house's top plate",
+      flat: x.flatRiseIn != null ? `${inchText(x.flatRiseIn)} above where the roof meets the wall` : x.flatAtRidgeOf ? `at the ridge of ${x.flatAtRidgeOf}` : undefined })),
+    note: areas.length ? "Site Draft builds the roof from these areas when it reloads the project (within a few seconds if it's open): planes from each eave, ridges and hips where they meet, valleys where areas meet." : "No roof areas: the roof is the rectangle over the main house again." } };
 }
 
 /**
@@ -371,5 +440,5 @@ function moveToLayer(project, a) {
 module.exports = {
   FLOOR1_PLAN, settingsOf, levels, defaultLayers, effectiveLayers, activeLayer, defaultLayerId, layerOf, layerForNew,
   tagNew, materialize, reconcile, validate, findLayer, compact, compactSettings, inchText, fmt,
-  describe, setActiveLayer, showHideLayers, addLayer, setBuildingInputs, moveToLayer, setRoof, setExteriorElevations,
+  describe, setActiveLayer, showHideLayers, addLayer, setBuildingInputs, moveToLayer, setRoof, setRoofArea, setExteriorElevations,
 };

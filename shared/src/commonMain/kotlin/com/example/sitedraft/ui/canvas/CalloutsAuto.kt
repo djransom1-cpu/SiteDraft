@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.Color
 object CalloutsAuto {
     private const val CUT_LEN_IN = 96f
     private const val LEADER_IN = 48f
+    /** The wall section cut: 2' inside the wall to 8' out, clear of three tiers of dimension strings. */
+    private const val WALL_CUT_LEN_IN = 120f
 
     private fun has(state: CanvasState, d: DetailKit.Detail) = DetailKit.detailIn(state, d) != null
     private fun bits(vararg t: Callouts.Target) = t.fold(0) { a, x -> a or x.bit }.toFloat()
@@ -67,7 +69,10 @@ object CalloutsAuto {
                 start = maxOf(start, c)
             }
             val x = (best.first + best.second) / 2f
-            callout("wall", Callouts.SECTION, Offset(x, b.center.y), CUT_LEN_IN, 90f, wallTargets.toFloat(), Building.FLOOR1_PLAN)
+            // The cut starts 2' inside the house and runs out past the dimension strings (tiers at 24" + 18" each),
+            // the bubble beyond them. Markers don't size a sheet's view, so this doesn't grow the plan (Nov 25).
+            val len = WALL_CUT_LEN_IN
+            callout("wall", Callouts.SECTION, Offset(x, b.center.y + (len / 2f - 24f) * inch), len, 90f, wallTargets.toFloat(), Building.FLOOR1_PLAN)
         }
 
         // ---- The garage wall: through its outside wall, the side away from the house ----
@@ -87,6 +92,22 @@ object CalloutsAuto {
                 Offset(if (dx > 0f) g.right else g.left, g.center.y) to (if (dx > 0f) 0f else 180f)
             else Offset(g.center.x, if (dy > 0f) g.bottom else g.top) to (if (dy > 0f) 90f else 270f)
             callout("garage", Callouts.SECTION, at, CUT_LEN_IN, rot, gTargets.toFloat(), of(garage).id)
+        }
+
+        // ---- The building section: a cut across the whole house, square to the ridge, its bubble past the dimensions ----
+        if (has(state, DetailKit.Detail.BUILDING_SECTION) && house != null) {
+            val r = state.building.roof
+            val ridgeAcross = (house.width >= house.height) != (r?.turnRidge ?: false)
+            val past = 120f * inch
+            if (ridgeAcross) {
+                val len = house.height / inch + 2f * past / inch
+                callout("building", Callouts.SECTION, Offset(house.left + house.width * 0.4f, house.center.y), len, 90f,
+                    bits(Callouts.Target.BUILDING_SECTION), Building.FLOOR1_PLAN)
+            } else {
+                val len = house.width / inch + 2f * past / inch
+                callout("building", Callouts.SECTION, Offset(house.center.x, house.top + house.height * 0.4f), len, 0f,
+                    bits(Callouts.Target.BUILDING_SECTION), Building.FLOOR1_PLAN)
+            }
         }
 
         // ---- The stair ----

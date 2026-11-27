@@ -445,9 +445,41 @@ class RestCloudService(
             commit(writes)
         }
 
+        override suspend fun projectUpdatedAt(uid: String, name: String): Long? =
+            getDocument(CloudDocs.projectPath(uid, name), onlyFields = listOf("updatedAt"))?.let { CloudDocs.projectMetaFrom(name, it).updatedAt }
+
         override suspend fun projectStamp(uid: String, name: String): Long? =
             getDocument("users/$uid/projectStamps/${CloudDocs.encodeDocId(name)}", onlyFields = listOf("updatedAt"))
                 ?.get("updatedAt")?.jsonPrimitive?.longOrNull
+
+        override suspend fun writeClaudePresence(uid: String, deviceId: String, presence: ClaudePresence) =
+            mergeDocument("users/$uid/claudeDevices/${CloudDocs.encodeDocId(deviceId)}", buildJsonObject {
+                put("device", JsonPrimitive(presence.device))
+                put("project", JsonPrimitive(presence.project))
+                put("lastActiveAt", JsonPrimitive(presence.lastActiveAt))
+                put("seenAt", JsonPrimitive(presence.seenAt))
+            })
+
+        override suspend fun claudePendingCommand(uid: String, deviceId: String): String? =
+            getDocument("users/$uid/claudeDevices/${CloudDocs.encodeDocId(deviceId)}", onlyFields = listOf("pendingCommand"))
+                ?.get("pendingCommand")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+
+        override suspend fun readClaudeCommand(uid: String, id: String): ClaudeCommandDoc? =
+            getDocument("users/$uid/claudeCommands/${CloudDocs.encodeDocId(id)}")?.let { f ->
+                fun text(k: String) = (f[k] as? JsonPrimitive)?.contentOrNull ?: ""
+                ClaudeCommandDoc(id, text("project"), text("target"), text("status"), text("actions"))
+            }
+
+        override suspend fun updateClaudeCommand(uid: String, id: String, status: String, result: String?, at: Long, device: String) =
+            mergeDocument("users/$uid/claudeCommands/${CloudDocs.encodeDocId(id)}", buildJsonObject {
+                put("status", JsonPrimitive(status))
+                put("runBy", JsonPrimitive(device))
+                if (result == null) put("startedAt", JsonPrimitive(at))
+                else {
+                    put("result", JsonPrimitive(result))
+                    put("finishedAt", JsonPrimitive(at))
+                }
+            })
 
         override suspend fun readSharing(ownerUid: String, name: String): ProjectSharing? =
             getDocument(CloudDocs.projectPath(ownerUid, name), onlyFields = listOf("ownerUid", "ownerEmail", "memberEmails", "editorEmails"))

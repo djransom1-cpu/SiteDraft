@@ -13,6 +13,10 @@ const CABINETS = "Cabinets";
 
 const symbols = (state) => (state.elements || []).filter((e) => M.kind(e) === "Symbol");
 const walls = (state) => symbols(state).filter((s) => s.category === WALLS);
+/** Which floor an element is drawn on, from its layer ("floor2-plan" = 2); no layer = the first floor (Nov 27: the second
+ * floor's walls are carried up from the first, so a first-floor window must not find its wall upstairs). */
+const floorNo = (e) => { const m = /^floor(\d+)/.exec(String((e && e.layerId) || "")); return m ? Number(m[1]) : 1; };
+const wallsOn = (state, e) => walls(state).filter((w) => floorNo(w) === floorNo(e));
 const center = (s) => M.pt(s.center);
 const size = (s) => { const p = M.pt(s.size); return { w: p.x, h: p.y }; };
 
@@ -47,7 +51,7 @@ const isWindow = (name) => name.startsWith("Window ");
 
 /** Elevation.interiorSide: the side of [wall] facing the middle of the other walls ("BELOW"/"ABOVE"/"RIGHT"/"LEFT"), or null. */
 function interiorSide(wall, state) {
-  const others = walls(state).filter((w) => w.id !== wall.id).map((w) => bounds(w));
+  const others = wallsOn(state, wall).filter((w) => w.id !== wall.id).map((w) => bounds(w));
   if (!others.length) return null;
   const mx = others.reduce((a, r) => a + r.cx, 0) / others.length;
   const my = others.reduce((a, r) => a + r.cy, 0) / others.length;
@@ -66,7 +70,7 @@ function openingAnchor(s) {
 
 function hostWall(opening, state, inch) {
   const a = openingAnchor(opening);
-  const candidates = walls(state).filter((w) => contains(inflate(bounds(w), 2 * inch), a));
+  const candidates = wallsOn(state, opening).filter((w) => contains(inflate(bounds(w), 2 * inch), a));
   candidates.sort((p, q) => dist2(bounds(p), a) - dist2(bounds(q), a));
   return candidates[0] || null;
 }
@@ -85,7 +89,7 @@ function wallEnds(wall, state, outside, at, inch) {
   const side = interiorSide(wall, state);
   const insidePlus = side === null || side === "BELOW" || side === "RIGHT";
   const probe = (outside === insidePlus) ? ax.n1(wb) - 0.5 * inch : ax.n2(wb) + 0.5 * inch;
-  const crossing = walls(state).filter((w) => w.id !== wall.id).map((w) => bounds(w)).filter((r) => ax.n1(r) < probe && ax.n2(r) > probe);
+  const crossing = wallsOn(state, wall).filter((w) => w.id !== wall.id).map((w) => bounds(w)).filter((r) => ax.n1(r) < probe && ax.n2(r) > probe);
   if (!outside) {
     const start = Math.max(ax.a1(wb), ...crossing.filter((r) => ax.a2(r) <= at).map((r) => ax.a2(r)));
     const end = Math.min(ax.a2(wb), ...crossing.filter((r) => ax.a1(r) >= at).map((r) => ax.a1(r)));
@@ -186,7 +190,7 @@ function cabinetLabel(s, state, inch) {
 }
 
 module.exports = {
-  WALLS, DOORS_WINDOWS, CABINETS, symbols, walls, center, size, rotateAbout, rect, inflate, contains, bounds,
+  WALLS, DOORS_WINDOWS, CABINETS, symbols, walls, wallsOn, floorNo, center, size, rotateAbout, rect, inflate, contains, bounds,
   isHorizontal, isDoor, isWindow, interiorSide, openingAnchor, hostWall, axis, wallEnds, openingDistance, openingShift,
   areaAt, codeInches, cabinetLabel,
 };

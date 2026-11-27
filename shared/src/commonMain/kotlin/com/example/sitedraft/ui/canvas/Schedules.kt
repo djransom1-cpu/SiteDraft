@@ -194,7 +194,7 @@ object Schedules {
         return openings(state, kind).map { s ->
             val w = widthAlongPx(s) / inch
             val window = kind == Kind.WINDOW
-            val h = s.properties[PlanSymbols.PROP_HEIGHT_IN] ?: if (window) OLD_WINDOW_HEIGHT_IN else PlanSymbols.DOOR_HEIGHT_IN
+            val h = s.properties[PlanSymbols.PROP_HEIGHT_IN] ?: if (window) OLD_WINDOW_HEIGHT_IN else state.building.doorHeadIn
             val sill = if (window) s.properties[PlanSymbols.PROP_SILL_IN] ?: OLD_WINDOW_SILL_IN else null
             val (type, operation) = when {
                 window -> PlanSymbols.windowTypeLabels[PlanSymbols.windowType(s)] to when (PlanSymbols.windowType(s)) {
@@ -205,6 +205,11 @@ object Schedules {
                     else -> "Sash up/down"
                 }
                 PlanSymbols.isPocketDoor(s.symbolName) -> "Pocket" to (if (PlanSymbols.pocketRight(s)) "Pocket right" else "Pocket left")
+                PlanSymbols.isBiParting(s.symbolName) -> "Barn, bi-parting" to "Slides both ways"
+                PlanSymbols.isBarnDoor(s.symbolName) -> "Barn" to (if (PlanSymbols.hingeRight(s)) "Slides right" else "Slides left")
+                PlanSymbols.isBifold(s.symbolName) -> (if (PlanSymbols.isBifoldPair(s.symbolName, w)) "Bifold pair" else "Bifold") to
+                    (if (PlanSymbols.isBifoldPair(s.symbolName, w)) "Folds both ways" else if (PlanSymbols.hingeRight(s)) "Folds right" else "Folds left")
+                PlanSymbols.isDoubleDoor(s.symbolName) -> "Double (pair)" to "Both leaves"
                 PlanSymbols.isSlidingDoor(s.symbolName) -> "Sliding" to "Sliding"
                 else -> "Hinged" to (if (PlanSymbols.hingeRight(s)) "Hinge right" else "Hinge left")
             }

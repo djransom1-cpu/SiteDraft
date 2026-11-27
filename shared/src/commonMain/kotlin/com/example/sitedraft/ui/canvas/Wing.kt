@@ -31,7 +31,15 @@ object Wings {
     const val FOUND = "wgFound"     // 0 match the house, 1 crawl space, 2 slab
     const val END = "wgEnd"         // 0 match the house (a hip if the house has hip ends), 1 gable, 2 hip
     const val JOISTS = "wgJoists"   // 0 the short way, 1 the same way as the house
-    val keys = setOf(FOUND, END, JOISTS)
+    /** Dan, Nov 26 (the Ransom House): 0 build its walls, 1 use the walls already drawn on the plan (a house as it stands). */
+    const val WALLS = "wgWalls"
+    /** 0 one story, 1 full height (the house's top plate, e.g. a two-story bump-out with its own gable). */
+    const val FULL = "wgFull"
+    /** One story's wall height, top of subfloor to top of plate, inches; 0 = the house's wall height. */
+    const val WALL_H = "wgWallH"
+    /** Its roof pitch, rise per 12; 0 = the house's. */
+    const val PITCH = "wgPitch"
+    val keys = setOf(FOUND, END, JOISTS, WALLS, FULL, WALL_H, PITCH)
     val foundations = listOf("Match the house", "Crawl space", "Slab")
     val ends = listOf("Match the house", "Gable", "Hip")
     val joistChoices = listOf("The short way", "Same way as the house")
@@ -42,6 +50,23 @@ object Wings {
 
     fun isWing(e: DrawingElement): Boolean = e is DrawingElement.Symbol && e.category == CATEGORY
     fun defaults(): Map<String, Float> = mapOf(FOUND to 0f, END to 0f, JOISTS to 0f)
+    val wallChoices = listOf("Build its walls", "Walls drawn on the plan")
+    val heightChoices = listOf("One story", "Full height")
+
+    /** Does it use the walls already drawn on the plan (a house as it stands) instead of building its own. */
+    fun drawnWalls(g: DrawingElement.Symbol): Boolean = prop(g, WALLS) == 1
+    fun fullHeight(g: DrawingElement.Symbol): Boolean = prop(g, FULL) == 1
+
+    /** The wings that stand for part of the drawn plan (the main house rectangle leaves them out). */
+    fun drawnWallWings(state: CanvasState): List<DrawingElement.Symbol> = wings(state).filter { drawnWalls(it) }
+
+    /** Top of the plate its roof bears on: the house's top plate when full height, else one story up. */
+    fun plateIn(g: DrawingElement.Symbol, s: BuildingSettings): Float =
+        if (fullHeight(g)) ExteriorElevation.plateIn(s)
+        else s.datumIn + ((g.properties[WALL_H] ?: 0f).takeIf { it > 0f } ?: s.plateHeightIn)
+
+    /** Its roof pitch, rise per 12. */
+    fun pitchOf(g: DrawingElement.Symbol, s: BuildingSettings): Float = (g.properties[PITCH] ?: 0f).takeIf { it > 0f } ?: (s.roof?.pitch ?: 6f)
     fun prop(s: DrawingElement.Symbol, k: String): Int = (s.properties[k] ?: defaults()[k] ?: 0f).toInt()
 
     /** The id start of a wing's generated parts. */
@@ -87,6 +112,7 @@ object Wings {
 
     /** The wing's three exterior walls on the first-floor plan: the far one owns the corners. */
     fun planWalls(g: DrawingElement.Symbol, fp: Rect?, inch: Float): List<Porches.Part> {
+        if (drawnWalls(g)) return emptyList()
         val fr = frame(g, fp, inch) ?: return emptyList()
         val t = WALL_IN * inch
         if (fr.depth <= 2f * t || fr.pu2 - fr.pu1 <= 2f * t) return emptyList()
@@ -100,6 +126,7 @@ object Wings {
 
     /** The stretch of house wall that comes out (world rect, the house wall's thickness), between the wing's inside faces. */
     fun joint(g: DrawingElement.Symbol, fp: Rect?, inch: Float): Rect? {
+        if (drawnWalls(g)) return null
         val fr = frame(g, fp, inch) ?: return null
         val t = WALL_IN * inch
         return fr.world(fr.pu1 + t, fr.pu2 - t, -t, 0f)
@@ -121,6 +148,15 @@ object Wings {
                 pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(inch * 12f, inch * 6f))))
             val t = "WING: PUT IT AGAINST A HOUSE WALL"
             drawPageText(t, Offset(r.center.x - ts * 0.6f * t.length * 0.4f, r.center.y), ts * 0.8f, ink, bold = false, maxWidth = r.width)
+            return
+        }
+        if (drawnWalls(e)) {
+            // The walls are the plan's own: just say what this part of the house is.
+            val txt = if (fullHeight(e)) "WING (FULL HEIGHT)" else "WING (ONE STORY)"
+            val c = fr.world(fr.pu1, fr.pu2, 0f, fr.depth).center
+            val size = ts * 0.7f
+            val tw = size * 0.6f * txt.length
+            if (tw < r.width * 0.95f) drawPageText(txt, Offset(c.x - tw / 2f, c.y + ts * 2f), size, ink, bold = false, maxWidth = r.width)
             return
         }
         val t = WALL_IN * inch
@@ -340,6 +376,24 @@ object Wings {
         return out
     }
 
+    /**
+     * Is [o] (in [host]) in this wing's walls, for a wing on the plan's own walls: its middle inside the wing's
+     * outline (a wall's thickness of slack), not on the house side, and [host] one of the plan's outside walls.
+     */
+    fun ownsOpening(g: DrawingElement.Symbol, o: DrawingElement.Symbol, host: DrawingElement.Symbol, state: CanvasState, k: Float, fr: Frame): Boolean {
+        if (!HouseOutline.isExterior(host, state)) return false
+        val a = Elevation.openingAnchor(o)
+        val slack = 8f * k
+        val r = g.boundingRect()
+        if (a.x < r.left - slack || a.x > r.right + slack || a.y < r.top - slack || a.y > r.bottom + slack) return false
+        // Not in the house wall it stands against.
+        return fr.vOf(a) > slack
+    }
+
+    /** The wing on the plan's own walls that [o] belongs to, if any. */
+    fun drawnWingOf(o: DrawingElement.Symbol, host: DrawingElement.Symbol, state: CanvasState, fp: Rect?, k: Float): DrawingElement.Symbol? =
+        drawnWallWings(state).firstOrNull { g -> frame(g, fp, k)?.let { ownsOpening(g, o, host, state, k, it) } ?: false }
+
     /** Which elevation looks at each wall's outside face. */
     private fun faceOf(key: String, fr: Frame): ViewerSide = when (key) {
         "w-out" -> fr.endView
@@ -368,8 +422,8 @@ object Wings {
         val type = foundationOf(g, s)
         val fTop = if (type == FoundationType.SLAB) s.datumIn else Building.foundationTopIn(s)
         val grade = ExteriorElevation.gradeIn(s)
-        val plate = Garages.plateIn(s)
-        val pitch = (hr?.pitch ?: 6f) / 12f
+        val plate = plateIn(g, s)
+        val pitch = pitchOf(g, s) / 12f
         val ov = hr?.overhangIn ?: 12f
         val eaveZ = plate + (hr?.heelIn ?: 4f) - ov * pitch
         val soffit = eaveZ - 6f
@@ -383,15 +437,22 @@ object Wings {
         // Openings in the wing's own walls facing this view: (x1, e1, x2, e2) with casing.
         val holes = mutableListOf<Rect>()
         val key = DerivedLayers.GEN_PREFIX + genKey(g)
+        val of = Layers.resolver(state)
+        val levelById = state.levels.associateBy { it.id }
         for (o in state.elements.filterIsInstance<DrawingElement.Symbol>()) {
             val kind = Schedules.kindOf(o) ?: continue
             val host = OpeningPosition.hostWall(o, state) ?: continue
-            if (!host.id.startsWith(key)) continue
-            if (faceOf(host.id.removePrefix(key), fr) != view) continue
+            if (drawnWalls(g)) {
+                // The plan's own outside walls in the wing, facing this view.
+                if (!ownsOpening(g, o, host, state, k, fr) || view !in HouseOutline.facing(host, state)) continue
+            } else {
+                if (!host.id.startsWith(key)) continue
+                if (faceOf(host.id.removePrefix(key), fr) != view) continue
+            }
             val c = Elevation.alongOf(fp, view, Elevation.openingAnchor(o)) / k
             val w = Schedules.widthAlongPx(o) / k
             val x1 = c - w / 2f; val x2 = c + w / 2f
-            val base = s.datumIn
+            val base = levelById[of(o).levelId]?.elevationIn ?: s.datumIn
             if (kind == Schedules.Kind.WINDOW) {
                 val sill = base + (o.properties[PlanSymbols.PROP_SILL_IN] ?: 36f)
                 val head = sill + (o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: 48f)
@@ -399,7 +460,7 @@ object Wings {
                 line(x1, (sill + head) / 2f, x2, (sill + head) / 2f, ExteriorElevation.Pen.THIN)
                 holes += Rect(x1 - 3.5f, sill - 1.5f, x2 + 3.5f, head + 3.5f)
             } else {
-                val head = base + (o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: PlanSymbols.DOOR_HEIGHT_IN)
+                val head = base + (o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: state.building.doorHeadIn)
                 line(x1, base, x2, base); line(x2, base, x2, head); line(x2, head, x1, head); line(x1, head, x1, base)
                 holes += Rect(x1 - 3.5f, base, x2 + 3.5f, head + 3.5f)
             }
@@ -448,7 +509,7 @@ object Wings {
             roof.filter { it.kind == RoofPlan.Kind.EAVE }.flatMap { listOf(it.a, it.b) }.filter { fr.vOf(it) < fr.depth / 2f }.map { Elevation.alongOf(fp, view, it) / k }
         else emptyList()
         Garages.roofOnElevation(shown, !fr.alongX, s, view, fp, k, ::line, roof, openEnds)
-        labels += Porches.ELabel("WING", mid, fTop + 18f)
+        if (!drawnWalls(g)) labels += Porches.ELabel("WING", mid, fTop + 18f)
         // What it hides the house behind, looking at its far end: the wall face and the roof outline above grade.
         // A side wall in line with the house face this view looks at: the wall face and the roof plane run on from the
         // house's, so the house's corner, eave end and hip behind the wing's outline are taken out too.

@@ -102,6 +102,9 @@ function describeWall(w, state, inch) {
     from: { xIn: r2(b.left / inch), yIn: r2(b.top / inch) }, to: { xIn: r2(b.right / inch), yIn: r2(b.bottom / inch) },
     roomSide: ({ BELOW: "south", ABOVE: "north", RIGHT: "east", LEFT: "west" })[G.interiorSide(w, state)] || null,
     status: wallStatus(w),
+    // Upstairs walls say so; the second floor's outside walls carried up from the first (UpperFloors) are marked.
+    floor: G.floorNo(w) > 1 ? G.floorNo(w) : undefined,
+    carriedUp: String(w.id).startsWith("gen:up") ? "made from the floor below; edit to keep your own" : undefined,
   };
 }
 
@@ -201,6 +204,27 @@ function readDrawing(state) {
     },
     exteriorElevations: exterior.length ? exterior : (bs.gradeExposureIn != null ? "set up: the app builds them the next time it opens or reloads the project" : "not set up (set_exterior_elevations)"),
     roof: roofBuilt ? { built: true, ...(bs.roof || {}) } : (bs.roof ? { built: false, note: "set up: the app builds it the next time it opens or reloads the project", ...bs.roof } : "not set up (set_roof)"),
+    // Art and wallpaper on wall faces (WallDecor.kt; defaults left out of the saved JSON), ids for UpdateWallDecor.
+    wallDecor: (state.wallDecor || []).map((d) => {
+      const k = d.kind ?? 0;
+      const base = { id: d.id, wallId: d.wallId, face: d.side, kind: k === 2 ? "paint" : k === 1 ? "wallpaper" : "art" };
+      if (k === 2) return { ...base, color: [d.colorCode, d.colorName].filter(Boolean).join(" ") || null,
+        hex: "#" + (d.rgb ?? 0xFFFFFF).toString(16).padStart(6, "0").toUpperCase(), rooms: d.rooms ? "some rooms along the wall" : "whole wall face" };
+      if (k === 1) return { ...base, repeatIn: d.repeatIn ?? 21 };
+      return { ...base, xIn: d.xIn ?? 0, bottomIn: d.bottomIn ?? 48, widthIn: d.widthIn ?? 30, heightIn: d.heightIn ?? 24, frameIn: d.frameIn ?? 1.5 };
+    }),
+    // The finish schedule's rooms (FinishSchedule.kt, Nov 26), ids for UpdateRoomFinish. Blank floor/walls = filled from the drawing in the app.
+    finishSchedule: (state.roomFinishes || []).map((f) => ({
+      id: f.id, room: f.name || "", at: { xIn: Math.round(((f.x || 0) / (M.pxPerUnit(state) / 12)) * 10) / 10, yIn: Math.round(((f.y || 0) / (M.pxPerUnit(state) / 12)) * 10) / 10 },
+      floor: f.floor || "(from the drawing)", walls: f.walls || "(from the drawing)", ceiling: f.ceiling || "", notes: f.notes || "",
+      backsplash: f.backsplash || "", showerWalls: f.showerWalls || "", showerFloor: f.showerFloor || "",
+      // The trim schedule's typed fields (blank base, casing, windows and wainscot come from the elevations).
+      trimSchedule: { base: f.trimBase || "", casing: f.trimCasing || "", windows: f.trimWindows || "", crown: f.trimCrown || "",
+        wainscot: f.trimWainscot || "", paintOrStain: f.trim || "", notes: f.trimNotes || "" },
+    })),
+    // Typed lines for the cabinet & countertop schedule, by room; and make/model/finish for appliances and fixtures, by element id.
+    cabinetSpecs: state.cabinetSpecs || [],
+    itemSpecs: state.itemSpecs || [],
     counts: { elevations: count("ElevationView"), dimensions: count("Dimension"), texts: count("Text"), pdfPlans: count("Pdf"), lines: count("Line"), sheets: (state.sheets || []).length },
   };
 }
@@ -224,7 +248,9 @@ function drawWalls(state, a) {
   // Always written, so the app's "Draw as" setting never re-stamps the connector's walls.
   const status = statusCode(a.status === undefined ? "new" : a.status, "status");
   if (!M.categories[G.WALLS].includes(wallType)) fail(`wall_type must be one of: ${M.categories[G.WALLS].join(", ")}`);
-  const t = M.footprints[wallType][1];
+  // A measured thickness (Dan, Nov 26: an 1883 house, 6" outside walls, 5 5/8" inside) or the wall type's own.
+  const t = a.thickness != null ? len(a.thickness, "thickness") : M.footprints[wallType][1];
+  if (!(t >= 2 && t <= 36)) fail("thickness: give the wall's finished thickness, face to face, between 2\" and 36\".");
   const measured = String(a.measured || "").toLowerCase();
   if (!["inside", "framing", "outside", "center"].includes(measured)) fail('measured is required: "inside" (finished room face), "framing", "outside" or "center". Ask which face the lengths were taken on.');
   const segs = a.segments || [];
@@ -331,28 +357,50 @@ function drawWalls(state, a) {
     }
   }
 
-  // Walls already there (another room sharing this side) are not doubled.
+  // Walls already there (another room sharing this side) are not doubled: only the part of a wall
+  // that no existing wall already covers is drawn (a family room wall running on past the living
+  // room's gets just the part past it).
   const existing = G.walls(state).map((w) => G.bounds(w));
-  const covered = (r) => {
-    const horizontal = r.horizontal, L = horizontal ? r.r - r.l : r.b - r.t;
-    return existing.some((e) => {
+  const MIN_PIECE_IN = 1;
+  /** The stretches of [r] (inches along its length) left after the existing walls beside it. */
+  const uncovered = (r) => {
+    const horizontal = r.horizontal;
+    const lo = horizontal ? r.l : r.t, hi = horizontal ? r.r : r.b;
+    const cuts = [];
+    for (const e of existing) {
       const eh = e.width >= e.height;
-      if (eh !== horizontal) return false;
+      if (eh !== horizontal) continue;
       const gap = horizontal ? Math.abs(e.cy - (r.t + r.b) / 2 * inch) : Math.abs(e.cx - (r.l + r.r) / 2 * inch);
       const touching = gap <= (t * inch + (horizontal ? e.height : e.width)) / 2 + inch;
-      const ov = horizontal ? Math.min(e.right, r.r * inch) - Math.max(e.left, r.l * inch) : Math.min(e.bottom, r.b * inch) - Math.max(e.top, r.t * inch);
-      return touching && ov >= 0.5 * L * inch;
-    });
+      if (!touching) continue;
+      const a0 = (horizontal ? e.left : e.top) / inch, a1 = (horizontal ? e.right : e.bottom) / inch;
+      if (Math.min(a1, hi) - Math.max(a0, lo) > 0.01) cuts.push([Math.max(a0, lo), Math.min(a1, hi)]);
+    }
+    cuts.sort((x, y) => x[0] - y[0]);
+    const pieces = [];
+    let at = lo;
+    for (const [c0, c1] of cuts) { if (c0 - at >= MIN_PIECE_IN) pieces.push([at, c0]); at = Math.max(at, c1); }
+    if (hi - at >= MIN_PIECE_IN) pieces.push([at, hi]);
+    return { pieces, coveredAny: cuts.length > 0 };
   };
 
   const color = ink(state);
-  const made = [], skipped = [];
+  const made = [], skipped = [], partial = [];
+  const wallAt = (l, tp, rr, b) => M.makeSymbol({ name: wallType, category: G.WALLS, center: { x: (l + rr) / 2 * inch, y: (tp + b) / 2 * inch },
+    widthPx: (rr - l) * inch, depthPx: (b - tp) * inch, color, properties: { widthInches: M.catalog.defaults.defaultWallLengthIn, depthInches: t, [REMODEL_KEY]: status } });
   for (const r of rects) {
     if (r.kind === "rect") {
       if (r.r - r.l <= 0.01 || r.b - r.t <= 0.01) continue;
-      if (a.skip_existing !== false && covered(r)) { skipped.push(r.seg + 1); continue; }
-      made.push(M.makeSymbol({ name: wallType, category: G.WALLS, center: { x: (r.l + r.r) / 2 * inch, y: (r.t + r.b) / 2 * inch },
-        widthPx: (r.r - r.l) * inch, depthPx: (r.b - r.t) * inch, color, properties: { widthInches: M.catalog.defaults.defaultWallLengthIn, depthInches: t, [REMODEL_KEY]: status } }));
+      if (a.skip_existing !== false) {
+        const { pieces, coveredAny } = uncovered(r);
+        if (!pieces.length) { skipped.push(r.seg + 1); continue; }
+        if (coveredAny) {
+          partial.push(r.seg + 1);
+          for (const [p0, p1] of pieces) made.push(r.horizontal ? wallAt(p0, r.t, p1, r.b) : wallAt(r.l, p0, r.r, p1));
+          continue;
+        }
+      }
+      made.push(wallAt(r.l, r.t, r.r, r.b));
     } else {
       made.push(M.makeSymbol({ name: wallType, category: G.WALLS, center: { x: r.cx * inch, y: r.cy * inch }, widthPx: r.length * inch, depthPx: t * inch,
         rotation: r.angle, color, properties: { widthInches: M.catalog.defaults.defaultWallLengthIn, depthInches: t, [REMODEL_KEY]: status } }));
@@ -362,19 +410,28 @@ function drawWalls(state, a) {
   const out = { ...state, elements };
 
   // A room label for a closed rectangle.
-  let inside = null;
+  let inside = null, replacedLabels;
   if (closed && pts.every((p, i) => i === 0 || orth(segDir(i - 1)))) {
     const insideOff = { inside: 0, framing: DRYWALL_IN, outside: t, center: t / 2 }[measured];
     const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
     // The finished inside face is insideOff in from the measured line, all round.
     inside = { l: Math.min(...xs) + insideOff, t: Math.min(...ys) + insideOff, r: Math.max(...xs) - insideOff, b: Math.max(...ys) - insideOff };
-    if (a.room_name !== undefined && pts.length === 5) out.elements = [...out.elements, roomLabel(out, String(a.room_name), inside, inch)];
+    if (a.room_name !== undefined && pts.length === 5) {
+      // Redrawing a room (a corrected size): its old label goes, so there aren't two.
+      const name = labelKey(a.room_name);
+      const inRoom = (e) => { const c = textCenter(e, inch); return c && c.x >= inside.l - 6 && c.x <= inside.r + 6 && c.y >= inside.t - 6 && c.y <= inside.b + 6; };
+      const stale = (out.elements || []).filter((e) => M.kind(e) === "Text" && name && labelKey(e.text) === name && inRoom(e)).map((e) => e.id);
+      if (stale.length) replacedLabels = stale;
+      out.elements = [...out.elements.filter((e) => !stale.includes(e.id)), roomLabel(out, String(a.room_name), inside, inch)];
+    }
   }
   return {
     state: out,
     result: {
       created: made.map((w) => describeWall(w, out, inch)),
       skippedSegments: skipped.length ? skipped.map((s) => `segment ${s}: a wall is already there`) : undefined,
+      partlyThere: partial.length ? partial.map((s) => `segment ${s}: part of it was already there, so only the rest was drawn`) : undefined,
+      replacedLabels,
       closed, roomOn: roomRight ? "right of the walking direction" : "left of the walking direction",
       insideSize: inside ? `${fmt(inside.r - inside.l, state)} x ${fmt(inside.b - inside.t, state)}` : undefined,
       nonSquareWalls: rects.some((r) => r.kind === "rot") ? "Walls at angles other than 90 degrees are drawn turned; elevations and auto-dimensions only use square walls." : undefined,
@@ -390,11 +447,31 @@ function defaultStart(state, inch) {
   return { x: Math.ceil(right + 60), y: top };
 }
 
-/** FloorPlan.roomLabel: "Name\n12' x 10'" centred in the inside of the room. */
+/** The app's formatFeetInches: 12', 3'-6 1/2" or 6 1/2" (to the 1/16), as a tape reads. */
+function feetInches(inches) {
+  let s16 = Math.round(Math.abs(inches) * 16);
+  const ft = Math.floor(s16 / 192); s16 -= ft * 192;
+  const whole = Math.floor(s16 / 16); let num = s16 - whole * 16, den = 16;
+  while (num && num % 2 === 0) { num /= 2; den /= 2; }
+  const inch = num ? (whole ? `${whole} ${num}/${den}` : `${num}/${den}`) : `${whole}`;
+  const text = ft > 0 && inch === "0" ? `${ft}'` : ft > 0 ? `${ft}'-${inch}"` : `${inch}"`;
+  return inches < 0 ? `-${text}` : text;
+}
+
+/** Where a text label's middle is, in inches (its top-left plus half its rough size). */
+function textCenter(e, inch) {
+  if (!e.topLeft) return null;
+  const tl = M.pt(e.topLeft);
+  const lines = String(e.text || "").split("\n"), fs = e.fontSize || 12;
+  const longest = Math.max(...lines.map((l) => l.length));
+  return { x: (tl.x + longest * fs * 0.55 / 2) / inch, y: (tl.y + fs * 0.6 * lines.length) / inch };
+}
+
+/** FloorPlan.roomLabel: "Name\n12' x 10'-6\"" centred in the inside of the room. */
 function roomLabel(state, name, insideIn, inch) {
   const w = (insideIn.r - insideIn.l) / 12, d = (insideIn.b - insideIn.t) / 12;
   const n = (v) => Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
-  const dims = M.isMetric(state) ? `${n(w * 0.3048)} x ${n(d * 0.3048)} m` : `${n(w)}' x ${n(d)}'`;
+  const dims = M.isMetric(state) ? `${n(w * 0.3048)} x ${n(d * 0.3048)} m` : `${feetInches(w * 12)} x ${feetInches(d * 12)}`;
   const text = name.trim() ? `${name.trim()}\n${dims}` : dims;
   const fontSize = Math.min(36, Math.max(10, 6 * inch));
   const lines = text.split("\n");
@@ -409,11 +486,17 @@ function openingName(a) {
   if (a.type && M.categories[G.DOORS_WINDOWS].includes(a.type)) return a.type;
   const kindWord = String(a.kind || a.type || "").toLowerCase();
   const list = M.categories[G.DOORS_WINDOWS];
-  const pool = kindWord.includes("pocket") ? list.filter((n) => n.startsWith("Pocket"))
+  // Door styles (Nov 27): "Door 3'-0\" Bifold" etc. A plain door never picks one of them.
+  const styled = (n) => /(Bifold|Double|Barn|Bi-parting)$/.test(n);
+  const pool = kindWord.includes("bi-parting") || kindWord.includes("biparting") ? list.filter((n) => n.endsWith("Bi-parting"))
+    : kindWord.includes("barn") ? list.filter((n) => n.endsWith("Barn"))
+    : kindWord.includes("bifold") || kindWord.includes("bi-fold") ? list.filter((n) => n.endsWith("Bifold"))
+    : kindWord.includes("double") || kindWord.includes("french") ? list.filter((n) => n.endsWith("Double"))
+    : kindWord.includes("pocket") ? list.filter((n) => n.startsWith("Pocket"))
     : kindWord.includes("slid") ? list.filter((n) => n.startsWith("Sliding"))
     : kindWord.includes("open") ? list.filter((n) => n.startsWith("Opening"))
     : kindWord.includes("window") ? list.filter((n) => n.startsWith("Window"))
-    : kindWord.includes("door") ? list.filter((n) => n.startsWith("Door"))
+    : kindWord.includes("door") ? list.filter((n) => n.startsWith("Door") && !styled(n))
     : null;
   if (!pool) fail(`type: give one of ${list.join(", ")}, or kind door / window / opening / sliding door / pocket door with a width.`);
   const w = a.width ? len(a.width, "width") : M.footprints[pool[0]][0];
@@ -452,16 +535,24 @@ function placeOpening(state, a) {
     const ok = horizontal ? ["north", "south"] : ["east", "west"];
     if (!ok.includes(swing)) fail(`swing_into: this wall runs ${horizontal ? "east-west" : "north-south"}, so the door swings ${ok.join(" or ")}.`);
     props[M.props.hingeRight] = String(a.hinge || "left").toLowerCase() === "right" ? 1 : 0;
-    props[M.props.heightIn] = a.height ? len(a.height, "height") : M.catalog.defaults.doorHeightIn;
+    props[M.props.heightIn] = a.height ? len(a.height, "height") : doorHead(state);
     let c, rot;
     if (horizontal) { c = { x: midX, y: midY - w / 2 }; rot = 0; if (swing === "south") { c = { x: midX, y: midY + w / 2 }; rot = 180; } }
     else { c = { x: midX + w / 2, y: midY }; rot = 90; if (swing === "west") { c = { x: midX - w / 2, y: midY }; rot = 270; } }
-    sym = M.makeSymbol({ name, category: G.DOORS_WINDOWS, center: c, widthPx: w, depthPx: w, rotation: rot, color: ink(state), properties: { widthInches: widthIn, depthInches: widthIn, ...props } });
+    // How deep the door stands into the room: a hinged leaf its width; a style its own (a barn door's panel and track,
+    // a double door's half-width leaves, a bifold's folded panels), scaled with the width.
+    const fp = M.footprints[name] || [widthIn, widthIn];
+    const depthIn = /Barn|Bi-parting/.test(name) ? fp[1] : fp[1] * widthIn / fp[0];
+    const dp = depthIn * inch;
+    if (horizontal) { c = { x: midX, y: midY - dp / 2 }; if (swing === "south") c = { x: midX, y: midY + dp / 2 }; }
+    else { c = { x: midX + dp / 2, y: midY }; if (swing === "west") c = { x: midX - dp / 2, y: midY }; }
+    sym = M.makeSymbol({ name, category: G.DOORS_WINDOWS, center: c, widthPx: w, depthPx: dp, rotation: rot, color: ink(state), properties: { widthInches: widthIn, depthInches: depthIn, ...props } });
   } else {
     const t = horizontal ? wb.height : wb.width;
     if (G.isWindow(name)) {
-      props[M.props.sillIn] = a.sill ? len(a.sill, "sill") : M.catalog.defaults.newWindowSillIn; // head lines up with the door head
       props[M.props.heightIn] = a.height ? len(a.height, "height") : M.catalog.defaults.windowHeightIn;
+      // The head lines up with the door head (Dan's rule): a taller window gets a lower sill, not a head at the ceiling.
+      props[M.props.sillIn] = a.sill ? len(a.sill, "sill") : Math.max(0, doorHead(state) - props[M.props.heightIn]);
     } else if (a.height) props[M.props.heightIn] = len(a.height, "height");
     if (name.startsWith("Pocket")) {
       // Pocket side as drawn: left/right on an east-west wall, top/bottom on a north-south wall (bottom/right = 1).
@@ -727,10 +818,29 @@ function editElement(state, a) {
     changed.push("moved");
   }
   if (a.rotation !== undefined) { e.rotation = Number(a.rotation); changed.push("rotation"); }
-  if (a.width !== undefined || a.depth !== undefined) {
+  if (a.width !== undefined || a.depth !== undefined || a.length !== undefined || a.thickness !== undefined) {
     if (typeof e.size !== "string") fail("That element has no size to change.");
     const sz = M.pt(e.size);
-    const nw = a.width !== undefined ? len(a.width, "width") * inch : sz.x, nd = a.depth !== undefined ? len(a.depth, "depth") * inch : sz.y;
+    let nw, nd;
+    if (M.kind(e) === "Symbol" && e.category === G.WALLS) {
+      // A wall (Nov 27: width on a north-south wall used to set its thickness): length runs along the wall and
+      // thickness across it, whichever way it runs; width means length, depth means thickness.
+      const vertical = sz.y > sz.x;
+      const along = a.length !== undefined ? len(a.length, "length") * inch : a.width !== undefined ? len(a.width, "width") * inch : (vertical ? sz.y : sz.x);
+      const across = a.thickness !== undefined ? len(a.thickness, "thickness") * inch : a.depth !== undefined ? len(a.depth, "depth") * inch : (vertical ? sz.x : sz.y);
+      nw = vertical ? across : along; nd = vertical ? along : across;
+      // keep: the end that stays where it is (north/south on a north-south wall, east/west on an east-west one); else both ends move.
+      if (a.keep) {
+        const k = String(a.keep).toLowerCase();
+        const ok = vertical ? ["north", "south"] : ["east", "west"];
+        if (!ok.includes(k)) fail(`keep: this wall runs ${vertical ? "north-south" : "east-west"}, so keep ${ok.join(" or ")}.`);
+        const grow = (along - (vertical ? sz.y : sz.x)) / 2;
+        const c = M.pt(e.center);
+        e.center = M.ptText(vertical ? { x: c.x, y: c.y + (k === "north" ? grow : -grow) } : { x: c.x + (k === "west" ? grow : -grow), y: c.y });
+      }
+    } else {
+      nw = a.width !== undefined ? len(a.width, "width") * inch : sz.x; nd = a.depth !== undefined ? len(a.depth, "depth") * inch : sz.y;
+    }
     e.size = M.sizeText(nw, nd);
     // A symbol's Properties carry its real size (walls keep their own default length there).
     if (M.kind(e) === "Symbol" && e.category !== G.WALLS && e.properties && e.properties.widthInches !== undefined) {
@@ -942,5 +1052,11 @@ function setRemodel(state, a) {
 
 module.exports = {
   ToolError, newProject, readDrawing, drawWalls, placeOpening, placeCabinets, placeSymbol, addLabel, editElement, deleteElements, hatchArea, addElevation, facingOf,
-  resolveItem, roomLabel, demoWallPart, setRemodel, placeStairs, editStairs,
+  resolveItem, roomLabel, demoWallPart, setRemodel, placeStairs, editStairs, roomPoint,
 };
+
+/** The job's door head (BuildingSettings.doorHeadIn; left out of the file at its default, 80"). Windows line up with it. */
+function doorHead(state) {
+  const v = state && state.building && state.building.doorHeadIn;
+  return typeof v === "number" ? v : M.catalog.defaults.doorHeightIn;
+}

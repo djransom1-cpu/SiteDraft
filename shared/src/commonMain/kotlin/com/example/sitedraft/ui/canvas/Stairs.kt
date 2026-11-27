@@ -77,13 +77,17 @@ object Stairs {
     const val GUARD_AUTO = "stGuardAuto" // 1 = guards around the floor opening's open sides (Guards, Nov 24)
     const val FIN_TOP = "stFinTop"       // finish floor at the top, inches; -1 = automatic (Nov 24)
     const val FIN_BOT = "stFinBot"       // finish floor at the bottom, inches; -1 = automatic
+    const val WINDERS = "stWinders"      // L stair's corner (Dan, Nov 27): 0 a flat landing, 1 two winders, 2 three winders
     /** Automatic finish floor (Dan, Nov 24): 3/4" on a framed floor (hardwood, or tile on underlayment), 0 on a slab. */
     const val FINISH_FRAMED_IN = 0.75f
     /** Code headroom over the nosings (IRC R311.7.2, 6'-8"), for the floor opening over the stair. */
     const val HEADROOM_IN = 80f
 
     val keys = setOf(RISE, TREAD, NOSING, WIDTH, FLIGHT1, TURN, PER_TURN, RAIL_LEFT, RAIL_RIGHT, RAIL_H, GUARD_H, INNER_R, OUTER_R, WALKLINE,
-        GOES, RISE_SET, SHOW_R, GUARD_AUTO, FIN_TOP, FIN_BOT)
+        GOES, RISE_SET, SHOW_R, GUARD_AUTO, FIN_TOP, FIN_BOT, WINDERS)
+    val winderLabels = listOf("Landing", "2 winders", "3 winders")
+    /** Winder treads in an L stair's corner: 0 (a flat landing), 2 or 3. */
+    fun winders(s: DrawingElement.Symbol): Int = if (type(s.symbolName) != Type.L_LANDING) 0 else when (code(s, WINDERS)) { 1 -> 2; 2 -> 3; else -> 0 }
     val goesLabels = listOf("Auto", "Up", "Down")
     val railLabels = listOf("None", "Handrail", "Guard + balusters")
     const val RAIL_NONE = 0
@@ -100,8 +104,9 @@ object Stairs {
             FLIGHT1 to 0f,
             TURN to 0f,
             PER_TURN to 12f,
-            RAIL_LEFT to when (t) { Type.DECK -> RAIL_GUARD.toFloat(); Type.SPIRAL -> RAIL_NONE.toFloat(); else -> RAIL_HANDRAIL.toFloat() },
-            RAIL_RIGHT to RAIL_GUARD.toFloat(),
+            // Stairs come in bare (Dan, Nov 27): a handrail or guard only when one is picked. A deck stair (open) keeps its guards.
+            RAIL_LEFT to if (t == Type.DECK) RAIL_GUARD.toFloat() else RAIL_NONE.toFloat(),
+            RAIL_RIGHT to if (t == Type.DECK) RAIL_GUARD.toFloat() else RAIL_NONE.toFloat(),
             RAIL_H to 36f,
             GUARD_H to 36f,
             INNER_R to 48f,
@@ -114,7 +119,8 @@ object Stairs {
             GUARD_AUTO to 1f,
             FIN_TOP to -1f,
             FIN_BOT to -1f,
-        ).let { if (t == Type.CURVED) it + (RAIL_LEFT to RAIL_GUARD.toFloat()) + (RAIL_RIGHT to RAIL_HANDRAIL.toFloat()) else it }
+            WINDERS to 0f,
+        )
     }
 
     fun prop(s: DrawingElement.Symbol, key: String): Float = s.properties[key] ?: defaults(s.symbolName)[key] ?: 0f
@@ -130,11 +136,13 @@ object Stairs {
     }
 
     /** The stair's numbers: risers, riser height, treads per flight. */
-    data class Layout(val risers: Int, val riser: Float, val tread: Float, val nosing: Float, val width: Float, val flight1: Int, val flight2: Int) {
+    data class Layout(val risers: Int, val riser: Float, val tread: Float, val nosing: Float, val width: Float, val flight1: Int, val flight2: Int,
+                      /** Treads in an L stair's corner: 1 (the landing) or its winders (Dan, Nov 27: 2 or 3). */
+                      val corner: Int = 1) {
         val treads get() = risers - 1
-        /** Treads in each flight (the landing is the top of the first flight's last riser). */
+        /** Treads in each flight (the landing, or the first winder, is the top of the first flight's last riser). */
         val treads1 get() = (flight1 - 1).coerceAtLeast(0)
-        val treads2 get() = (flight2 - 1).coerceAtLeast(0)
+        val treads2 get() = (flight2 - corner).coerceAtLeast(0)
         val rise get() = risers * riser
     }
 
@@ -160,7 +168,8 @@ object Stairs {
             (if (chosen in 1 until n) chosen else (n + 1) / 2).coerceIn(1, (n - 1).coerceAtLeast(1))
         } else n
         val width = if (t == Type.CURVED) (prop(s, OUTER_R) - prop(s, INNER_R)).coerceAtLeast(12f) else prop(s, WIDTH).coerceAtLeast(12f)
-        return Layout(n, rise / n, prop(s, TREAD).coerceAtLeast(4f), prop(s, NOSING).coerceAtLeast(0f), width, f1, n - f1)
+        val corner = winders(s).takeIf { it >= 2 && n - f1 > it } ?: 1
+        return Layout(n, rise / n, prop(s, TREAD).coerceAtLeast(4f), prop(s, NOSING).coerceAtLeast(0f), width, f1, n - f1, corner)
     }
 
     /**
@@ -222,7 +231,7 @@ object Stairs {
             Type.CURVED -> curve(s).let { c ->
                 ", treads ${formatInches(c.treadAt(c.ri))}\" inside, ${formatInches(c.treadAt(c.ro))}\" outside, turns ${(c.sweep * 180f / PI.toFloat()).roundToInt()} deg"
             }
-            Type.L_LANDING, Type.U_LANDING -> ", runs ${formatFeetInches(l.treads1 * l.tread / 12f)} + landing + ${formatFeetInches(l.treads2 * l.tread / 12f)}"
+            Type.L_LANDING, Type.U_LANDING -> ", runs ${formatFeetInches(l.treads1 * l.tread / 12f)} + ${if (l.corner > 1) "${l.corner} winders" else "landing"} + ${formatFeetInches(l.treads2 * l.tread / 12f)}"
             else -> ", run ${formatFeetInches(l.treads * l.tread / 12f)}"
         }
         val at = if (type(s.symbolName) == Type.CURVED) " at the walkline" else ""
@@ -232,7 +241,7 @@ object Stairs {
     // ---- The building: up or down, the rise, the floor opening (Dan, Nov 24) ----
 
     /** The floor (1-based) a stair is drawn on, when it is on a floor plan layer. */
-    private fun floorOf(s: DrawingElement.Symbol, state: CanvasState): Int? {
+    fun floorOf(s: DrawingElement.Symbol, state: CanvasState): Int? {
         val layer = Layers.layerOf(s, state)
         if (layer.trade != LayerTrade.FLOOR_PLAN) return null
         return layer.levelId?.removePrefix("floor")?.toIntOrNull()
@@ -338,7 +347,7 @@ object Stairs {
 
     /** Every stair's floor opening. */
     fun floorOpenings(state: CanvasState): List<DrawingElement.Symbol> =
-        state.elements.filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.STAIRS }.mapNotNull { floorOpening(it, state) }
+        state.elements.filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.STAIRS && !UpperFloors.isUpCopy(it) }.mapNotNull { floorOpening(it, state) }
 
     // ---- Plan ----
 
@@ -435,6 +444,18 @@ object Stairs {
                 // flight along the top to the right.
                 for (i in 1..l.treads1) seg(p(-hw, hh - i * T), p(-hw + W, hh - i * T))
                 for (i in 1 until l.treads2 + 1) seg(p(-hw + W + (i - 1) * T, -hh), p(-hw + W + (i - 1) * T, -hh + W))
+                // Winders (Dan, Nov 27): the corner square cut into [corner] treads by lines from the inside corner, evenly
+                // turned between the two flights (two winders meet on the diagonal).
+                if (l.corner > 1) {
+                    val inside = p(-hw + W, -hh + W)
+                    for (k in 1 until l.corner) {
+                        val a = (PI / 2.0) * k / l.corner
+                        val dx = cos(a).toFloat(); val dy = sin(a).toFloat()
+                        // From the inside corner up and to the outside: to whichever outside edge it meets first.
+                        val reach = minOf(if (dx > 1e-4f) W / dx else Float.MAX_VALUE, if (dy > 1e-4f) W / dy else Float.MAX_VALUE)
+                        seg(inside, p(-hw + W - dx * reach, -hh + W - dy * reach))
+                    }
+                }
                 arrow(listOf(p(-hw + W / 2f, hh - T / 2f), p(-hw + W / 2f, -hh + W / 2f), p(hw - T / 2f, -hh + W / 2f)))
                 // Outer rails: the left edge, the landing's outside, the top edge.
                 val outer = if (m > 0) left else right

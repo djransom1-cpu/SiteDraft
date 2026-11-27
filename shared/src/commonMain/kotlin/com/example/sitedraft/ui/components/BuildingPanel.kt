@@ -260,6 +260,7 @@ internal fun BuildingInputs(settings: BuildingSettings, houseWidthFt: Float? = n
     var boltEnd by remember(settings) { mutableStateOf(inch(settings.anchorBoltEndIn)) }
     var boltOc by remember(settings) { mutableStateOf(inch(settings.anchorBoltSpacingIn)) }
     var foam by remember(settings) { mutableStateOf(inch(settings.foundationFoamIn)) }
+    var doorHead by remember(settings) { mutableStateOf(inch(settings.doorHeadIn)) }
     var floorName by remember(settings) { mutableStateOf("${Building.ordinal(settings.upperFloors.size + 2)} floor") }
     var floorElev by remember(settings) { mutableStateOf("") }
 
@@ -275,6 +276,8 @@ internal fun BuildingInputs(settings: BuildingSettings, houseWidthFt: Float? = n
     fun field(label: String, value: String, modifier: Modifier, set: (String) -> Unit) =
         OutlinedTextField(value, set, label = { Text(label) }, singleLine = true, modifier = modifier)
     field("First floor, top of subfloor", datum, Modifier.fillMaxWidth()) { datum = it }
+    // Asked on every new job (Dan, Nov 25): 6'8" doors with 8' walls, 8' doors with 9' ceilings...
+    field("Door height (window heads line up with it)", doorHead, Modifier.fillMaxWidth()) { doorHead = it }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         field("Subfloor", subfloor, Modifier.weight(1f)) { subfloor = it }
         field("Joist depth", joist, Modifier.weight(1f)) { joist = it }
@@ -361,7 +364,8 @@ internal fun BuildingInputs(settings: BuildingSettings, houseWidthFt: Float? = n
             dowelSpacingIn = parseInches(dowelOc)?.takeIf { it > 0f } ?: return@run null,
             anchorBoltEndIn = parseInches(boltEnd) ?: return@run null,
             anchorBoltSpacingIn = parseInches(boltOc)?.takeIf { it > 0f } ?: return@run null,
-            foundationFoamIn = parseInches(foam) ?: return@run null
+            foundationFoamIn = parseInches(foam) ?: return@run null,
+            doorHeadIn = parseInches(doorHead)?.takeIf { it in 60f..144f } ?: return@run null
         )
     }
     // The footing against the code's projection rule (at least 2" each side, no more than its thickness).

@@ -451,12 +451,11 @@ fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String
         val b = faint.map { it.boundingRect() }.reduce { a, r -> Rect(minOf(a.left, r.left), minOf(a.top, r.top), maxOf(a.right, r.right), maxOf(a.bottom, r.bottom)) }
             .inflate(200f)
         drawIntoCanvas { c -> c.saveLayer(b, androidx.compose.ui.graphics.Paint().apply { alpha = FAINT_ALPHA }) }
-        val (fu, fr) = faint.partition { it is DrawingElement.Symbol && PlanSymbols.isOverlay(it) }
-        (fr + fu).forEach { drawElement(it, isSelected = false, state = state) }
+        // Counter-top items over the cabinets, uppers and hoods over everything (stable within each tier).
+        faint.sortedBy { PlanSymbols.planTier(it) }.forEach { drawElement(it, isSelected = false, state = state) }
         drawIntoCanvas { c -> c.restore() }
     }
-    val (uppers, rest) = full.partition { it is DrawingElement.Symbol && PlanSymbols.isOverlay(it) }
-    (rest + uppers).forEach { element ->
+    full.sortedBy { PlanSymbols.planTier(it) }.forEach { element ->
         drawElement(element, isSelected = element.id == selectedElementId, state = state)
     }
     // Door and window marks for the schedules, on top of everything (Schedules).
@@ -941,8 +940,14 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
             is DrawingElement.Image -> {
                 drawImage(
                     image = element.bitmap,
-                    dstOffset = IntOffset(element.topLeft.x.toInt(), element.topLeft.y.toInt()),
-                    dstSize = IntSize(element.size.width.toInt(), element.size.height.toInt())
+                    srcOffset = IntOffset.Zero,
+                    srcSize = IntSize((element.bitmap.width * element.srcW).toInt().coerceIn(1, element.bitmap.width),
+                        (element.bitmap.height * element.srcH).toInt().coerceIn(1, element.bitmap.height)),
+                    // Edges rounded outward to whole pixels, so tiles laid side by side (wallpaper) meet with no seam.
+                    dstOffset = IntOffset(kotlin.math.floor(element.topLeft.x).toInt(), kotlin.math.floor(element.topLeft.y).toInt()),
+                    dstSize = IntSize(
+                        (kotlin.math.ceil(element.topLeft.x + element.size.width) - kotlin.math.floor(element.topLeft.x)).toInt().coerceAtLeast(1),
+                        (kotlin.math.ceil(element.topLeft.y + element.size.height) - kotlin.math.floor(element.topLeft.y)).toInt().coerceAtLeast(1))
                 )
             }
             is DrawingElement.Pdf -> {

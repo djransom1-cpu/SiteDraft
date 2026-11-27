@@ -38,7 +38,10 @@ function layout(s) {
   }
   const width = Math.max(12, prop(s, K.width));
   const tread = Math.max(4, prop(s, K.tread));
-  return { risers: n, riser: rise / n, rise, tread, width, treads: n - 1, treads1: Math.max(f1 - 1, 0), treads2: Math.max(n - f1 - 1, 0) };
+  // An L stair's corner: the landing, or 2 or 3 winders (Stairs.winders, Nov 27).
+  const w = t === "L" ? ({ 1: 2, 2: 3 }[Math.trunc(prop(s, K.winders || "stWinders"))] || 0) : 0;
+  const corner = w >= 2 && n - f1 > w ? w : 1;
+  return { risers: n, riser: rise / n, rise, tread, width, treads: n - 1, treads1: Math.max(f1 - 1, 0), treads2: Math.max(n - f1 - corner, 0), corner };
 }
 
 /** Plan footprint [width, depth] in inches (Stairs.footprintIn); curved stairs are the app's to size. */
@@ -155,6 +158,8 @@ function placeStairs(project, a, len, ink) {
   if (a.rise !== undefined) { props[K.rise] = len(a.rise, "rise"); props[K.riseSet] = 1; }
   if (a.turn !== undefined) props[K.turn] = String(a.turn).toLowerCase() === "left" ? 1 : 0;
   if (a.show_risers !== undefined) props[K.showR] = a.show_risers ? 1 : 0;
+  setRails(props, a);
+  setCorner(props, a);
   const rotation = COMPASS[String(a.climbs || "north").toLowerCase()];
   if (rotation === undefined) throw new M.UserError("climbs must be north, south, east or west (the way you walk going up).");
   // Footprint first at the origin, on the layer it will go on, so the rise comes from the right floor.
@@ -180,6 +185,29 @@ function placeStairs(project, a, len, ink) {
 }
 
 /** Changes a stair: goes, rise (typed, or "building" to follow it again), width, tread, show_risers. */
+/** Rails (Dan, Nov 27: stairs come in bare): each side none, handrail or guard; handrail: left/right/both/none sets handrails. */
+const RAIL = { none: 0, handrail: 1, guard: 2 };
+function setRails(props, a) {
+  const kl = K.railL || "stRailL", kr = K.railR || "stRailR";
+  const pick = (v, what) => { const x = RAIL[String(v).toLowerCase()]; if (x === undefined) throw new M.UserError(`${what}: none, handrail or guard.`); return x; };
+  if (a.handrail !== undefined) {
+    const h = String(a.handrail).toLowerCase();
+    if (!["none", "left", "right", "both"].includes(h)) throw new M.UserError("handrail: none, left, right or both.");
+    props[kl] = h === "left" || h === "both" ? 1 : 0;
+    props[kr] = h === "right" || h === "both" ? 1 : 0;
+  }
+  if (a.left_side !== undefined) props[kl] = pick(a.left_side, "left_side");
+  if (a.right_side !== undefined) props[kr] = pick(a.right_side, "right_side");
+}
+
+/** An L stair's corner: winders 0 (a landing), 2 or 3. */
+function setCorner(props, a) {
+  if (a.winders === undefined) return;
+  const w = Number(a.winders);
+  if (![0, 2, 3].includes(w)) throw new M.UserError("winders: 0 (a flat landing), 2 or 3.");
+  props[K.winders || "stWinders"] = w === 3 ? 2 : w === 2 ? 1 : 0;
+}
+
 function editStairs(project, a, len) {
   const s = (project.elements || []).find((e) => e.id === a.id);
   if (!s || M.kind(s) !== "Symbol" || s.category !== "Stairs") throw new M.UserError(`No stair with id "${a.id}".`);
@@ -193,6 +221,9 @@ function editStairs(project, a, len) {
   if (a.width !== undefined) e.properties[K.width] = len(a.width, "width");
   if (a.tread !== undefined) e.properties[K.tread] = len(a.tread, "tread");
   if (a.show_risers !== undefined) e.properties[K.showR] = a.show_risers ? 1 : 0;
+  setRails(e.properties, a);
+  setCorner(e.properties, a);
+  if (a.flight1 !== undefined) { const f = Math.trunc(Number(a.flight1)); if (!(f >= 1)) throw new M.UserError("flight1: risers before the corner, e.g. 9."); e.properties[K.flight1] = f; }
   syncOne(e, project);
   const fp = footprint(e);
   if (fp) { const inch = M.pxPerInch(project); e.size = M.sizeText(fp[0] * inch, fp[1] * inch); e.properties.widthInches = r2(fp[0]); e.properties.depthInches = r2(fp[1]); }

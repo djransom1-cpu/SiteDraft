@@ -285,7 +285,7 @@ object AutoDimension {
             upAt(w, listOf(0f, heightIn), right, ELEV_TIER_IN * inch)
             return out
         }
-        val items = Elevation.itemsOnWall(wall, spec.side, state).filter { it.kind != Elevation.Kind.CUT_WALL }
+        val items = Elevation.itemsInView(wall, spec, state).filter { it.kind != Elevation.Kind.CUT_WALL }
         // Across the top: every item's width, then the overall length.
         val xs = merged(listOf(0f, w) + items.flatMap { listOf(it.from, it.to) }, 0.25f * inch)
         var dist = ELEV_TIER_IN * inch

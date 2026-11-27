@@ -34,7 +34,9 @@ object DetailKit {
         GARAGE_FROST("Garage Frost Wall Detail", "S", 12),
         HOUSE_WALL("Exterior Wall Section", "S", 16),
         GARAGE_WALL("Garage Wall Section", "S", 16),
-        STAIR("Stair Section Detail", "S", 24)
+        STAIR("Stair Section Detail", "S", 24),
+        /** A cut across the whole house, footing to ridge (BuildingSection, Nov 25). */
+        BUILDING_SECTION("Building Section A-A", "S", 48)
     }
 
     data class Note(val text: String, val at: Offset, val left: Boolean)
@@ -56,6 +58,7 @@ object DetailKit {
         Detail.HOUSE_WALL -> WallSections.house(state)
         Detail.GARAGE_WALL -> WallSections.garage(state)
         Detail.STAIR -> StairDetail.geometry(state)
+        Detail.BUILDING_SECTION -> BuildingSection.geometry(state)
     }
 
     /** The detail's size in world px: its real extent (notes included) at the drawing's scale. */

@@ -26,8 +26,11 @@ object CabinetList {
         val first = label?.text?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
         // A label that is only a size ("12' x 10'") names no room.
         val named = first != null && first.any { it.isLetter() } && !Regex("""^[\d\s.'"x×m-]+$""").matches(first)
+        if (named) return area to first!!
+        // No label: the name the room has in the finish schedule (Nov 26), so every schedule names it alike.
+        state.roomFinishes.firstOrNull { it.name.isNotBlank() && area.contains(FinishSchedule.point(it)) }?.let { return area to it.name }
         val size = FloorPlan.formatDims(area.width / state.scale.ratio, area.height / state.scale.ratio, state.unitSystem)
-        return area to (if (named) first!! else "Room $size")
+        return area to "Room $size"
     }
 
     /** [p] lies on [s] as drawn (turned with it). */

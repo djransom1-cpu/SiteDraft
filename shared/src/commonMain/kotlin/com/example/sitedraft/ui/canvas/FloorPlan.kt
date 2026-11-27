@@ -1,5 +1,9 @@
+@file:UseSerializers(OffsetSerializer::class, BitmapSerializer::class)
+
 package com.example.sitedraft.ui.canvas
 
+import kotlinx.serialization.UseSerializers
+import kotlinx.serialization.Serializable
 import com.example.sitedraft.util.format
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -13,10 +17,12 @@ import kotlin.math.max
  * Something picked from a panel that lands where the next canvas tap is. Session-only state
  * (CanvasState keeps it @Transient). [label] is what the "tap to place" banner shows.
  */
+@Serializable
 sealed class Placement {
     abstract val label: String
 
     /** A library symbol; the tap is its centre. */
+    @Serializable
     data class Symbol(val name: String, val category: String) : Placement() {
         override val label get() = name
     }
@@ -25,6 +31,7 @@ sealed class Placement {
      * The building outline by OUTSIDE dimensions in document units (ft or m); the tap is its
      * top-left outside corner.
      */
+    @Serializable
     data class Shell(val width: Float, val depth: Float, val wallName: String, override val label: String) : Placement()
 
     /**
@@ -33,35 +40,56 @@ sealed class Placement {
      * set the width and depth are OUTSIDE (wall-to-wall) dimensions and the tap is the top-left
      * outside corner, the way a framer lays out from the building outline.
      */
+    @Serializable
     data class Room(
         val name: String, val width: Float, val depth: Float, val wallName: String, override val label: String,
         val outside: Boolean = false
     ) : Placement()
 
     /** A hatch for the closed area the tap lands in (see [FloorPlan.areaAt]). Not snapped. */
+    @Serializable
     data class Hatch(val pattern: FillPattern, val sizeIn: Float, val lengthIn: Float = 0f) : Placement() {
         override val label get() = "inside the area to hatch"
     }
 
     /** Dimensions for the room the tap lands in (inside faces, outside its walls). Not snapped. */
+    @Serializable
     object DimensionRoom : Placement() {
         override val label get() = "inside the room to dimension"
     }
 
     /** An elevation of a plan wall; the tap is the bottom-left corner of its floor line. */
+    @Serializable
     data class Elevation(val spec: ElevationSpec, override val label: String) : Placement()
+
+    /**
+     * Elevations of a room's walls, each cut to the room (RoomElevations, Nov 25): the tap lands inside the room.
+     * [walls]: which of north, east, south, west; empty = all of them. Not snapped.
+     */
+    @Serializable
+    data class RoomElevations(val walls: List<String> = emptyList()) : Placement() {
+        override val label get() = "inside the room for its elevations"
+    }
+
+    /** A room for the finish schedule (FinishSchedule, Nov 26), named [name]: the tap lands inside it. Not snapped. */
+    @Serializable
+    data class RoomFinish(val name: String = "") : Placement() {
+        override val label get() = "inside the room for the finish schedule"
+    }
 
     /**
      * A scale-calibration point on PDF plan [pdfId]: [first] is null while the first point is
      * being picked, then holds it while the second is. The points are NOT snapped - they go
      * exactly where the pen lifts, on the printed dimension.
      */
+    @Serializable
     data class Calibrate(val pdfId: String, val first: Offset? = null) : Placement() {
         override val label get() =
             if (first == null) "the first calibration point (one end of a known dimension)" else "the second calibration point (the other end)"
     }
 
     /** A PDF just picked for import; the tap is the middle of the plan. Not snapped. */
+    @Serializable
     data class Plan(val pages: List<ImageBitmap>) : Placement() {
         override val label get() = "the plan"
         val size: Size get() = Size(pages[0].width.toFloat(), pages[0].height.toFloat())
@@ -316,6 +344,9 @@ object FloorPlan {
             }
             is Placement.Hatch -> listOfNotNull(areaAt(point, state))
             is Placement.DimensionRoom -> listOfNotNull(areaAt(point, state))
+            // The room whose walls get elevations, outlined as the pen moves over it.
+            is Placement.RoomElevations -> listOfNotNull(areaAt(point, state))
+            is Placement.RoomFinish -> listOfNotNull(areaAt(point, state))
             is Placement.Elevation -> {
                 val wall = state.elements.find { it.id == placement.spec.wallId } as? DrawingElement.Symbol ?: return emptyList()
                 val size = Elevation.sizePx(wall, placement.spec, state)
@@ -330,7 +361,8 @@ object FloorPlan {
     /** "12' x 12'" or "3.66 x 3.66 m". */
     fun formatDims(width: Float, depth: Float, unitSystem: UnitSystem): String {
         fun n(v: Float) = if (v == v.toInt().toFloat()) v.toInt().toString() else "%.2f".format(v).trimEnd('0').trimEnd('.')
-        return if (unitSystem == UnitSystem.IMPERIAL) "${n(width)}' x ${n(depth)}'" else "${n(width)} x ${n(depth)} m"
+        // Imperial reads like a tape: 12' x 3'-6 1/2", never decimal feet.
+        return if (unitSystem == UnitSystem.IMPERIAL) "${formatFeetInches(width)} x ${formatFeetInches(depth)}" else "${n(width)} x ${n(depth)} m"
     }
 
     /** The room's name and INSIDE size (what a room label means, whichever way it was entered), centred in its inside area. */

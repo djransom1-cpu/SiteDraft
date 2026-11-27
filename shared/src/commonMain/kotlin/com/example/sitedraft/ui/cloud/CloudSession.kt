@@ -50,6 +50,8 @@ class CloudSession(
     var sync by mutableStateOf<ProjectSync?>(null)
         private set
     private var checkedUid: String? = null
+    /** Runs the commands Claude leaves for this copy of the app (ClaudeBridge). */
+    private var claude: ClaudeBridge? = null
 
     val user: CloudUser? get() = cloud.user.value
 
@@ -100,6 +102,8 @@ class CloudSession(
             if (sync == null || checkedUid != user.uid) {
                 sync?.dispose()
                 sync = ProjectSync(platform, cloud, manager).also { manager.sync = it; it.startWatching() }
+                claude?.dispose()
+                claude = ClaudeBridge(platform, cloud, manager, { sync }).also { it.start() }
                 checkedUid = user.uid
             }
             sync?.syncAll()
@@ -109,6 +113,8 @@ class CloudSession(
     }
 
     private fun detachSync() {
+        claude?.dispose()
+        claude = null
         manager.sync = null
         sync?.dispose()
         sync = null

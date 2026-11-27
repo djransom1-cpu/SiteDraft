@@ -1,5 +1,6 @@
 package com.example.sitedraft.ui.canvas
 
+import kotlinx.serialization.Serializable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -66,6 +67,7 @@ enum class PrintSubject(val label: String) {
     SHEET("Sheet with views");
 }
 
+@Serializable
 data class PrintSettings(
     val subject: PrintSubject = PrintSubject.WHOLE_DRAWING,
     val paper: PaperSize = PaperSize.LETTER,

@@ -24,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -261,6 +262,84 @@ fun FloorPlanPanel(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
+            // --- Elevations of a room (Nov 25): each wall cut to the room ---
+            Text("Elevations by room", style = MaterialTheme.typography.titleMedium)
+            var roomWalls by remember { mutableStateOf(com.example.sitedraft.ui.canvas.RoomElevations.directions.toSet()) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.example.sitedraft.ui.canvas.RoomElevations.directions.forEach { d ->
+                    FilterChip(selected = d in roomWalls, onClick = { roomWalls = if (d in roomWalls) roomWalls - d else roomWalls + d },
+                        label = { Text(d.replaceFirstChar { it.uppercase() } + " wall") })
+                }
+            }
+            Button(
+                onClick = { onEvent(DrawingEvent.StartPlacement(Placement.RoomElevations(com.example.sitedraft.ui.canvas.RoomElevations.directions.filter { it in roomWalls }))) },
+                enabled = roomWalls.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Elevations of a room (then tap inside it)") }
+            Text(
+                "Each ticked wall gets its own elevation, cut to that room: its ends at the room's corners. They go in a row above the plan. Any elevation can also show just a length of its wall (Properties: Show from / to).",
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // --- Finish schedule (Nov 26): by room, floor, walls, ceiling, trim, notes ---
+            Text("Finish schedule", style = MaterialTheme.typography.titleMedium)
+            var finishRoom by remember { mutableStateOf("") }
+            OutlinedTextField(value = finishRoom, onValueChange = { finishRoom = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Room name (Kitchen, J&J Bath...)") })
+            Button(
+                onClick = { onEvent(DrawingEvent.StartPlacement(Placement.RoomFinish(finishRoom))); finishRoom = "" },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Add a room (then tap inside it)") }
+            Text(
+                "Floor and walls fill in from the drawing (the floor hatch; paint, wallpaper and wainscot on its walls, wall by wall when they differ) unless you type them. Put the Finish schedule on a sheet from Sheets.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            state.roomFinishes.forEachIndexed { i, f ->
+                var open by remember(f.id) { mutableStateOf(false) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { open = !open }, modifier = Modifier.weight(1f)) {
+                        Text((if (open) "▾ " else "▸ ") + f.name.ifBlank { "Room ${i + 1}" }, modifier = Modifier.fillMaxWidth())
+                    }
+                    TextButton(onClick = { onEvent(DrawingEvent.RemoveRoomFinish(f.id)) }) { Text("Remove") }
+                }
+                if (open) {
+                    val autoFloor = com.example.sitedraft.ui.canvas.FinishSchedule.floorFromDrawing(f, state)
+                    val autoWalls = com.example.sitedraft.ui.canvas.FinishSchedule.wallsFromDrawing(f, state)
+                    // One line each (long entries scroll inside the box), so nothing below moves while typing; Enter sets it.
+                    // What the drawing fills in shows on a fixed line under the fields it fills (Dan, Nov 26).
+                    // The trim fields are the trim schedule's (Nov 26: trim on its own schedule, for carpenters and painters).
+                    val trimFields = com.example.sitedraft.ui.canvas.TrimSchedule.fields.zip(com.example.sitedraft.ui.canvas.TrimSchedule.labels)
+                    val trimValues = listOf(f.trimBase, f.trimCasing, f.trimWindows, f.trimCrown, f.trimWainscot, f.trim, f.trimNotes)
+                    listOf(
+                        Triple("name", "Room name", f.name), Triple("floor", "Floor", f.floor), Triple("walls", "Walls", f.walls),
+                        Triple("ceiling", "Ceiling", f.ceiling), Triple("notes", "Notes", f.notes),
+                        Triple("backsplash", "Backsplash (prints when filled)", f.backsplash),
+                        Triple("showerWalls", "Shower walls (prints when filled)", f.showerWalls),
+                        Triple("showerFloor", "Shower floor (prints when filled)", f.showerFloor)
+                    ).plus(trimFields.zip(trimValues).map { (fl, v) -> Triple(fl.first, "Trim: " + fl.second, v) }).forEach { (field, label, value) ->
+                        if (field == "trimBase") Text("Trim schedule", style = MaterialTheme.typography.titleSmall)
+                        var text by remember(f.id, field, value) { mutableStateOf(value) }
+                        val fromDrawing = when (field) {
+                            "floor" -> autoFloor; "walls" -> autoWalls
+                            else -> com.example.sitedraft.ui.canvas.TrimSchedule.fromDrawing(field, f, state)
+                        }
+                        OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onEvent(DrawingEvent.UpdateRoomFinish(f.id, field, text)) }),
+                            trailingIcon = { TextButton(onClick = { onEvent(DrawingEvent.UpdateRoomFinish(f.id, field, text)) }) { Text("Set") } })
+                        if (field in listOf("floor", "walls", "trimBase", "trimCasing", "trimWindows", "trimWainscot")) {
+                            Text(if (fromDrawing.isNotBlank()) "From the drawing (blank uses it): $fromDrawing" else "Nothing in the drawing yet: type it",
+                                style = MaterialTheme.typography.bodySmall, maxLines = 2, minLines = 2)
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
             // --- Elevation of a wall ---
             Text("Elevation", style = MaterialTheme.typography.titleMedium)
             val selectedWall = state.elements.find { it.id == state.selectedElementId } as? DrawingElement.Symbol
@@ -348,6 +427,22 @@ fun FloorPlanPanel(
                     Text("$room (${rows.sumOf { it.qty }})", style = MaterialTheme.typography.labelLarge)
                     rows.forEach { r ->
                         Text("${r.qty} x ${r.code}  -  ${r.description}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    // The room's lines on the cabinet and countertop schedule (Nov 26), printed when filled.
+                    var openSpec by remember(room) { mutableStateOf(false) }
+                    TextButton(onClick = { openSpec = !openSpec }) { Text((if (openSpec) "▾ " else "▸ ") + "Schedule lines for $room (cabinets, hardware, countertop)") }
+                    if (openSpec) {
+                        val sp = com.example.sitedraft.ui.canvas.CabinetSchedule.spec(state, room)
+                        val values = listOf(sp.cabinets, sp.hardware, sp.countertop, sp.notes)
+                        com.example.sitedraft.ui.canvas.CabinetSchedule.fields.zip(com.example.sitedraft.ui.canvas.CabinetSchedule.labels).zip(values).forEach { (fl, value) ->
+                            val (field, label) = fl
+                            var text by remember(room, field, value) { mutableStateOf(value) }
+                            OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onEvent(DrawingEvent.UpdateCabinetSpec(room, field, text)) }),
+                                trailingIcon = { TextButton(onClick = { onEvent(DrawingEvent.UpdateCabinetSpec(room, field, text)) }) { Text("Set") } })
+                        }
                     }
                 }
                 val cabClipboard = androidx.compose.ui.platform.LocalClipboardManager.current

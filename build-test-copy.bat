@@ -35,26 +35,26 @@ echo.
 echo SUCCESS. The test copy is in "%DEST%". Starting it now...
 start "" "%DEST%\SiteDraft.exe"
 echo This window closes in 10 seconds.
-timeout /t 10 >nul
+if not defined CLAUDE_RUNNER timeout /t 10 >nul
 exit /b 0
 
 :testsfailed
 echo RESULT: TESTS FAILED, no test copy built >> build-test-copy.log
 echo.
 echo TESTS FAILED. No test copy was made. Details are in build-test-copy.log.
-pause
+if not defined CLAUDE_RUNNER pause
 exit /b 1
 
 :buildfailed
 echo RESULT: BUILD FAILED >> build-test-copy.log
 echo.
 echo THE BUILD FAILED. Details are in build-test-copy.log.
-pause
+if not defined CLAUDE_RUNNER pause
 exit /b 1
 
 :copyfailed
 echo RESULT: COPY FAILED (is the test copy still open?) >> build-test-copy.log
 echo.
 echo COULD NOT COPY TO THE DESKTOP. Close the SiteDraft TEST window and run this again.
-pause
+if not defined CLAUDE_RUNNER pause
 exit /b 1

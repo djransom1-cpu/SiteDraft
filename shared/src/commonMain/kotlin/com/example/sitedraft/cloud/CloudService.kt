@@ -47,6 +47,12 @@ data class AccessCodeRedemption(val code: String = "", val redeemedAt: Long = 0L
 data class ProjectMeta(val name: String, val updatedAt: Long, val device: String?, val chunkCount: Int)
 
 /** A whole cloud project. */
+/** One open copy of the app, for the connector: which project it has open and when it was last used. */
+data class ClaudePresence(val device: String, val project: String, val lastActiveAt: Long, val seenAt: Long)
+
+/** A batch of Claude's commands: [actions] is the JSON text of `[{"action": ..., "args": {...}}]`. */
+data class ClaudeCommandDoc(val id: String, val project: String, val target: String, val status: String, val actions: String)
+
 data class ProjectDoc(val name: String, val updatedAt: Long, val device: String?, val json: String)
 
 /**
@@ -87,6 +93,25 @@ interface CloudStore {
      * watched with this so a change Claude makes shows up without reopening it.
      */
     suspend fun projectStamp(uid: String, name: String): Long? = null
+    /**
+     * When the cloud copy of [name] was last written, by any device or Claude (its updatedAt), or null when there is none
+     * or it can't be read cheaply. Checked before a save so a newer copy from another device isn't written over (Nov 27).
+     */
+    suspend fun projectUpdatedAt(uid: String, name: String): Long? = null
+
+    // ---- Claude's commands (ClaudeBridge.kt): the connector leaves a command for one open copy ----
+
+    /** Merges this open copy's presence into `users/{uid}/claudeDevices/{deviceId}` (the connector picks the most recently used one). */
+    suspend fun writeClaudePresence(uid: String, deviceId: String, presence: ClaudePresence) {}
+
+    /** The id of the command the connector left for this device (`pendingCommand` on its claudeDevices document), or null. */
+    suspend fun claudePendingCommand(uid: String, deviceId: String): String? = null
+
+    /** `users/{uid}/claudeCommands/{id}`, or null when there is none. */
+    suspend fun readClaudeCommand(uid: String, id: String): ClaudeCommandDoc? = null
+
+    /** Marks a command running (no [result]) or finished ("done" / "error", with the result JSON). */
+    suspend fun updateClaudeCommand(uid: String, id: String, status: String, result: String?, at: Long, device: String) {}
 
     /** The sharing fields of `users/{ownerUid}/projects/{name}`, or null when there is no such project. */
     suspend fun readSharing(ownerUid: String, name: String): ProjectSharing?

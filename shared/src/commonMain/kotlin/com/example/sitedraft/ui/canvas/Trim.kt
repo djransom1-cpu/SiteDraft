@@ -151,6 +151,48 @@ object Trim {
         }
     }
 
+    /** Windows closer than this (inches, jamb to jamb) with the same head and sill are trimmed as one unit. */
+    const val GANG_GAP_IN = 8f
+
+    /**
+     * Windows side by side, sorted along the wall ([from], [to] px; [bottomIn], [topIn] each): groups that are
+     * trimmed as one unit (Dan, Nov 25). Each group is a list of indices into [windows].
+     */
+    fun gangs(windows: List<FloatArray>, inch: Float): List<List<Int>> {
+        val out = mutableListOf<MutableList<Int>>()
+        for (i in windows.indices.sortedBy { windows[it][0] }) {
+            val w = windows[i]
+            val last = out.lastOrNull()?.last()?.let { windows[it] }
+            if (last != null && w[0] - last[1] <= GANG_GAP_IN * inch && kotlin.math.abs(w[2] - last[2]) < 0.25f && kotlin.math.abs(w[3] - last[3]) < 0.25f)
+                out.last() += i
+            else out += mutableListOf(i)
+        }
+        return out
+    }
+
+    /**
+     * Two or more windows trimmed as one unit (Dan, Nov 25): one long head across them, legs only at the two
+     * outside ends, solid trim filling between the windows, and the stool and apron (or the picture-frame bottom)
+     * running through. [spans]: each window's jamb, px along the wall, sorted.
+     */
+    fun drawGang(p: Appliances.ElevPen, spans: List<Pair<Float, Float>>, bottomIn: Float, topIn: Float, spec: ElevationSpec) {
+        // The whole group as one opening: head, end legs, stool and apron or bottom.
+        drawOpening(p, spans.first().first, spans.last().second, bottomIn, topIn, true, spec)
+        val inch = p.inch
+        val headIn = topIn - WINDOW_IN_IN
+        val bottomInner = bottomIn + WINDOW_IN_IN
+        val stoolApron = spec.windowTrim == 1
+        val from = if (stoolApron) bottomIn else bottomInner
+        // Between each pair: solid trim from one window's inside casing edge to the next's.
+        for (k in 0 until spans.size - 1) {
+            val a = spans[k].second - WINDOW_IN_IN * inch
+            val b = spans[k + 1].first + WINDOW_IN_IN * inch
+            if (b <= a) continue
+            p.blank(a, b, from, headIn)
+            p.rect(a, b, from, headIn, 1f)
+        }
+    }
+
     /**
      * Base along the floor over [length] px, except where [blocked] (px ranges: door casings,
      * cabinets, tubs and anything else standing on the floor).

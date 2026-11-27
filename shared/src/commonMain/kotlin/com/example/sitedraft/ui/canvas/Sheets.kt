@@ -25,7 +25,17 @@ enum class SheetViewKind { PLAN, ELEVATION,
     /** The door and window schedules (Schedules), read off the plan. */
     DOOR_SCHEDULE, WINDOW_SCHEDULE,
     /** The structural calc summary (StructuralDesign): loads, spans, members, footings, for the S sheets. */
-    STRUCTURAL_CALCS }
+    STRUCTURAL_CALCS,
+    /** The T sheets (CoverSheet, Nov 25): the cover's sheet index, project data and legend; the general notes. */
+    SHEET_INDEX, PROJECT_DATA, LEGEND, GENERAL_NOTES,
+    /** The cover's title: the project's name in large type, its address, client and who drew it. */
+    COVER_TITLE,
+    /** The paint colours on the walls (WallDecor paint, Nov 26), with the walls each goes on. */
+    PAINT_SCHEDULE,
+    /** The finish schedule (FinishSchedule, Nov 26): by room, floor, walls, ceiling, trim, notes. */
+    FINISH_SCHEDULE,
+    /** The schedules by trade (TradeSchedules, Nov 26): trim, cabinets and countertops, appliances, plumbing fixtures. */
+    TRIM_SCHEDULE, CABINET_SCHEDULE, APPLIANCE_SCHEDULE, PLUMBING_SCHEDULE }
 
 /** One view on a sheet. [xIn], [yIn]: the view's centre on the paper, inches from the sheet's top-left corner. */
 @Serializable
@@ -143,12 +153,14 @@ object Sheets {
         }
         SheetViewKind.ELEVATION -> state.elements.filter { it.id == view.elementId || it.isOwnedBy(view.elementId) }
         SheetViewKind.SECTION -> sectionFor(view, state)?.let { sec -> listOf(sec) + WallSection.ownedBy(sec, state) } ?: emptyList()
-        SheetViewKind.DOOR_SCHEDULE, SheetViewKind.WINDOW_SCHEDULE, SheetViewKind.STRUCTURAL_CALCS -> emptyList()
+        SheetViewKind.DOOR_SCHEDULE, SheetViewKind.WINDOW_SCHEDULE, SheetViewKind.STRUCTURAL_CALCS,
+        SheetViewKind.SHEET_INDEX, SheetViewKind.PROJECT_DATA, SheetViewKind.LEGEND, SheetViewKind.GENERAL_NOTES, SheetViewKind.COVER_TITLE, SheetViewKind.PAINT_SCHEDULE, SheetViewKind.FINISH_SCHEDULE,
+        SheetViewKind.TRIM_SCHEDULE, SheetViewKind.CABINET_SCHEDULE, SheetViewKind.APPLIANCE_SCHEDULE, SheetViewKind.PLUMBING_SCHEDULE -> emptyList()
     }
 
     /** The schedule a view is, if it is one. */
     /** A table (a schedule or the structural calcs): its own size on paper, at no scale. */
-    fun isTable(view: SheetView): Boolean = scheduleKind(view) != null || view.kind == SheetViewKind.STRUCTURAL_CALCS
+    fun isTable(view: SheetView): Boolean = scheduleKind(view) != null || view.kind == SheetViewKind.STRUCTURAL_CALCS || CoverSheet.isCover(view.kind) || view.kind == SheetViewKind.FINISH_SCHEDULE || TradeSchedules.isTrade(view.kind)
 
     fun scheduleKind(view: SheetView): Schedules.Kind? = when (view.kind) {
         SheetViewKind.DOOR_SCHEDULE -> Schedules.Kind.DOOR
@@ -164,7 +176,9 @@ object Sheets {
 
     /** The whole subject's extent in world px, ignoring any crop: what the crop window is picked from. */
     fun fullWorldBounds(view: SheetView, state: CanvasState): Rect? {
-        val rects = viewElements(view, state).flatMap { e ->
+        // Section and detail markers don't size the view: their bubbles are drawn past the viewport edge
+        // when they need to be (drawSheet), so a longer cut never grows the plan off the sheet (Nov 25).
+        val rects = viewElements(view, state).filter { !Callouts.isCallout(it) }.flatMap { e ->
             if (e is DrawingElement.ElevationView) listOf(e.frame) + Elevation.partsOf(e, state).map { it.boundingRect() }
             // A roof plan reaches over the garage, wing and porch roofs drawn with it.
             else if (RoofPlan.isRoof(e) || RoofPlan.isRoofFinish(e)) listOf(e.boundingRect()) + RoofPlan.addOnBounds(state)
@@ -179,6 +193,17 @@ object Sheets {
 
     /** The view's drawing on the paper (inches), centred on its position. */
     fun viewRect(view: SheetView, state: CanvasState): Rect? {
+        TradeSchedules.sizeIn(view.kind, state, view.tableSize)?.let { sz ->
+            return Rect(view.xIn - sz.width / 2f, view.yIn - sz.height / 2f, view.xIn + sz.width / 2f, view.yIn + sz.height / 2f)
+        }
+        if (view.kind == SheetViewKind.FINISH_SCHEDULE) {
+            val sz = FinishSchedule.tableSizeIn(state, view.tableSize)
+            return Rect(view.xIn - sz.width / 2f, view.yIn - sz.height / 2f, view.xIn + sz.width / 2f, view.yIn + sz.height / 2f)
+        }
+        if (CoverSheet.isCover(view.kind)) {
+            val sz = CoverSheet.tableSizeIn(view.kind, state, view.tableSize)
+            return Rect(view.xIn - sz.width / 2f, view.yIn - sz.height / 2f, view.xIn + sz.width / 2f, view.yIn + sz.height / 2f)
+        }
         if (view.kind == SheetViewKind.STRUCTURAL_CALCS) {
             val sz = StructuralDesign.tableSizeIn(state, view.tableSize)
             return Rect(view.xIn - sz.width / 2f, view.yIn - sz.height / 2f, view.xIn + sz.width / 2f, view.yIn + sz.height / 2f)
@@ -262,6 +287,14 @@ object Sheets {
     fun slotOf(view: SheetView, state: CanvasState): Slot = when (view.kind) {
         SheetViewKind.SECTION -> Slot("S", 400)
         SheetViewKind.STRUCTURAL_CALCS -> Slot("S", 450)
+        SheetViewKind.SHEET_INDEX, SheetViewKind.PROJECT_DATA, SheetViewKind.LEGEND, SheetViewKind.COVER_TITLE -> Slot("T", 0)
+        SheetViewKind.GENERAL_NOTES -> Slot("T", 1)
+        SheetViewKind.FINISH_SCHEDULE -> Slot("A", 800)
+        SheetViewKind.PAINT_SCHEDULE -> Slot("A", 801)
+        SheetViewKind.TRIM_SCHEDULE -> Slot("A", 802)
+        SheetViewKind.CABINET_SCHEDULE -> Slot("A", 803)
+        SheetViewKind.APPLIANCE_SCHEDULE -> Slot("A", 804)
+        SheetViewKind.PLUMBING_SCHEDULE -> Slot("A", 805)
         SheetViewKind.DOOR_SCHEDULE -> Slot("A", 700)
         SheetViewKind.WINDOW_SCHEDULE -> Slot("A", 701)
         SheetViewKind.ELEVATION -> {
@@ -489,11 +522,17 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
             val rIn = Sheets.viewRect(view, state) ?: continue
             val kind = Sheets.scheduleKind(view)
             if (kind != null) with(Schedules) { drawTable(kind, state, Offset(rIn.left * dpi, rIn.top * dpi), dpi, view.tableSize) }
+            else if (TradeSchedules.isTrade(view.kind)) with(TradeSchedules) { drawTrade(view.kind, state, Offset(rIn.left * dpi, rIn.top * dpi), dpi, view.tableSize) }
+            else if (view.kind == SheetViewKind.FINISH_SCHEDULE) with(FinishSchedule) { drawFinishTable(state, Offset(rIn.left * dpi, rIn.top * dpi), dpi, view.tableSize) }
+            else if (CoverSheet.isCover(view.kind)) with(CoverSheet) { drawCoverTable(view.kind, state, Offset(rIn.left * dpi, rIn.top * dpi), dpi, view.tableSize) }
             else with(StructuralDesign) { drawCalcTable(state, Offset(rIn.left * dpi, rIn.top * dpi), dpi, view.tableSize) }
             val titleTop = rIn.bottom * dpi + 0.12f * dpi
             val titleSize = 0.2f * dpi
-            drawPageText(view.title.uppercase(), Offset(rIn.left * dpi, titleTop), titleSize, Color.Black, bold = true, maxWidth = max(rIn.width * dpi, 3f * dpi))
-            drawLine(Color.Black, Offset(rIn.left * dpi, titleTop + titleSize * 1.3f), Offset((rIn.left + minOf(max(rIn.width, 2f), 6f)) * dpi, titleTop + titleSize * 1.3f), strokeWidth = lineW * 1.5f)
+            // The cover title is its own heading: no title under it.
+            if (view.kind != SheetViewKind.COVER_TITLE) {
+                drawPageText(view.title.uppercase(), Offset(rIn.left * dpi, titleTop), titleSize, Color.Black, bold = true, maxWidth = max(rIn.width * dpi, 3f * dpi))
+                drawLine(Color.Black, Offset(rIn.left * dpi, titleTop + titleSize * 1.3f), Offset((rIn.left + minOf(max(rIn.width, 2f), 6f)) * dpi, titleTop + titleSize * 1.3f), strokeWidth = lineW * 1.5f)
+            }
             if (view.id == highlightId) {
                 val fp = Sheets.footprint(view, state)!!
                 drawRect(Color(0xFFFF8F00), topLeft = Offset(fp.left * dpi, fp.top * dpi), size = Size(fp.width * dpi, fp.height * dpi), style = Stroke(lineW * 2f))
@@ -536,7 +575,11 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
         // The roof, section and exterior elevations are built from the whole drawing: drawn apart, with it.
         val live = shown.filter { isLiveSymbol(it) }.filterIsInstance<DrawingElement.Symbol>()
         val paperState = state.copy(backgroundColor = Color.White)
-        val pageState = PrintPage.pageState(state, shown.filter { !isLiveSymbol(it) }, page).copy(background = DrawingBackground.PLAIN, remodelPhase = view.phase)
+        // Markers whose line starts in the view are drawn whole after the clip, so a bubble past the crop or
+        // the plan's edge (the garage section, the wall cut past the dimension strings) is never cut off (Nov 25).
+        val markers = shown.filter { Callouts.isCallout(it) && bounds.inflate(1f).contains(markerAnchor(it as DrawingElement.Symbol)) }
+            .filterIsInstance<DrawingElement.Symbol>()
+        val pageState = PrintPage.pageState(state, shown.filter { !isLiveSymbol(it) && it !in markers }, page).copy(background = DrawingBackground.PLAIN, remodelPhase = view.phase)
         // A cropped viewport is cut exactly at its window; a whole view gets a little room for line ends and labels.
         val pad = if (view.crop != null) 0f else 0.1f * dpi
         clipRect(rIn.left * dpi - pad, rIn.top * dpi - pad, rIn.right * dpi + pad, rIn.bottom * dpi + pad) {
@@ -547,6 +590,12 @@ fun DrawScope.drawSheet(sheet: SheetLayout, state: CanvasState, dpi: Float, proj
                 drawDocumentContents(pageState)
                 live.forEach { drawLiveSymbol(it, paperState, Color.Black) }
             }
+        }
+        if (markers.isNotEmpty()) withTransform({
+            translate(pan.x, pan.y)
+            scale(zoom, zoom, Offset.Zero)
+        }) {
+            markers.forEach { with(Callouts) { drawCallout(it, paperState, Color.Black) } }
         }
         if (view.crop != null) {
             drawRect(Color.Black, topLeft = Offset(rIn.left * dpi, rIn.top * dpi), size = Size(rIn.width * dpi, rIn.height * dpi), style = Stroke(lineW * 0.8f))
@@ -647,4 +696,11 @@ private fun DrawScope.drawSheetTitleBlock(sheet: SheetLayout, dpi: Float, projec
             drawLine(Color.Black, Offset(left + noW + dateW, tableTop), Offset(left + noW + dateW, ty), strokeWidth = lineW * 0.6f)
         }
     }
+}
+
+/** Where a marker's line starts (its -x end, the bubbles sit off the +x end): what must be in the view for it to show. */
+internal fun markerAnchor(e: DrawingElement.Symbol): Offset {
+    val a = e.rotation * kotlin.math.PI / 180.0
+    val hw = e.size.width / 2f
+    return Offset(e.center.x - hw * kotlin.math.cos(a).toFloat(), e.center.y - hw * kotlin.math.sin(a).toFloat())
 }

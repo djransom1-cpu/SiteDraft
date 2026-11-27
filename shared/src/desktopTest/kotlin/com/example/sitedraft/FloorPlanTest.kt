@@ -115,14 +115,15 @@ class FloorPlanTest {
         assertEquals(8f * ratio, outer.height, 0.01f)
         // The label gives the clear inside size: 10' - 9" and 8' - 9".
         val label = vm.state.value.elements.filterIsInstance<DrawingElement.Text>().single()
-        assertEquals("Bath\n9.25' x 7.25'", label.text)
+        assertEquals("Bath\n9'-3\" x 7'-3\"", label.text)
         assertEquals(t, walls.first().height.coerceAtMost(walls.first().width), 0.01f)
     }
 
     @Test
     fun `dimension labels`() {
         assertEquals("12' x 12'", FloorPlan.formatDims(12f, 12f, UnitSystem.IMPERIAL))
-        assertEquals("12' x 3.5'", FloorPlan.formatDims(12f, 3.5f, UnitSystem.IMPERIAL))
+        assertEquals("12' x 3'-6\"", FloorPlan.formatDims(12f, 3.5f, UnitSystem.IMPERIAL))
+        assertEquals("2'-6 1/8\" x 4'-10 1/2\"", FloorPlan.formatDims(30.125f / 12f, 58.5f / 12f, UnitSystem.IMPERIAL))
         assertEquals("3.6 x 3.6 m", FloorPlan.formatDims(3.6f, 3.6f, UnitSystem.METRIC))
     }
 }

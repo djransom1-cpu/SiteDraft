@@ -7,7 +7,7 @@ type deploy-connector.log
 echo.
 echo Done. Connector URL for Claude: https://sitedraftmcp-ufaob6wjnq-uc.a.run.app
 echo (not the cloudfunctions.net "Function URL" above: sign-in only works at the run.app address)
-pause
+if not defined CLAUDE_RUNNER pause
 exit /b
 
 :main

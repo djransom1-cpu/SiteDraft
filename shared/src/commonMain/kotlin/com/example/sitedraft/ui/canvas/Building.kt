@@ -116,6 +116,12 @@ data class BuildingSettings(
      * 8' walls, 92 5/8" precut studs and three plates = 97 1/8"). New in 1.0.37.
      */
     val plateHeightIn: Float = 97.125f,
+    /**
+     * The door head for this job, inches above the subfloor (Dan, Nov 25: 6'8" with 8' walls, 8' doors with
+     * 9' ceilings; asked on each new job). Windows line up with it: a new window's head goes here, and a
+     * taller one lowers its sill instead (stacked windows, e.g. in a gable, are the exception).
+     */
+    val doorHeadIn: Float = 80f,
     /** The roof (RoofPlan); null until it is set up on the Roof structural layer. New in 1.0.37. */
     val roof: RoofSettings? = null,
     /**
@@ -284,7 +290,47 @@ data class RoofSettings(
     /** Truss hip ends (Dan, Nov 24): the hip girder sits where the truss is about this tall (4'-6'), on the layout. */
     val girderHeightIn: Float = 60f,
     /** Garage and wing trusses' spacing (Dan: residential trusses 24" o.c.), whatever the house is framed with. */
-    val addOnOcIn: Float = 24f
+    val addOnOcIn: Float = 24f,
+    /**
+     * A flat on top (Dan, Nov 26: the Ransom House): the slopes stop at a flat deck instead of meeting at a ridge.
+     * [flatAtIn] is the deck's elevation; null = at the height of the main gable (the highest full-height wing's ridge),
+     * so its valleys run up to the deck and the hips end there.
+     */
+    val flatTop: Boolean = false,
+    val flatAtIn: Float? = null,
+    /**
+     * A traced roof (Dan, Nov 26: the Ransom House, an 1883 house a rectangle can't describe): when there are areas,
+     * the roof is built from them ([RoofAreas]) instead of the rectangle over the main house.
+     */
+    val areas: List<RoofArea> = emptyList()
+)
+
+/** What a traced roof area's edge is: an eave (the roof slopes down to it), a gable (rake), or open (it runs into another roof). */
+@Serializable
+enum class RoofEdge { EAVE, GABLE, OPEN }
+
+/**
+ * One traced roof area (Dan, Nov 26). [xs]/[ys] its corners in plan inches (the walls' outside faces, x east, y south),
+ * [edges] what each side is (side i runs from corner i to corner i+1). Each eave makes a plane rising at the pitch from
+ * the top of the wall plate (plus the heel); within an area the lowest plane wins (ridges and hips), a flat caps them,
+ * and where areas overlap the highest roof wins (valleys). Null = the house roof's own value.
+ */
+@Serializable
+data class RoofArea(
+    val id: String,
+    val name: String = "",
+    val xs: List<Float> = emptyList(),
+    val ys: List<Float> = emptyList(),
+    val edges: List<RoofEdge> = emptyList(),
+    val pitch: Float? = null,
+    /** Top of its wall plate above the first floor's top of subfloor; null = the house's roof plate. */
+    val wallHeightIn: Float? = null,
+    val overhangIn: Float? = null,
+    val rakeIn: Float? = null,
+    /** A flat on top, this high above where the roof meets the wall (plate plus heel). */
+    val flatRiseIn: Float? = null,
+    /** Or a flat at the ridge of this other area (by name or id): Dan's flat-roof ridge, where the rafters frame in. */
+    val flatAtRidgeOf: String? = null
 )
 
 /** How the eave's underside is finished (Dan: per job, boxed level by default). */
@@ -814,10 +860,12 @@ object LayerEdits {
     fun setBuilding(state: CanvasState, settings: BuildingSettings): Result {
         val bad = validate(settings)
         if (bad != null) return Result(state, bad)
-        return Result(Layers.reconcile(Layers.materialized(state).copy(building = settings)))
+        val moved = DoorHead.follow(state, state.building.doorHeadIn, settings.doorHeadIn)
+        return Result(Layers.reconcile(Layers.materialized(moved).copy(building = settings)))
     }
 
     fun validate(s: BuildingSettings): String? = when {
+        s.doorHeadIn < 60f || s.doorHeadIn > 144f -> "Door height runs 5' to 12'"
         s.subfloorIn < 0f || s.joistDepthIn < 0f || s.sillIn < 0f -> "Sizes can't be negative"
         s.blockCourses < 0 -> "Block courses can't be negative"
         s.courseIn <= 0f -> "A block course needs a height"
@@ -831,5 +879,37 @@ object LayerEdits {
         s.upperFloors.zipWithNext().any { (a, b) -> b.elevationIn <= a.elevationIn } || (s.upperFloors.firstOrNull()?.let { it.elevationIn <= s.datumIn } ?: false) ->
             "Each floor has to sit higher than the one below it"
         else -> null
+    }
+}
+
+/** The job's door head line (Dan, Nov 25): doors and windows line up with it. */
+object DoorHead {
+    private const val NEAR_IN = 0.25f
+
+    /**
+     * When the job's door head changes, the doors and windows that sat on the old line move with it:
+     * a door takes the new height, a window keeps its height and its sill moves. Anything set off the
+     * line by hand (a stacked window, a taller door) stays where it is.
+     */
+    fun follow(state: CanvasState, oldHead: Float, newHead: Float): CanvasState {
+        if (kotlin.math.abs(oldHead - newHead) < 0.01f) return state
+        var any = false
+        val els = state.elements.map { e ->
+            if (e !is DrawingElement.Symbol || e.category != PlanSymbols.DOORS_WINDOWS) return@map e
+            val p = e.properties
+            if (PlanSymbols.isWindow(e.symbolName)) {
+                val sill = p[PlanSymbols.PROP_SILL_IN] ?: return@map e
+                val h = p[PlanSymbols.PROP_HEIGHT_IN] ?: return@map e
+                if (kotlin.math.abs(sill + h - oldHead) > NEAR_IN) return@map e
+                any = true
+                e.copy(properties = p + (PlanSymbols.PROP_SILL_IN to (newHead - h).coerceAtLeast(0f)))
+            } else {
+                val h = p[PlanSymbols.PROP_HEIGHT_IN] ?: return@map e
+                if (kotlin.math.abs(h - oldHead) > NEAR_IN) return@map e
+                any = true
+                e.copy(properties = p + (PlanSymbols.PROP_HEIGHT_IN to newHead))
+            }
+        }
+        return if (any) state.copy(elements = els) else state
     }
 }

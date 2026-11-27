@@ -325,9 +325,10 @@ class ElevationTest {
         return wall to Elevation.build(wall, ElevationSpec(wall.id, ViewerSide.BELOW), Offset(0f, 2000f), state)
     }
 
-    /** Vertical faucet stems (medium lines) starting at [topIn] off the floor. */
-    private fun faucetStems(parts: List<DrawingElement>, topIn: Float) = parts.filterIsInstance<DrawingElement.Line>()
-        .filter { it.strokeWidth == 2f && it.start.x == it.end.x && kotlin.math.abs(it.start.y - (2000f - topIn * inch)) < 0.01f }
+    /** Faucets standing at [topIn] off the floor: their solid bodies (1.2" wide, from the 1" base up), Nov 25. */
+    private fun faucetStems(parts: List<DrawingElement>, topIn: Float) = parts.filterIsInstance<DrawingElement.Rectangle>()
+        .filter { it.strokeWidth == 2f && kotlin.math.abs(it.size.width - 1.2f * inch) < 0.01f &&
+            kotlin.math.abs(it.topLeft.y + it.size.height - (2000f - (topIn + 1f) * inch)) < 0.01f }
 
     @Test
     fun `a vanity gets its own top at its own height, apart from the kitchen counter`() {

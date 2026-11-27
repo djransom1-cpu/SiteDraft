@@ -38,15 +38,20 @@ object FramingLayout {
      * side and a third laid flat against the face the other wall comes in on, beside the pair, centred on the meeting
      * wall: nailing for the drywall on both sides of it. [centerPx] from the wall's start (west / north end); [side] the
      * face in the wall's own drawing frame: +1 its +y face (south of a west-east wall, west of a north-south one), -1 the other.
+     *
+     * A corner buck (Dan, Nov 25, an L): where a wall butts into this one at its end, this wall keeps its end stud and
+     * gets a second stud turned flat right beside it on the face the other wall comes in on, nailed to it in an L. The
+     * flat stud runs past the other wall's inside face, so the other wall's end stud nails into it and the inside
+     * corner has drywall backing on both walls. [corner] -1 at the wall's start, +1 at its end, 0 for a T.
      */
-    data class Buck(val centerPx: Float, val side: Int)
+    data class Buck(val centerPx: Float, val side: Int, val corner: Int = 0)
 
     private var bucksFor: List<DrawingElement>? = null
     private var bucks: Map<String, List<Buck>> = emptyMap()
 
     /**
      * Every framed wall's bucks, by wall id. A wall whose end touches another's face (within an inch) away from that
-     * wall's ends makes a buck there; at a corner (an L) the two end studs already make the corner buck.
+     * wall's ends makes a buck there; one at the wall's end makes a corner buck (an L: the end stud and a flat one).
      */
     fun bucks(state: CanvasState): Map<String, List<Buck>> {
         val els = state.elements
@@ -86,9 +91,13 @@ object FramingLayout {
                     }
                 }
                 if (side == 0) continue
-                // Near the wall's end it's a corner: the end studs make that buck.
-                if (c < half + 1.5f * inch || c > len - half - 1.5f * inch) continue
-                out.getOrPut(w.id) { mutableListOf() } += Buck(c, side)
+                // Near the wall's end it's a corner (an L): the end stud and a flat stud beside it.
+                val corner = when {
+                    c < half + 1.5f * inch -> -1
+                    c > len - half - 1.5f * inch -> 1
+                    else -> 0
+                }
+                out.getOrPut(w.id) { mutableListOf() } += Buck(c, side, corner)
             }
         }
         bucksFor = els

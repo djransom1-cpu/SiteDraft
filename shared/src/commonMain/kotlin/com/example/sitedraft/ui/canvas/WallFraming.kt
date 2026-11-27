@@ -72,7 +72,7 @@ object WallFraming {
             if (PlanSymbols.isDoor(o.symbolName)) { val mid = (a1 + a2) / 2f; a1 = mid - o.size.width / 2f; a2 = mid + o.size.width / 2f }
             val widthIn = (a2 - a1) / inch
             val window = PlanSymbols.isWindow(o.symbolName)
-            val h = o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: if (window) 48f else PlanSymbols.DOOR_HEIGHT_IN
+            val h = o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: if (window) 48f else state.building.doorHeadIn
             val (rw, rh) = Schedules.ruleRoughOpening(o, widthIn, h, exterior)
             val roW = o.properties[Schedules.PROP_RO_W] ?: rw
             val roH = o.properties[Schedules.PROP_RO_H] ?: rh

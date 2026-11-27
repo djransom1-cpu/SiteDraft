@@ -83,6 +83,7 @@ object Shower {
     const val GLASS = "shGlass"         // 0 door + panel, 1 door only, 2 sliding, 3 fixed panel + opening, 4 curtain
     const val DOOR_W = "shDoorW"        // door width, or the opening beside a walk-in panel
     const val DOOR_SIDE = "shDoorSide"  // 0 door/opening at the left end, 1 at the right end
+    const val HINGE_ON = "shHingeOn"    // door + panel: 0 hinged on the wall, 1 hinged off the fixed panel (Dan, Nov 25)
     const val CURB_H = "shCurbH"        // 0 = curbless
     const val CURB_W = "shCurbW"
     const val GLASS_H = "shGlassH"
@@ -106,7 +107,7 @@ object Shower {
     const val BENCH_D = "shBenchD"
 
     val keys = setOf(
-        GLASS, DOOR_W, DOOR_SIDE, CURB_H, CURB_W, GLASS_H, TILE_H, CEILING, TILE_IN, TILE_LEN, TILE_PAT, FLOOR_TILE, FLOOR_TILE_LEN, DRAIN,
+        GLASS, DOOR_W, DOOR_SIDE, HINGE_ON, CURB_H, CURB_W, GLASS_H, TILE_H, CEILING, TILE_IN, TILE_LEN, TILE_PAT, FLOOR_TILE, FLOOR_TILE_LEN, DRAIN,
         VALVE_WALL, VALVE_H, HEAD_H, NICHE_WALL, NICHE_H, NICHE_W, NICHE_T, BENCH_WALL, BENCH_H, BENCH_D
     )
 
@@ -120,6 +121,7 @@ object Shower {
             GLASS to if (t == Type.WALK_IN) 3f else 0f,
             DOOR_W to 24f,
             DOOR_SIDE to 1f,
+            HINGE_ON to 0f,
             CURB_H to if (t == Type.WALK_IN) 0f else 4f,
             CURB_W to 4.5f,
             GLASS_H to 72f,
@@ -164,10 +166,14 @@ object Shower {
             3 -> if (atLeft) listOf(Panel(Pane.OPEN, 0f, dw), Panel(Pane.FIXED, dw, lengthIn))
             else listOf(Panel(Pane.FIXED, 0f, lengthIn - dw), Panel(Pane.OPEN, lengthIn - dw, lengthIn))
             4 -> listOf(Panel(Pane.CURTAIN, 0f, lengthIn))
-            // Door + panel: the door at the chosen end, hinged on the wall side.
-            else -> if (dw >= lengthIn - 1f) listOf(Panel(Pane.DOOR, 0f, lengthIn, hingeAtFrom = atLeft))
-            else if (atLeft) listOf(Panel(Pane.DOOR, 0f, dw, hingeAtFrom = true), Panel(Pane.FIXED, dw, lengthIn))
-            else listOf(Panel(Pane.FIXED, 0f, lengthIn - dw), Panel(Pane.DOOR, lengthIn - dw, lengthIn, hingeAtFrom = false))
+            // Door + panel: the door at the chosen end, hinged on the wall side, or off the fixed panel
+            // (latching at the wall) when HINGE_ON is 1 (Dan, Nov 25).
+            else -> {
+                val onPanel = code(s, HINGE_ON) == 1
+                if (dw >= lengthIn - 1f) listOf(Panel(Pane.DOOR, 0f, lengthIn, hingeAtFrom = atLeft))
+                else if (atLeft) listOf(Panel(Pane.DOOR, 0f, dw, hingeAtFrom = !onPanel), Panel(Pane.FIXED, dw, lengthIn))
+                else listOf(Panel(Pane.FIXED, 0f, lengthIn - dw), Panel(Pane.DOOR, lengthIn - dw, lengthIn, hingeAtFrom = onPanel))
+            }
         }
     }
 
