@@ -67,7 +67,7 @@ async function main() {
   await Promise.all([server.connect(a), client.connect(b)]);
 
   const tools = (await client.listTools()).tools.map((t) => t.name);
-  for (const t of ["whoami", "list_projects", "read_drawing", "create_project", "draw_walls", "place_opening", "place_cabinets", "import_pdf", "create_upload_link", "undo_last_change"])
+  for (const t of ["whoami", "list_projects", "read_drawing", "create_project", "copy_project", "draw_walls", "place_opening", "place_cabinets", "import_pdf", "create_upload_link", "undo_last_change"])
     assert(tools.includes(t), `tool ${t}`);
 
   // A project the app saved (its own encoding, with a big packed colour) reads and round-trips losslessly.
@@ -144,6 +144,16 @@ async function main() {
   assert.strictEqual(ov.fromLeftOrTopInsideCornerIn, dbl.fromLeftOrTopInsideCornerIn);
   await call(client, "undo_last_change", { project: "Ransom Kitchen" });
   assert((await call(client, "place_cabinets", { project: "Ransom Kitchen", wall_id: east.id, items: [{ code: "OV33", oven: "triple" }] })).error.includes("oven"));
+
+  // A diagonal wall corner at either end of a run has both arms on the walls (Nov 25 bug: at the right-hand end it faced
+  // the wrong way). Drawn with its arms back and left, so at the right end it turns a quarter clockwise. Undone after.
+  for (const [from, want] of [["right", 90], ["left", 0]]) {
+    await call(client, "place_cabinets", { project: "Ransom Kitchen", wall_id: north.id, from, items: ["WDC2430"] });
+    const wd = (await call(client, "read_drawing", { project: "Ransom Kitchen" })).cabinetsAndAppliances.filter((c) => c.code === "WDC2430");
+    assert.strictEqual(wd.length, 1, `one WDC2430 from the ${from}`);
+    assert.strictEqual(((wd[0].rotation % 360) + 360) % 360, want, `WDC2430 from the ${from} end`);
+    await call(client, "undo_last_change", { project: "Ransom Kitchen" });
+  }
 
   d = await call(client, "read_drawing", { project: "Ransom Kitchen" });
   const codes = d.cabinetsAndAppliances.map((c) => c.code || c.name);
@@ -330,6 +340,14 @@ async function main() {
   assert.strictEqual((await call(client, "restore_project", { project: "L" })).restored, "L");
   assert.strictEqual((await call(client, "read_drawing", { project: "L" })).walls.length, 8);
   assert(Array.isArray(await call(client, "list_projects", {})));
+  // change_history and undo several steps (Nov 28).
+  const hist = await call(client, "change_history", { project: "Ransom Kitchen" });
+  assert(hist.changes.length >= 2 && hist.changes[0].step === 1 && typeof hist.changes[0].tool === "string");
+  // copy_project (Nov 28): the copy has the drawing under its new name; the name can't be taken twice.
+  const cp = await call(client, "copy_project", { project: "L", new_name: "L copy" });
+  assert.strictEqual(cp.to, "L copy");
+  assert.strictEqual((await call(client, "read_drawing", { project: "L copy" })).walls.length, 8);
+  assert((await call(client, "copy_project", { project: "L", new_name: "L copy" })).error.includes("already"));
 
   // PDF import inline.
   const pdf = fs.readFileSync(path.join(__dirname, "plan.pdf"));

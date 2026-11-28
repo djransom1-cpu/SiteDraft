@@ -203,7 +203,7 @@ private fun SymbolCategory(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { symbol ->
                             Box(modifier = Modifier.weight(1f)) {
-                                SymbolItem(symbol) { onEvent(DrawingEvent.SelectSymbol(symbol, category)) }
+                                SymbolItem(symbol, category) { onEvent(DrawingEvent.SelectSymbol(symbol, category)) }
                             }
                         }
                         if (row.size == 1) Spacer(modifier = Modifier.weight(1f))
@@ -216,7 +216,7 @@ private fun SymbolCategory(
 }
 
 @Composable
-private fun SymbolItem(name: String, onClick: () -> Unit) {
+private fun SymbolItem(name: String, category: String, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -227,15 +227,8 @@ private fun SymbolItem(name: String, onClick: () -> Unit) {
             modifier = Modifier.padding(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(Color.LightGray.copy(alpha = 0.3f), MaterialTheme.shapes.small),
-                contentAlignment = Alignment.Center
-            ) {
-                // Placeholder for symbol icon
-                Text(text = name.take(1), style = MaterialTheme.typography.bodySmall)
-            }
+            // The item itself, as drawn on the plan (Nov 28; was its first letter).
+            SymbolThumb(name, category, Modifier.size(56.dp))
             Spacer(modifier = Modifier.height(4.dp))
             Text(text = name, style = MaterialTheme.typography.bodySmall)
         }

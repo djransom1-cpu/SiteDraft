@@ -744,7 +744,18 @@ function placeCabinets(state, a) {
     const along = (a1 + a2) / 2;
     const across = faceCoord + outward * d / 2;
     const c = horizontal ? { x: along, y: across } : { x: across, y: along };
-    const sym = M.makeSymbol({ name: it.name, category: it.cat, center: c, widthPx: w, depthPx: d, rotation, color,
+    // A diagonal wall corner (WDC) is drawn with its arms on the back and the left (PlanSymbols): at the end of the stretch
+    // where its left arm would point away from the corner, it turns a quarter clockwise so both arms are on the walls
+    // (Nov 25 bug: the WDC2430 at the right-hand end of a run faced the wrong way).
+    let rot = rotation;
+    if (it.name === "Upper Corner 24\"") {
+      const atStart = Math.abs(a1 - s) <= inch, atEnd = Math.abs(a2 - e) <= inch;
+      const left = { 0: [-1, 0], 90: [0, -1], 180: [1, 0], 270: [0, 1] }[rotation];
+      const axis = horizontal ? [1, 0] : [0, 1];
+      const toward = atEnd && !atStart ? 1 : (atStart && !atEnd ? -1 : 0);
+      if (toward !== 0 && (left[0] * axis[0] + left[1] * axis[1]) * toward < 0) rot = (rotation + 90) % 360;
+    }
+    const sym = M.makeSymbol({ name: it.name, category: it.cat, center: c, widthPx: w, depthPx: d, rotation: rot, color,
       properties: { widthInches: it.widthIn, depthInches: it.depthIn, ...it.props } });
     made.push(sym);
     if (it.sink) {

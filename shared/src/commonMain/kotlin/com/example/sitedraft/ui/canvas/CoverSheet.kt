@@ -18,9 +18,10 @@ import kotlin.math.max
 object CoverSheet {
 
     /** One row: a label (or number) and its text; [symbol] draws a legend symbol in the label column instead. */
-    data class Row(val label: String, val text: String, val symbol: LegendSymbol? = null, /** An electrical or HVAC symbol to draw (Mep). */ val mep: String? = null)
+    data class Row(val label: String, val text: String, val symbol: LegendSymbol? = null, /** An electrical or HVAC symbol to draw (Mep). */ val mep: String? = null,
+        /** A hatch swatch to draw (Nov 28: the hatches the drawing uses). */ val fill: Fill? = null)
 
-    enum class LegendSymbol { DOOR_TAG, WINDOW_TAG, SECTION_CUT, DETAIL_BUBBLE, VIEW_TITLE, NORTH_ARROW, ROOM_DIVIDER }
+    enum class LegendSymbol { DOOR_TAG, WINDOW_TAG, SECTION_CUT, DETAIL_BUBBLE, VIEW_TITLE, NORTH_ARROW, ROOM_DIVIDER, LEVEL_MARK }
 
     fun title(kind: SheetViewKind): String = when (kind) {
         SheetViewKind.SHEET_INDEX -> "SHEET INDEX"
@@ -48,7 +49,7 @@ object CoverSheet {
     fun rows(kind: SheetViewKind, state: CanvasState): List<Row> = when (kind) {
         SheetViewKind.SHEET_INDEX -> sheetIndex(state)
         SheetViewKind.PROJECT_DATA -> projectData(state)
-        SheetViewKind.LEGEND -> legend() + wallLegend(state) + mepLegend(state)
+        SheetViewKind.LEGEND -> legend() + wallLegend(state) + hatchLegend(state) + mepLegend(state)
         SheetViewKind.COVER_TITLE -> emptyList()
         SheetViewKind.PAINT_SCHEDULE -> paintSchedule(state)
         else -> generalNotes(state)
@@ -89,6 +90,21 @@ object CoverSheet {
         return rows + (if (divider) listOf(Row("", "Room divider: the room and its finishes change here; not a wall", LegendSymbol.ROOM_DIVIDER)) else emptyList())
     }
 
+    /**
+     * The hatches the drawing uses (Dan's legend card, Nov 28): each pattern at each size once, drawn as a swatch, with its
+     * name and size ("Tile 12\" x 24\""). Generated parts (a wing's slab, a footing's concrete) count too: they're on the sheets.
+     */
+    fun hatchLegend(state: CanvasState): List<Row> {
+        val k = state.inchesToPx(1f).takeIf { it > 0f } ?: return emptyList()
+        val fills = state.elements.mapNotNull { it.fillOrNull() }.filter { it.pattern != FillPattern.NONE && it.pattern != FillPattern.SOLID }
+        fun r(v: Float) = kotlin.math.round(v * 4f) / 4f
+        return fills.distinctBy { Triple(it.pattern, r(it.spacing / k), r(it.length / k)) }.sortedBy { it.pattern.ordinal }.map { f ->
+            val sized = f.pattern in setOf(FillPattern.TILE, FillPattern.PLANKS, FillPattern.HERRINGBONE, FillPattern.HEXAGON, FillPattern.BRICK)
+            val size = if (!sized) "" else " " + inch(r(f.spacing / k)) + (if (f.length > 0f) " x " + inch(r(f.length / k)) else "")
+            Row("", f.pattern.label + size, fill = f)
+        }
+    }
+
     fun mepLegend(state: CanvasState): List<Row> {
         val used = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { Mep.isMep(it) }.map { it.symbolName }.toSet()
         return (Mep.electrical + Mep.hvac + Mep.plumbing).filter { it in used }.map { n ->
@@ -103,6 +119,7 @@ object CoverSheet {
         Row("", "Section cut: section number over the sheet it is drawn on", LegendSymbol.SECTION_CUT),
         Row("", "Detail callout: detail number over the sheet it is drawn on", LegendSymbol.DETAIL_BUBBLE),
         Row("", "Drawing title: drawing number over this sheet's number", LegendSymbol.VIEW_TITLE),
+        Row("", "Level mark: the level's name and elevation (FIRST FLOOR 100'-0\"), on the elevations and sections", LegendSymbol.LEVEL_MARK),
         Row("", "North", LegendSymbol.NORTH_ARROW),
         Row("O.C.", "On center"),
         Row("T.O.", "Top of (T.O. SUBFLOOR, T.O. PLATE)"),
@@ -238,12 +255,24 @@ object CoverSheet {
             val rh = rowIn(kind, r) * k
             if (r.symbol != null) drawSymbol(r.symbol, Offset(topLeft.x + lw / 2f, y + rh / 2f), rh * 0.8f, line)
             else if (r.mep != null) drawMep(r.mep, Offset(topLeft.x + lw / 2f, y + rh / 2f), rh * 0.8f, line)
+            else if (r.fill != null) drawSwatch(r.fill, Offset(topLeft.x + lw / 2f, y + rh / 2f), rh * 0.8f, line)
             else drawPageText(r.label, Offset(topLeft.x + 0.08f * k, y + (rh - text * 1.2f) / 2f), text * 0.95f, black, bold = true, maxWidth = lw - 0.1f * k)
             drawPageText(r.text, Offset(topLeft.x + lw + 0.08f * k, y + (rh - text * 1.2f) / 2f), text * 0.95f, black, bold = false, maxWidth = w - lw - 0.12f * k)
             y += rh
             drawLine(black, Offset(topLeft.x, y), Offset(topLeft.x + w, y), strokeWidth = line)
         }
         drawLine(black, Offset(topLeft.x + lw, topLeft.y + HEAD_IN * k), Offset(topLeft.x + lw, topLeft.y + h), strokeWidth = line)
+    }
+
+    /** A hatch swatch [d] tall at [c]: the pattern at a size that shows a few repeats, in a box. */
+    private fun DrawScope.drawSwatch(fill: Fill, c: Offset, d: Float, line: Float) {
+        val box = androidx.compose.ui.geometry.Rect(c.x - d, c.y - d * 0.45f, c.x + d, c.y + d * 0.45f)
+        val s = box.height / 3.5f
+        val ratio = s / fill.spacing.coerceAtLeast(0.01f)
+        val f = fill.copy(spacing = s, length = fill.length * ratio, lineWidth = line * 0.8f, color = Color.Black)
+        val path = Path().apply { addRect(box) }
+        drawShapeFill(path, box, f, Color.Black)
+        drawRect(Color.Black, box.topLeft, box.size, style = Stroke(line))
     }
 
     /** An electrical or HVAC symbol fitted in a [d] square at [c], drawn as the plan draws it. */
@@ -296,6 +325,12 @@ object CoverSheet {
                 if (sym == LegendSymbol.VIEW_TITLE) {
                     drawLine(black, Offset(bc.x + r, bc.y + r * 0.2f), Offset(bc.x + d * 0.95f, bc.y + r * 0.2f), strokeWidth = line * 1.5f)
                 }
+            }
+            LegendSymbol.LEVEL_MARK -> {
+                // As the exterior elevations draw it: a short line at the level, its name and elevation beside it.
+                drawLine(black, Offset(c.x - d * 0.75f, c.y), Offset(c.x - d * 0.3f, c.y), strokeWidth = line * 1.2f)
+                val small = r * 0.5f
+                drawPageText("100'-0\"", Offset(c.x - d * 0.25f, c.y - small * 0.62f), small, black, bold = true, maxWidth = d)
             }
             LegendSymbol.ROOM_DIVIDER -> {
                 // One dashed line, as on the plan.

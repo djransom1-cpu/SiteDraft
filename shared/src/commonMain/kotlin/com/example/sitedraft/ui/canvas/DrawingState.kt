@@ -76,7 +76,18 @@ object SizeSerializer : KSerializer<Size> {
 object ColorSerializer : KSerializer<Color> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Color", PrimitiveKind.LONG)
     override fun serialize(encoder: Encoder, value: Color) = encoder.encodeLong(value.value.toLong())
-    override fun deserialize(decoder: Decoder): Color = Color(decoder.decodeLong().toULong())
+    override fun deserialize(decoder: Decoder): Color = fromLong(decoder.decodeLong())
+
+    /**
+     * A saved colour, read safely (Nov 28: a colour written as a plain ARGB number, not the app's packed form, crashed
+     * the app on opening with "Index 60 out of bounds for length 20"). The app's own colours are packed sRGB (the ARGB
+     * in the top 32 bits); a plain 32-bit ARGB number is read as that; anything else that won't make a colour is black.
+     */
+    fun fromLong(v: Long): Color {
+        if (v and 0xFFFFFFFFL == 0L) return Color(v.toULong())
+        if (v in Int.MIN_VALUE.toLong()..0xFFFFFFFFL) return Color(v.toInt())
+        return runCatching { Color(v.toULong()).also { it.colorSpace; it.red } }.getOrDefault(Color.Black)
+    }
 }
 
 /** Images are stored in the project file as base64 PNG, the same on every platform. */

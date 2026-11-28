@@ -182,6 +182,18 @@ function buildServer(ctx) {
       return json({ ...out.result, note: "Open it in Site Draft from the project list (refresh the list if it isn't there yet)." });
     });
 
+  reg("copy_project", "Copies a project under a new name (a practice copy before trying something, or a new job started from an old one). " +
+    "The original is not changed; the copy appears in the app's project list on the next sync.",
+    { project: z.string(), new_name: z.string() },
+    async (a) => {
+      const src = await S.readProject(ctx.db, ctx.uid, a.project);
+      if (!src) throw new M.UserError(`No project named "${a.project}". Use list_projects to see the names.`);
+      const copy = { ...src.state, projectName: a.new_name };
+      const out = await S.changeProject(ctx.db, ctx.uid, a.new_name, "copy_project", (s) => ({ state: s, result: { copied: a.project, to: a.new_name } }),
+        { create: copy, mustBeNew: true });
+      return json({ ...out.result, elements: (copy.elements || []).length, note: "Open it in Site Draft from the project list (refresh the list if it isn't there yet)." });
+    });
+
   // ------------------------------------------------------------------ walls, openings, cabinets
 
   reg("draw_walls",
@@ -475,10 +487,22 @@ function buildServer(ctx) {
   reg("move_to_layer", "Puts elements (by id, from read_drawing) on a layer. Nothing moves on the drawing.",
     { project: Project, ids: z.array(z.string()).min(1), layer: z.string() }, change("move_to_layer", L.moveToLayer));
 
-  reg("undo_last_change", "Puts the project back the way it was before the connector's last change (repeat to go further back).", { project: Project }, async (a) => {
-    const out = await S.undoLast(ctx.db, ctx.uid, a.project);
-    return json({ project: a.project, ...out.result, saved: new Date(out.updatedAt).toISOString() });
+  reg("undo_last_change", "Puts the project back the way it was before the connector's last change; steps (default 1) goes further back " +
+    "(change_history lists what each step was).", { project: Project, steps: z.number().int().min(1).max(20).optional() }, async (a) => {
+    const undid = []; let out = null;
+    for (let i = 0; i < (a.steps || 1); i++) {
+      try { out = await S.undoLast(ctx.db, ctx.uid, a.project); } catch (e) { if (!undid.length) throw e; break; }
+      undid.push({ undid: out.result.undid, madeAt: out.result.madeAt });
+    }
+    return json(undid.length === 1 ? { project: a.project, ...out.result, saved: new Date(out.updatedAt).toISOString() }
+      : { project: a.project, undid, saved: new Date(out.updatedAt).toISOString() });
   });
+
+  reg("change_history", "The connector's saved changes to a project, newest first (what tool made each and when): what undo_last_change can step back through.",
+    { project: Project }, async (a) => {
+      const all = await S.historyFor(ctx.db, ctx.uid, a.project);
+      return json({ project: a.project, changes: all.map((h, i) => ({ step: i + 1, tool: h.tool, at: new Date(h.at).toISOString() })) });
+    });
 
   // ------------------------------------------------------------------ PDF plans
 

@@ -82,7 +82,64 @@ object Wings {
 
     fun wings(state: CanvasState): List<DrawingElement.Symbol> {
         val of = Layers.resolver(state)
-        return state.elements.filterIsInstance<DrawingElement.Symbol>().filter { isWing(it) && !DerivedLayers.isGenerated(it) && of(it).id == Building.FLOOR1_PLAN }
+        val placed = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { isWing(it) && !DerivedLayers.isGenerated(it) && of(it).id == Building.FLOOR1_PLAN }
+        return placed.ifEmpty { implied(state) }
+    }
+
+    /** The id start of a wing worked out from the outline (never saved). */
+    const val AUTO_PREFIX = "auto-wing:"
+    fun isAuto(e: DrawingElement) = e.id.startsWith(AUTO_PREFIX)
+
+    private var autoKey: Any? = null
+    private var autoScale = 0f
+    private var autoRoof: Any? = null
+    private var auto: List<DrawingElement.Symbol> = emptyList()
+    private var autoBoxes: List<Rect> = emptyList()
+
+    /** What the main house leaves out for the wings on the plan's own walls: an automatic wing's whole box (its walls overlap the house's at a jog). */
+    fun cutouts(state: CanvasState): List<Rect> {
+        val d = drawnWallWings(state)
+        return if (d.isNotEmpty() && d.all { isAuto(it) }) autoBoxes else d.map { it.boundingRect() }
+    }
+
+    /**
+     * Wings worked out from the plan (Dan, Nov 28: Benjeman's roof came out one square over two offset boxes): a house
+     * drawn wall by wall, with no 2x6 shell and no wings placed, whose outline is more than one box ([RoofBoxes]). The
+     * biggest box is the main house; each other box is a wing on the walls already drawn, full height, its far end
+     * matching the house (gable or hip). Worked out each time, never saved, so moving a wall moves the roof.
+     */
+    fun implied(state: CanvasState): List<DrawingElement.Symbol> {
+        val s = state.building
+        if (s.roof == null && s.gradeExposureIn == null) return emptyList()
+        val k = state.inchesToPx(1f)
+        if (autoKey === state.elements && autoScale == k && autoRoof === s.roof) return auto
+        val of = Layers.resolver(state)
+        val shell = state.elements.any { it is DrawingElement.Symbol && it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL &&
+            of(it).id == Building.FLOOR1_PLAN && !DerivedLayers.isGenerated(it) }
+        // The main house as the roof will see it: the outside walls with the wing boxes taken out (as HouseOutline.mainBody);
+        // each wing is then cut back to its face, so a wall's thickness of overlap at a jog doesn't keep it off the house.
+        val boxes = if (shell) emptyList() else RoofBoxes.of(state)
+        val extra = boxes.drop(1)
+        val outside = HouseOutline.planWalls(state).filter { HouseOutline.isExterior(it, state) }
+        val pieces = outside.flatMap { HouseOutline.minus(FloorPlan.bounds(it), extra) }.filter { it.width > 0.01f && it.height > 0.01f }
+        val main = if (pieces.isEmpty()) null else Rect(pieces.minOf { it.left }, pieces.minOf { it.top }, pieces.maxOf { it.right }, pieces.maxOf { it.bottom })
+        fun cut(b: Rect): Rect {
+            main ?: return b
+            val (side, _) = Porches.sideOf(b, main)
+            return when (side) {
+                Porches.Side.TOP -> if (b.bottom > main.top) Rect(b.left, b.top, b.right, main.top) else b
+                Porches.Side.BOTTOM -> if (b.top < main.bottom) Rect(b.left, main.bottom, b.right, b.bottom) else b
+                Porches.Side.LEFT -> if (b.right > main.left) Rect(b.left, b.top, main.left, b.bottom) else b
+                Porches.Side.RIGHT -> if (b.left < main.right) Rect(main.right, b.top, b.right, b.bottom) else b
+            }
+        }
+        val out = extra.map { cut(it) }.filter { it.width > 0f && it.height > 0f }.mapIndexed { i, b ->
+            DrawingElement.Symbol(id = "$AUTO_PREFIX$i", symbolName = NAME, category = CATEGORY, center = b.center, size = b.size,
+                color = state.currentColor, layerId = Building.FLOOR1_PLAN,
+                properties = defaults() + mapOf(WALLS to 1f, FULL to 1f, "widthInches" to b.width / k, "depthInches" to b.height / k))
+        }
+        autoKey = state.elements; autoScale = k; autoRoof = s.roof; auto = out; autoBoxes = extra
+        return out
     }
 
     /** The wing in its own frame: u along the house wall (pu1..pu2), v out from the house face (0..depth). */

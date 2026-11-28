@@ -17,7 +17,7 @@ import kotlin.math.min
  */
 object HouseOutline {
     /** Half the widest gap between walls that still counts as closed, inches. */
-    private const val GAP_IN = 1f
+    internal const val GAP_IN = 1f
 
     /** The first-floor plan walls the outline is made from (not generated parts). */
     fun planWalls(state: CanvasState): List<DrawingElement.Symbol> {
@@ -113,7 +113,7 @@ object HouseOutline {
      * the plan's own walls taken out (the wing stands for that part). Null with no outside walls.
      */
     fun mainBody(state: CanvasState, walls: List<DrawingElement.Symbol>): Rect? {
-        val cutouts = Wings.drawnWallWings(state).map { it.boundingRect() }
+        val cutouts = Wings.cutouts(state)
         var l = Float.MAX_VALUE; var t = Float.MAX_VALUE; var r = -Float.MAX_VALUE; var b = -Float.MAX_VALUE
         for (w in walls) {
             for (piece in minus(FloorPlan.bounds(w), cutouts)) {

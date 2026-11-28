@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -47,7 +48,9 @@ fun SizedPicker(groups: List<PlanSymbols.SizedGroup>, category: String, state: C
             for (g in groups) FilterChip(
                 selected = open == g.label,
                 onClick = { open = if (open == g.label) null else g.label },
-                label = { Text(g.label) }
+                label = { Text(g.label) },
+                // The kind's picture (Nov 28): its first stock size, as drawn on the plan.
+                leadingIcon = { SymbolThumb(g.sizes.first(), category, Modifier.size(30.dp)) }
             )
         }
         val g = groups.firstOrNull { it.label == open } ?: return@Column

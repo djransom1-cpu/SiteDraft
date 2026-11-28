@@ -468,7 +468,7 @@ fun DrawScope.drawDocumentContents(state: CanvasState, selectedElementId: String
 /** How strongly a faint layer (the floor plan under the active layer, or one turned on) shows (0..1). */
 const val FAINT_ALPHA = 0.3f
 
-private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean = false, state: CanvasState) {
+internal fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean = false, state: CanvasState) {
     val zoom = state.zoom
     rotate(
         element.rotation,
