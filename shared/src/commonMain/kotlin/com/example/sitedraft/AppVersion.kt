@@ -6,5 +6,5 @@ package com.example.sitedraft
  * AppVersionTest fails the build when they drift apart.
  */
 object AppVersion {
-    const val NAME = "1.0.39"
+    const val NAME = "1.0.40"
 }
