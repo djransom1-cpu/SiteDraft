@@ -21,7 +21,7 @@ class DesktopPrintTest {
     @Test
     fun `the exported PDF page is the paper size in points`() {
         val root = Files.createTempDirectory("sitedraft-print").toFile()
-        val platform = DesktopPlatform(root)
+        val platform = DesktopPlatform(root, openExports = false)
         val message = platform.exportPage("sheet.pdf", letterLandscape) { drawRect(Color.Red) }
         val file = File(root, "exports/sheet.pdf")
         assertTrue(message ?: "", file.exists())

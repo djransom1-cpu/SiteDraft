@@ -52,7 +52,10 @@ actual fun randomId(): String = UUID.randomUUID().toString()
 /** Projects live in the user's Documents/SiteDraft folder; settings in the Java preferences store. */
 class DesktopPlatform(
     // The test copy (TestCopy) keeps its own files, so testing never touches the real projects on disk.
-    private val root: File = File(System.getProperty("user.home"), if (TestCopy.active) "Documents/SiteDraft Test" else "Documents/SiteDraft")
+    private val root: File = File(System.getProperty("user.home"), if (TestCopy.active) "Documents/SiteDraft Test" else "Documents/SiteDraft"),
+    // Open an exported PDF in the PC's viewer. Off in the tests (Dan, Nov 28): the print test opened its temp PDF in
+    // Edge after every build, then deleted it, so Edge popped up "File not found".
+    private val openExports: Boolean = true
 ) : Platform {
     override val name = "desktop"
     override val storage: ProjectStorage = object : ProjectStorage {
@@ -86,7 +89,7 @@ class DesktopPlatform(
         val exportDir = File(root, "exports").apply { mkdirs() }
         val file = File(exportDir, fileName)
         file.writeBytes(PdfWriter.imagePages(images))
-        runCatching { if (Desktop.isDesktopSupported()) Desktop.getDesktop().open(file) }
+        if (openExports) runCatching { if (Desktop.isDesktopSupported()) Desktop.getDesktop().open(file) }
         return "Saved ${pages.size} sheets to ${file.absolutePath}"
     }
 
@@ -148,7 +151,7 @@ class DesktopPlatform(
 
     override fun exportPage(fileName: String, page: PageSpec, draw: DrawScope.() -> Unit): String? {
         val file = writePdf(fileName, page, renderPage(page, draw))
-        runCatching { if (Desktop.isDesktopSupported()) Desktop.getDesktop().open(file) }
+        if (openExports) runCatching { if (Desktop.isDesktopSupported()) Desktop.getDesktop().open(file) }
         return "Saved ${file.absolutePath}"
     }
 

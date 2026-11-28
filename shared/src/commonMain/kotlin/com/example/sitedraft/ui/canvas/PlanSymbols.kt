@@ -60,7 +60,9 @@ object PlanSymbols {
         "Sofa 84\"", "Loveseat 60\"", "Armchair", "Recliner",
         "Coffee Table 48x24", "End Table 24\"", "Kitchen Table 36x60", "Round Table 48\"", "Dining Chair",
         "Queen Bed", "King Bed", "Twin Bed", "Nightstand", "Dresser 60\"",
-        "Desk 60x30", "Office Chair", "Wall Unit 72\"", "Bookcase 36\"", "TV Stand 60\"", "TV 65\""
+        "Desk 60x30", "Office Chair", "Wall Unit 72\"", "Bookcase 36\"", "TV Stand 60\"",
+        "TV 43\"", "TV 50\"", "TV 55\"", "TV 65\"", "TV 75\"", "TV 85\"",
+        Mirrors.RECT, Mirrors.OVAL, Mirrors.VANITY
     )
 
     /** Outdoor kitchen equipment, by manufacturer spec where known. */
@@ -312,12 +314,18 @@ object PlanSymbols {
         "Wall Unit 72\"" to Pair(72f, 20f),
         "Bookcase 36\"" to Pair(36f, 12f),
         "TV Stand 60\"" to Pair(60f, 18f),
+        // TVs (Nov 28): a 16:9 screen is 0.872 of its diagonal wide, plus a thin bezel.
+        "TV 43\"" to Pair(38f, 3f),
+        "TV 50\"" to Pair(44f, 3f),
+        "TV 55\"" to Pair(48.5f, 3f),
         "TV 65\"" to Pair(57f, 3f),
+        "TV 75\"" to Pair(66f, 3f),
+        "TV 85\"" to Pair(74.5f, 3f),
         // Lynx built-in 36" (Lynx "Built-In 36 w/ dimensions" drawing, 1/20/10): 36" wide, 26 3/8"
         // deep overall with the front 1 3/4" overhanging the island face; island cutout 35" x 22",
         // 10 1/8" deep; front panel 11" below the counter; hood 14 7/8" above it closed, 23 1/2" open.
         LYNX_36_GRILL to Pair(36f, LYNX_36_DEPTH)
-    ) + Shower.footprints + Stairs.footprints + Guards.footprints + Appliances.footprints + Structure.footprints + Mep.footprints
+    ) + Shower.footprints + Stairs.footprints + Guards.footprints + Appliances.footprints + Structure.footprints + Mep.footprints + Mirrors.footprints
 
     const val LYNX_36_DEPTH = 26.375f
     const val LYNX_36_FRONT_LIP = 1.75f
@@ -1373,6 +1381,10 @@ private fun DrawScope.drawFurniture(
         name.startsWith("TV") -> {
             drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
             label("TV", accentColor, textSize, Offset(0f, hh + inch * 3f))
+        }
+        Mirrors.isMirror(name) -> {
+            drawRect(color = lineColor, topLeft = Offset(-hw, -hh), size = Size(w, h), style = line)
+            label(if (name == Mirrors.OVAL) "OVAL MIRROR" else "MIRROR", accentColor, textSize, Offset(0f, hh + inch * 3f))
         }
         else -> box(name)
     }

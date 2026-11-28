@@ -69,7 +69,7 @@ fun SheetsScreen(
         color = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Sheets", style = MaterialTheme.typography.headlineSmall)
                 FilterChip(selected = false, onClick = onClose, label = { Text("Model") })
@@ -85,44 +85,9 @@ fun SheetsScreen(
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Back to the drawing") }
             }
-            Row(Modifier.fillMaxWidth().weight(1f)) {
-                // The set.
-                Column(
-                    Modifier.width(220.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(end = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text("Sheet set", style = MaterialTheme.typography.labelLarge)
-                    state.sheets.forEach { s ->
-                        val isOn = s.id == current?.id
-                        Surface(
-                            color = if (isOn) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.4f),
-                            contentColor = if (isOn) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.fillMaxWidth().clickable { selected = s.id }
-                        ) {
-                            Column(Modifier.padding(8.dp)) {
-                                Text("${s.number}  ${s.title}", fontWeight = if (isOn) FontWeight.Bold else FontWeight.Normal)
-                                Text("${s.views.size} viewport" + (if (s.views.size == 1) "" else "s") + " · ${s.paper.label}", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                    OutlinedButton(onClick = { selected = NEW_SHEET }, modifier = Modifier.fillMaxWidth()) { Text("New sheet") }
-                }
-                VerticalDivider()
-                // The sheet being worked on.
-                Column(
-                    Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(start = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    SheetEditor(
-                        state = state,
-                        selectedId = if (current == null) NEW_SHEET else current.id,
-                        onSelect = { selected = it },
-                        onSheetsChange = { onEvent(DrawingEvent.UpdateSheets(it)) },
-                        onEvent = onEvent
-                    )
-                }
-            }
+            // The sheet fills the screen; tools on a rail down the left open as cards (Dan, Nov 28).
+            SheetsWorkspace(state = state, current = current, onSelect = { selected = it }, onEvent = onEvent,
+                modifier = Modifier.fillMaxWidth().weight(1f))
             // Model and sheet tabs, as on the drawing: Model goes back to it.
             SpaceTabs(
                 sheets = state.sheets,

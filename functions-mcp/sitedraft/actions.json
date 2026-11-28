@@ -44,6 +44,25 @@
             ]
         },
         {
+            "action": "AddPatternWallpaper",
+            "about": "A generic wallpaper (WallpaperPatterns, Natalie Nov 28) on the face the elevation shows: pattern key, colourway index.",
+            "args": [
+                {
+                    "name": "elevationId",
+                    "type": "text"
+                },
+                {
+                    "name": "pattern",
+                    "type": "text"
+                },
+                {
+                    "name": "colorway",
+                    "type": "whole number",
+                    "optional": true
+                }
+            ]
+        },
+        {
             "action": "AddRoomElevations",
             "about": "Elevations of the walls of the room around [point] (world px), each cut to the room, placed in a row above the plan. [walls]: any of \"north\", \"east\", \"south\", \"west\"; empty = all (Nov 25).",
             "args": [
@@ -197,6 +216,10 @@
         },
         {
             "action": "Clear",
+            "args": []
+        },
+        {
+            "action": "CloseNameRoom",
             "args": []
         },
         {
@@ -374,6 +397,24 @@
             "args": [
                 {
                     "name": "layerId",
+                    "type": "text"
+                }
+            ]
+        },
+        {
+            "action": "NameRoom",
+            "about": "Names the room around ([x], [y]) (world px): the name goes on its label, over its size (RoomNames, Nov 28).",
+            "args": [
+                {
+                    "name": "x",
+                    "type": "number"
+                },
+                {
+                    "name": "y",
+                    "type": "number"
+                },
+                {
+                    "name": "name",
                     "type": "text"
                 }
             ]
@@ -1498,6 +1539,24 @@
             ]
         },
         {
+            "action": "SetSheetSetChoice",
+            "about": "Who the job is for (Builder, Architect, Designer, Engineer) and the sheet set's ticked groups; null groups = the preset.",
+            "args": [
+                {
+                    "name": "projectType",
+                    "type": "text"
+                },
+                {
+                    "name": "groups",
+                    "type": {
+                        "listOf": "text",
+                        "nullable": true
+                    },
+                    "optional": true
+                }
+            ]
+        },
+        {
             "action": "SetWallCursor",
             "args": [
                 {
@@ -1848,6 +1907,16 @@
                                                 {
                                                     "name": "toIn",
                                                     "type": "number",
+                                                    "optional": true
+                                                },
+                                                {
+                                                    "name": "foreIn",
+                                                    "type": "number",
+                                                    "optional": true
+                                                },
+                                                {
+                                                    "name": "roomName",
+                                                    "type": "text",
                                                     "optional": true
                                                 }
                                             ]

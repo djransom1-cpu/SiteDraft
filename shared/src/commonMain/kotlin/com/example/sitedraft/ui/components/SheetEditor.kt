@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -168,93 +169,7 @@ fun SheetEditor(
     }
 
     Text("Viewports", style = MaterialTheme.typography.labelLarge)
-    sheet.views.forEach { v ->
-        fun update(change: (SheetView) -> SheetView) = save(sheet.copy(views = sheet.views.map { if (it.id == v.id) change(it) else it }))
-        Column(
-            Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)).padding(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(v.title, { t -> update { it.copy(title = t) } },
-                    label = { Text("View title") }, singleLine = true, modifier = Modifier.weight(1f))
-                TextButton(onClick = { save(sheet.copy(views = sheet.views.filter { it.id != v.id })) }) { Text("Remove") }
-            }
-            val isTable = Sheets.isTable(v)
-            if (isTable) {
-                Text(
-                    if (v.kind == SheetViewKind.STRUCTURAL_CALCS) "Worked out from the drawing and Job specs (loads, soil, posts): it keeps up as they change."
-                    else "Read off the floor plan: it keeps up with the doors and windows as they change. The marks show on the plan.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                // The table's size on the sheet (normal = 1/8" lettering).
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    com.example.sitedraft.ui.canvas.Schedules.sizeChoices.forEach { (label, k) ->
-                        FilterChip(selected = kotlin.math.abs(v.tableSize - k) < 0.01f, onClick = { update { it.copy(tableSize = k) } }, label = { Text(label) })
-                    }
-                }
-            }
-            // Each viewport its own scale.
-            if (!isTable) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Sheets.viewScales.forEach { sc ->
-                    FilterChip(selected = v.scale == sc, onClick = { update { it.copy(scale = sc) } },
-                        label = { Text(if (metric) "1:${sc.denominator}" else sc.label) })
-                }
-            }
-            // Cropped viewport: a window on the model.
-            if (!isTable) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedButton(onClick = { cropping = v }) { Text(if (v.crop == null) "Crop to a window" else "Change window") }
-                if (v.crop != null) TextButton(onClick = { update { it.copy(crop = null) } }) { Text("Show the whole view") }
-            }
-            if (v.kind == SheetViewKind.PLAN) {
-                // The layers this viewport shows; every regular layer when none is picked. A sheet's
-                // notes layer shows only where it is picked.
-                val all = state.effectiveLayers
-                val regular = all.filter { !Sheets.isSheetNotes(it.id) }.map { it.id }.toSet()
-                val on = v.layerIds?.toSet()
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    all.filter { it.trade != com.example.sitedraft.ui.canvas.LayerTrade.EXTERIOR_ELEVATION }.forEach { layer ->
-                        FilterChip(selected = if (on == null) layer.id in regular else layer.id in on, onClick = {
-                            val current = on ?: regular
-                            val next = if (layer.id in current) current - layer.id else current + layer.id
-                            val ids = if (next == regular) null else all.map { it.id }.filter { it in next }
-                            update { it.copy(layerIds = ids) }
-                        }, label = { Text(layer.name) })
-                    }
-                }
-                Text(
-                    "Shows: " + (if (on == null) "all layers" else all.filter { it.id in on }.joinToString { it.name }),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                // Remodel (Remodel.kt): which plan this view is, so one drawing gives the existing, demo and proposed sheets.
-                if (com.example.sitedraft.ui.canvas.Remodel.isRemodel(state)) {
-                    Text("Remodel plan", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        com.example.sitedraft.ui.canvas.RemodelPhase.entries.forEach { p ->
-                            FilterChip(selected = v.phase == p, onClick = { update { it.copy(phase = p) } }, label = { Text(p.label) })
-                        }
-                    }
-                }
-                OutlinedButton(onClick = { onEvent(DrawingEvent.AddSheetNotesLayer(sheet.id, v.id)) }) { Text("New notes layer for this sheet") }
-                Text(
-                    "A layer only this viewport shows, made the drawing layer: text and dimensions you add in the drawing print only here.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            if (v.kind == SheetViewKind.SECTION) {
-                Text(
-                    if (Sheets.sectionFor(v, state) != null) "From the section in model space: edit it there (select it on the canvas)."
-                    else "Drawn from the building inputs. Place it in model space (Layers > Typical wall section) to edit it there.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            val size = Sheets.footprint(v, state)
-            Text(
-                if (size == null) "Shows nothing (its subject was deleted)."
-                else "${sheetInches(size.width)} x ${sheetInches(size.height)} on paper with its title" + (if (v.crop != null) ", cropped." else "."),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
+    sheet.views.forEach { v -> ViewportFields(sheet, v, state, ::save, onEvent) { cropping = it } }
     TextButton(onClick = {
         val rest = sheets.filter { it.id != sheet.id }
         onSheetsChange(rest)
@@ -276,7 +191,7 @@ fun SheetEditor(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AddViewChoices(state: CanvasState, existing: SheetLayout?, onDetail: (com.example.sitedraft.ui.canvas.DetailKit.Detail) -> Unit = {}, onPick: (SheetView, Boolean) -> Unit) {
+internal fun AddViewChoices(state: CanvasState, existing: SheetLayout?, onDetail: (com.example.sitedraft.ui.canvas.DetailKit.Detail) -> Unit = {}, onPick: (SheetView, Boolean) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Sheets.planChoices(state).forEach { (label, layerIds) ->
             OutlinedButton(onClick = {
@@ -336,7 +251,7 @@ private fun AddViewChoices(state: CanvasState, existing: SheetLayout?, onDetail:
  * viewport shows exactly that area at whatever scale it is set to.
  */
 @Composable
-private fun CropDialog(view: SheetView, state: CanvasState, onDismiss: () -> Unit, onApply: (ViewCrop) -> Unit) {
+internal fun CropDialog(view: SheetView, state: CanvasState, onDismiss: () -> Unit, onApply: (ViewCrop) -> Unit) {
     val whole = view.copy(crop = null)
     val full = Sheets.fullWorldBounds(whole, state)
     var window by remember(view.id) { mutableStateOf(view.crop?.rect) }
@@ -448,9 +363,17 @@ private sealed class SheetDrag {
  *    Done (or a double-click outside it) comes back out
  */
 @Composable
-private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = false, onBig: (Boolean) -> Unit = {}, onMoved: (SheetView) -> Unit) {
+internal fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = false, onBig: (Boolean) -> Unit = {},
+    /** Nov 28: the sheet fills the space it is given (the sheet screen), with compact zoom buttons over it. */
+    fill: Boolean = false,
+    /** Nov 28: told which viewport is picked (null = none), so its card can open beside it. */
+    onPicked: (String?) -> Unit = {},
+    modifier: Modifier = Modifier,
+    onMoved: (SheetView) -> Unit) {
     val (wIn, hIn) = Sheets.paperIn(sheet)
     var picked by remember(sheet.id) { mutableStateOf<String?>(null) }
+    // Every pick goes through here, so the sheet screen can open the picked viewport's card.
+    fun pick(id: String?) { if (id != picked) { picked = id; onPicked(id) } }
     var insideId by remember(sheet.id) { mutableStateOf<String?>(null) }
     // The view as it is mid-drag (moved, slid or resized); null when nothing is being dragged.
     var dragged by remember(sheet.id) { mutableStateOf<SheetView?>(null) }
@@ -464,14 +387,18 @@ private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = 
     var pan by remember(sheet.id) { mutableStateOf(Offset.Zero) }
     var boxSize by remember { mutableStateOf(Size.Zero) }
     /** Zooms by [factor] keeping the paper under [focus] (screen px) where it is. */
+    // The whole sheet fitted in the box, centred; [pan] moves it from there.
+    fun fitOf(w: Float, h: Float) = minOf(w / wIn, h / hIn)
+    fun baseOf(w: Float, h: Float): Offset { val k = fitOf(w, h); return Offset((w - wIn * k) / 2f, (h - hIn * k) / 2f) }
     fun zoomBy(factor: Float, focus: Offset) {
         val z = (zoom * factor).coerceIn(1f, 12f)
         val f = z / zoom
-        pan = if (z <= 1.0001f) Offset.Zero else focus - (focus - pan) * f
+        val base = baseOf(boxSize.width, boxSize.height)
+        pan = if (z <= 1.0001f) Offset.Zero else focus - base - (focus - base - pan) * f
         zoom = z
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier = if (fill) modifier.fillMaxSize() else modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (inside != null) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -481,13 +408,13 @@ private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = 
                 )
                 Button(onClick = { insideId = null }) { Text("Done") }
             }
-        } else if (!big) {
+        } else if (!big && !fill) {
             Text(
                 "Drag a viewport to move it. Tap it, then drag a corner to resize it. Double-click it to go inside and slide the model.",
                 style = MaterialTheme.typography.bodySmall
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (!fill) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             val centre = Offset(boxSize.width / 2f, boxSize.height / 2f)
             OutlinedButton(onClick = { zoomBy(1f / 1.5f, centre) }, enabled = zoom > 1f) { Text("−") }
             Text("${(zoom * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
@@ -496,10 +423,9 @@ private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = 
             TextButton(onClick = { onBig(!big) }) { Text(if (big) "Show the sheet's settings" else "Bigger view") }
             Text("Ctrl + wheel zooms where you point. Drag bare paper, or drag with the wheel or right button anywhere, to move around.", style = MaterialTheme.typography.bodySmall)
         }
+        androidx.compose.foundation.layout.Box(if (fill) Modifier.weight(1f) else Modifier) {
         Canvas(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(wIn / hIn)
+            (if (fill) Modifier.fillMaxSize() else Modifier.fillMaxWidth().aspectRatio(wIn / hIn))
                 // Nothing on the sheet draws outside it (a view that runs off is cut at the paper's edge).
                 .clipToBounds()
                 .border(1.dp, Color.Gray)
@@ -530,7 +456,8 @@ private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = 
                     // From the exact point pressed (see CropDialog).
                     awaitEachGesture {
                         val down = awaitFirstDown()
-                        val dpi = size.width / wIn * zoom
+                        val dpi = fitOf(size.width.toFloat(), size.height.toFloat()) * zoom
+                        val base = baseOf(size.width.toFloat(), size.height.toFloat())
                         // The wheel (middle) or right button drags the paper around wherever it is pressed,
                         // over a viewport too, as in AutoCAD: nothing on the sheet moves.
                         val buttons = currentEvent.buttons
@@ -542,7 +469,7 @@ private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = 
                             }
                             return@awaitEachGesture
                         }
-                        fun paper(p: Offset) = (p - pan) / dpi
+                        fun paper(p: Offset) = (p - base - pan) / dpi
                         val start = paper(down.position)
                         val pickedView = sheet.views.firstOrNull { it.id == picked }
                         val corner = pickedView?.let { Sheets.cornerAt(it, start, 10f / dpi, state) }
@@ -569,7 +496,7 @@ private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = 
                                 val double = down.uptimeMillis - lastTapAt < DOUBLE_CLICK_MS
                                 lastTapAt = if (double) 0L else down.uptimeMillis
                                 if (double) insideId = null
-                                picked = null
+                                pick(null)
                             }
                             return@awaitEachGesture
                         }
@@ -588,7 +515,7 @@ private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = 
                         val result = dragged
                         if (moved && result != null) {
                             onMoved(if (mode is SheetDrag.Move) result.copy(xIn = Sheets.snap(result.xIn), yIn = Sheets.snap(result.yIn)) else result)
-                            picked = result.id
+                            pick(result.id)
                             lastTapAt = 0L
                         } else if (!moved) {
                             // A tap picks the viewport; a second tap on it soon after is a double-click:
@@ -602,14 +529,15 @@ private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = 
                                 lastTapAt = down.uptimeMillis
                                 lastTapId = v.id
                             }
-                            picked = v.id
+                            pick(v.id)
                         }
                         dragged = null
                     }
                 }
         ) {
-            val dpi = size.width / wIn * zoom
-            translate(pan.x, pan.y) {
+            val dpi = fitOf(size.width, size.height) * zoom
+            val base = baseOf(size.width, size.height)
+            translate(base.x + pan.x, base.y + pan.y) {
             drawSheet(shown, state, dpi, state.projectName, "", highlightId = if (insideId != null) null else picked)
             // The viewport being worked inside: a heavy blue frame, as AutoCAD's active viewport.
             shown.views.firstOrNull { it.id == insideId }?.let { v ->
@@ -630,5 +558,109 @@ private fun SheetPreview(sheet: SheetLayout, state: CanvasState, big: Boolean = 
             }
             }
         }
+        // Compact zoom over the sheet's corner (Nov 28: the sheet screen keeps the paper clear).
+        if (fill) Row(
+            Modifier.align(Alignment.BottomEnd).padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val centre = Offset(boxSize.width / 2f, boxSize.height / 2f)
+            androidx.compose.material3.FilledTonalButton(onClick = { zoomBy(1f / 1.5f, centre) }, enabled = zoom > 1f) { Text("−") }
+            Text("${(zoom * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
+            androidx.compose.material3.FilledTonalButton(onClick = { zoomBy(1.5f, centre) }) { Text("+") }
+            androidx.compose.material3.FilledTonalButton(onClick = { zoom = 1f; pan = Offset.Zero }, enabled = zoom > 1f) { Text("Fit") }
+        }
+        }
     }
+}
+
+/** One viewport's settings (Nov 28: also the card that opens beside a tapped viewport on the sheet screen). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ViewportFields(sheet: SheetLayout, v: SheetView, state: CanvasState, save: (SheetLayout) -> Unit, onEvent: (DrawingEvent) -> Unit, onCrop: (SheetView) -> Unit) {
+    val metric = state.unitSystem == UnitSystem.METRIC
+        fun update(change: (SheetView) -> SheetView) = save(sheet.copy(views = sheet.views.map { if (it.id == v.id) change(it) else it }))
+        Column(
+            Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)).padding(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(v.title, { t -> update { it.copy(title = t) } },
+                    label = { Text("View title") }, singleLine = true, modifier = Modifier.weight(1f))
+                TextButton(onClick = { save(sheet.copy(views = sheet.views.filter { it.id != v.id })) }) { Text("Remove") }
+            }
+            val isTable = Sheets.isTable(v)
+            if (isTable) {
+                Text(
+                    if (v.kind == SheetViewKind.STRUCTURAL_CALCS) "Worked out from the drawing and Job specs (loads, soil, posts): it keeps up as they change."
+                    else "Read off the floor plan: it keeps up with the doors and windows as they change. The marks show on the plan.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                // The table's size on the sheet (normal = 1/8" lettering).
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.example.sitedraft.ui.canvas.Schedules.sizeChoices.forEach { (label, k) ->
+                        FilterChip(selected = kotlin.math.abs(v.tableSize - k) < 0.01f, onClick = { update { it.copy(tableSize = k) } }, label = { Text(label) })
+                    }
+                }
+            }
+            // Each viewport its own scale.
+            if (!isTable) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Sheets.viewScales.forEach { sc ->
+                    FilterChip(selected = v.scale == sc, onClick = { update { it.copy(scale = sc) } },
+                        label = { Text(if (metric) "1:${sc.denominator}" else sc.label) })
+                }
+            }
+            // Cropped viewport: a window on the model.
+            if (!isTable) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { onCrop(v) }) { Text(if (v.crop == null) "Crop to a window" else "Change window") }
+                if (v.crop != null) TextButton(onClick = { update { it.copy(crop = null) } }) { Text("Show the whole view") }
+            }
+            if (v.kind == SheetViewKind.PLAN) {
+                // The layers this viewport shows; every regular layer when none is picked. A sheet's
+                // notes layer shows only where it is picked.
+                val all = state.effectiveLayers
+                val regular = all.filter { !Sheets.isSheetNotes(it.id) }.map { it.id }.toSet()
+                val on = v.layerIds?.toSet()
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    all.filter { it.trade != com.example.sitedraft.ui.canvas.LayerTrade.EXTERIOR_ELEVATION }.forEach { layer ->
+                        FilterChip(selected = if (on == null) layer.id in regular else layer.id in on, onClick = {
+                            val current = on ?: regular
+                            val next = if (layer.id in current) current - layer.id else current + layer.id
+                            val ids = if (next == regular) null else all.map { it.id }.filter { it in next }
+                            update { it.copy(layerIds = ids) }
+                        }, label = { Text(layer.name) })
+                    }
+                }
+                Text(
+                    "Shows: " + (if (on == null) "all layers" else all.filter { it.id in on }.joinToString { it.name }),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                // Remodel (Remodel.kt): which plan this view is, so one drawing gives the existing, demo and proposed sheets.
+                if (com.example.sitedraft.ui.canvas.Remodel.isRemodel(state)) {
+                    Text("Remodel plan", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        com.example.sitedraft.ui.canvas.RemodelPhase.entries.forEach { p ->
+                            FilterChip(selected = v.phase == p, onClick = { update { it.copy(phase = p) } }, label = { Text(p.label) })
+                        }
+                    }
+                }
+                OutlinedButton(onClick = { onEvent(DrawingEvent.AddSheetNotesLayer(sheet.id, v.id)) }) { Text("New notes layer for this sheet") }
+                Text(
+                    "A layer only this viewport shows, made the drawing layer: text and dimensions you add in the drawing print only here.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (v.kind == SheetViewKind.SECTION) {
+                Text(
+                    if (Sheets.sectionFor(v, state) != null) "From the section in model space: edit it there (select it on the canvas)."
+                    else "Drawn from the building inputs. Place it in model space (Layers > Typical wall section) to edit it there.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            val size = Sheets.footprint(v, state)
+            Text(
+                if (size == null) "Shows nothing (its subject was deleted)."
+                else "${sheetInches(size.width)} x ${sheetInches(size.height)} on paper with its title" + (if (v.crop != null) ", cropped." else "."),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 }

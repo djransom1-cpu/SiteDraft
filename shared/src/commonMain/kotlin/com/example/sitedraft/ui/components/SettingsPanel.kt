@@ -54,6 +54,12 @@ fun SettingsPanel(
                     Icon(Icons.Default.Close, contentDescription = "Close")
                 }
             }
+            // Which version this is (Dan, Nov 27), so a test copy and the installed app can be told apart.
+            Text(
+                text = "Site Draft version ${com.example.sitedraft.AppVersion.NAME}",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 0.dp, bottom = 16.dp)
+            )
 
             Text(
                 text = "Unit System",

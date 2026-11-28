@@ -450,6 +450,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 _state.value = _state.value.copy(sheets = event.sheets)
                 triggerAutoSave()
             }
+            // The sheet set checklist (Nov 28): who the job is for, and which sheets the set gets (null = that type's preset).
+            is DrawingEvent.SetSheetSetChoice -> {
+                _state.value = _state.value.copy(projectType = event.projectType, sheetGroups = event.groups)
+                triggerAutoSave()
+            }
             // The typical wall section in model space: placed once, to the right of the drawing,
             // and selected so its inputs show in Properties.
             is DrawingEvent.PlaceWallSection -> {
@@ -670,6 +675,18 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 triggerAutoSave()
             }
             DrawingEvent.CloseRoomElectrical -> _state.value = _state.value.copy(electricalRoom = null)
+            is DrawingEvent.NameRoom -> {
+                val s = _state.value
+                val p = Offset(event.x, event.y)
+                val room = RoomNames.unnamed(s).firstOrNull { it.contains(p) } ?: FloorPlan.areaAt(p, s)
+                if (room == null || event.name.isBlank()) notify("No room there, or no name typed.")
+                else {
+                    pushUndoSnapshot()
+                    _state.value = s.copy(elements = RoomNames.named(room, event.name, s), namingRoom = null)
+                    triggerAutoSave()
+                }
+            }
+            DrawingEvent.CloseNameRoom -> _state.value = _state.value.copy(namingRoom = null)
             is DrawingEvent.ToggleSwitchLeg -> {
                 // A switch leg on or off (switch card, Nov 27).
                 val st = _state.value
@@ -818,6 +835,13 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             }
             is DrawingEvent.AddRoomElevations -> placeRoomElevations(event.point, event.walls)
             is DrawingEvent.AddWallArt -> addDecor(event.elevationId, Picture(name = event.name, bitmap = WallDecorations.shrink(event.bitmap)), WallDecor.ART, 0f)
+            is DrawingEvent.AddPatternWallpaper -> {
+                val p = WallpaperPatterns.find(event.pattern)
+                val pic = _state.value.pictures.firstOrNull { it.id == WallpaperPatterns.pictureId(event.pattern, event.colorway) }
+                    ?: WallpaperPatterns.picture(event.pattern, event.colorway)
+                if (p == null || pic == null) notify("No wallpaper pattern called ${event.pattern}.")
+                else addDecor(event.elevationId, pic, WallDecor.WALLPAPER, p.widthIn)
+            }
             is DrawingEvent.AddWallpaper -> addDecor(event.elevationId, Picture(name = "Wallpaper", bitmap = WallDecorations.shrink(event.bitmap)), WallDecor.WALLPAPER, event.repeatIn)
             is DrawingEvent.UsePicture -> _state.value.pictures.firstOrNull { it.id == event.pictureId }?.let { addDecor(event.elevationId, it, event.kind, WallDecorations.WALLPAPER_REPEAT_IN) }
             is DrawingEvent.UpdateWallDecor -> updateDecor(event.id, event.property, event.value)
@@ -1868,6 +1892,11 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                 )
             }
             DrawingTool.SELECT -> {
+                // A tap on a room's "Name this room" tag opens the box to name it (RoomNames, Nov 28).
+                RoomNames.tagAt(offset, _state.value)?.let { room ->
+                    _state.value = _state.value.copy(namingRoom = room.center, selectedElementId = null, selectedElementIds = emptySet())
+                    return
+                }
                 val groupIds = _state.value.selectedElementIds
                 if (groupIds.size > 1) {
                     // A box-selected group is active. Touching one of its members starts a group
@@ -3071,8 +3100,10 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
         val above = s.elements.filterIsInstance<DrawingElement.ElevationView>().minOfOrNull { it.frame.top } ?: planTop
         val floorY = minOf(planTop, above) - 36f * inch
         var x = s.elements.filter { it !is DrawingElement.ElevationView }.minOfOrNull { it.boundingRect().left } ?: point.x
+        // Titled by the room's name when it has one (Nov 28): "Kitchen, 12' wide x 8' high, looking north".
+        val roomName = ElectricalCode.roomAt(point, s)?.name?.takeUnless { it.startsWith("Room ") } ?: ""
         val views = faces.map { f ->
-            val spec = ElevationSpec(wallId = f.wall.id, side = f.side, fromIn = f.fromIn, toIn = f.toIn, trimOn = true)
+            val spec = ElevationSpec(wallId = f.wall.id, side = f.side, fromIn = f.fromIn, toIn = f.toIn, trimOn = true, foreIn = f.depthIn, roomName = roomName)
             val size = Elevation.sizePx(f.wall, spec, s)
             DrawingElement.ElevationView(spec = spec, origin = Offset(x, floorY), size = size, color = ink).also { x += size.width + 36f * inch }
         }
@@ -3523,6 +3554,17 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
             elements = _state.value.elements.map { element ->
                 if (element.id == id) {
                     when (property) {
+                        // A line as a room divider (Nov 28): made square to the plan (rooms are found square), about its middle.
+                        "divider" -> {
+                            if (element !is DrawingElement.Line) return@map element
+                            val on = value == "1" || value.equals("true", true)
+                            if (!on) return@map element.copy(divider = false)
+                            val mid = (element.start + element.end) / 2f
+                            val d = element.end - element.start
+                            if (kotlin.math.abs(d.x) >= kotlin.math.abs(d.y))
+                                element.copy(divider = true, rotation = 0f, start = Offset(element.start.x, mid.y), end = Offset(element.end.x, mid.y))
+                            else element.copy(divider = true, rotation = 0f, start = Offset(mid.x, element.start.y), end = Offset(mid.x, element.end.y))
+                        }
                         "length", "width" -> {
                             val newValue = value.toFloatOrNull() ?: return@map element
                             val pixelValue = newValue * _state.value.scale.ratio
@@ -3637,7 +3679,7 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             if (v >= 0f) element.copy(properties = element.properties + (property to v)) else element
                         }
                         // A door's or window's own height / a window's sill, in inches ("6 1/2" welcome).
-                        PlanSymbols.PROP_SILL_IN, PlanSymbols.PROP_HEIGHT_IN -> {
+                        PlanSymbols.PROP_SILL_IN, PlanSymbols.PROP_HEIGHT_IN, Mirrors.PROP_FRAME_IN -> {
                             val v = parseInches(value) ?: return@map element
                             if (element is DrawingElement.Symbol && v >= 0f) element.copy(properties = element.properties + (property to v)) else element
                         }
@@ -3665,6 +3707,13 @@ class DrawingManager(private val platform: Platform = NoopPlatform) : ProjectSyn
                             val v = if (value.isBlank()) 0f else parseInches(value) ?: return@map element
                             if (v < 0f) return@map element
                             element.copy(spec = if (property == "fromIn") element.spec.copy(fromIn = v) else element.spec.copy(toIn = v))
+                        }
+                        // How deep in front of the face to show what stands in the room (Natalie, Nov 28); 0 = off.
+                        "foreIn" -> {
+                            if (element !is DrawingElement.ElevationView) return@map element
+                            val v = if (value.isBlank()) 0f else parseInches(value) ?: return@map element
+                            if (v < 0f) return@map element
+                            element.copy(spec = element.spec.copy(foreIn = v))
                         }
                         "tileExtent" -> {
                             val v = value.toIntOrNull() ?: return@map element
@@ -4460,6 +4509,9 @@ sealed class DrawingEvent {
     /** The project's print sheets, as edited in the Print dialog. */
     @Serializable
     data class UpdateSheets(val sheets: List<SheetLayout>) : DrawingEvent()
+    /** Who the job is for (Builder, Architect, Designer, Engineer) and the sheet set's ticked groups; null groups = the preset. */
+    @Serializable
+    data class SetSheetSetChoice(val projectType: String, val groups: List<String>? = null) : DrawingEvent()
     /** A notes layer that only viewport [viewId] on sheet [sheetId] shows, made the drawing layer. */
     @Serializable
     data class AddSheetNotesLayer(val sheetId: String, val viewId: String) : DrawingEvent()
@@ -4551,6 +4603,11 @@ sealed class DrawingEvent {
     /** Closes the room electrical card. */
     @Serializable
     data object CloseRoomElectrical : DrawingEvent()
+    /** Names the room around ([x], [y]) (world px): the name goes on its label, over its size (RoomNames, Nov 28). */
+    @Serializable
+    data class NameRoom(val x: Float, val y: Float, val name: String) : DrawingEvent()
+    @Serializable
+    data object CloseNameRoom : DrawingEvent()
     /** Swaps symbol [id] for library symbol [name], [widthIn] x [depthIn], in the same spot and turn. */
     @Serializable
     data class ReplaceSymbol(val id: String, val name: String, val widthIn: Float, val depthIn: Float) : DrawingEvent()
@@ -4593,6 +4650,9 @@ sealed class DrawingEvent {
     /** Wallpaper from a swatch picture on the wall face elevation [elevationId] shows, [repeatIn] wide. */
     @Serializable
     data class AddWallpaper(val elevationId: String, val bitmap: ImageBitmap, val repeatIn: Float = 21f) : DrawingEvent()
+    /** A generic wallpaper (WallpaperPatterns, Natalie Nov 28) on the face the elevation shows: pattern key, colourway index. */
+    @Serializable
+    data class AddPatternWallpaper(val elevationId: String, val pattern: String, val colorway: Int = 0) : DrawingEvent()
     /** Art or wallpaper again from a picture already in the project ([kind] 0 art, 1 wallpaper). */
     @Serializable
     data class UsePicture(val elevationId: String, val pictureId: String, val kind: Int = 0) : DrawingEvent()

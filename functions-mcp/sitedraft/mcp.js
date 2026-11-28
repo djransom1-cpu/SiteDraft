@@ -314,7 +314,9 @@ function buildServer(ctx) {
     change("hatch_area", T.hatchArea));
   reg("add_elevation",
     "A live elevation of one wall (or an island face): it shows the cabinets with their fronts, appliances, openings and closet parts against that face, and follows the plan. " +
-    "looking = the way the viewer looks at the wall (default: from the room). Placed in a row under the plan; put it on a sheet in the app.",
+    "looking = the way the viewer looks at the wall (default: from the room). Placed in a row under the plan; put it on a sheet in the app. " +
+    "For a whole room (each of its walls cut to the room, titled by the room's name, walls standing in front such as a closet front shown too), " +
+    "use run_actions with AddRoomElevations {point: \"x,y\" inside the room in world px, walls: [\"north\",\"east\",\"south\",\"west\"] or [] for all}; it needs the app open.",
     { project: Project, wall_id: z.string().describe("A wall id, or an island's id"), looking: Compass.optional(),
       island_face: z.enum(["front", "back", "left end", "right end"]).optional(),
       wall_height: Len.optional().describe("Default 8'"), crown: Len.optional().describe("Crown on the uppers, its height"), base_molding: Len.optional().describe("Baseboard height"),
@@ -457,7 +459,7 @@ function buildServer(ctx) {
 
   reg("build_sheets",
     "Builds the sheet set in Dan's order, one sheet per subject: T-1 cover/legend, T-2 notes, C-1 site plan (if any), S-1 foundation plan, S framing plan per floor, S roof framing, " +
-    "S wall section and structural calcs, S details, A floor plan per floor, A roof plan, A exterior elevations, A interior elevations, A door and window schedules. " +
+    "S wall section and structural calcs, S details, A floor plan per floor, A roof plan, A exterior elevations, A interior elevations, A door/window/finish schedules and A cabinet/appliance/fixture schedules (details in building order). " +
     "Views sit centred on each sheet (the app numbers the set). Sheets already there are kept unless replace: true.",
     { project: Project, paper: z.string().optional().describe("Arch D (24x36, default), Arch C, Arch E1, 11x17"), scale: z.string().optional().describe("Plan and elevation scale: 1/4 (default), 1/8, 3/8, 1/2"),
       replace: z.boolean().optional(),

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.example.sitedraft.ui
 
 import com.example.sitedraft.data.rememberPalmRejection
@@ -256,6 +258,25 @@ fun MainScreen(
                             .padding(start = 16.dp, bottom = 16.dp, end = 200.dp)
                     )
 
+                    // The job that's open, always on screen (Dan, Nov 27: "so we know what job we are on"), just above the tabs.
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 16.dp, bottom = 64.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        shape = MaterialTheme.shapes.small,
+                        shadowElevation = 2.dp
+                    ) {
+                        Text(
+                            text = "Job: " + state.projectName,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp).widthIn(max = 320.dp)
+                        )
+                    }
+
                     // Quick layer on/off under the toolbar. Hidden while a symbol waits for its
                     // spot: the "tap to place" banner sits there.
                     if (state.pendingPlacement == null) {
@@ -454,6 +475,27 @@ fun MainScreen(
                                 hatch = selectedHatch, state = state, onEvent = viewModel::onEvent, onDrag = onCardDrag, modifier = cardModifier
                             )
                         }
+                    }
+
+                    // Naming a room (Nov 28): opened by tapping its red "Name this room" tag.
+                    state.namingRoom?.let { at ->
+                        var roomName by remember(at) { mutableStateOf("") }
+                        AlertDialog(
+                            onDismissRequest = { viewModel.onEvent(DrawingEvent.CloseNameRoom) },
+                            title = { Text("Name this room") },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(value = roomName, onValueChange = { roomName = it }, label = { Text("Room name") }, singleLine = true)
+                                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        listOf("Bedroom", "Bath", "Closet", "Kitchen", "Living", "Dining", "Laundry", "Hall", "Pantry", "Office", "Mudroom", "Garage").forEach { n ->
+                                            FilterChip(selected = roomName == n, onClick = { roomName = n }, label = { Text(n) })
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = { TextButton(enabled = roomName.isNotBlank(), onClick = { viewModel.onEvent(DrawingEvent.NameRoom(at.x, at.y, roomName)) }) { Text("Set") } },
+                            dismissButton = { TextButton(onClick = { viewModel.onEvent(DrawingEvent.CloseNameRoom) }) { Text("Cancel") } }
+                        )
                     }
 
                     // A room's electrical card (Nov 27): opened by tapping a room after "Room electrical".

@@ -398,6 +398,8 @@ object ExteriorElevation {
                 val a1 = Elevation.alongOf(fp, side, g.topLeft); val a2 = Elevation.alongOf(fp, side, g.bottomRight)
                 minOf(a1, a2) to maxOf(a1, a2)
             }
+        // Windows' frames (x1, x2, sill, head), trimmed after the loop so a gang gets one surround (Nov 28).
+        val winFrames = mutableListOf<FloatArray>()
         for (o in state.elements.filterIsInstance<DrawingElement.Symbol>()) {
             val kind = Schedules.kindOf(o) ?: continue
             val layer = of(o)
@@ -425,8 +427,7 @@ object ExteriorElevation {
                 val head = sill + (o.properties[PlanSymbols.PROP_HEIGHT_IN] ?: 48f)
                 val mid = (sill + head) / 2f
                 rect(x1, sill, x2, head, Pen.MEDIUM)
-                rect(x1 - CASING_IN, sill - 1.5f, x2 + CASING_IN, head + CASING_IN, Pen.THIN)
-                holes += Rect(x1 - CASING_IN, sill - 1.5f, x2 + CASING_IN, head + CASING_IN)
+                winFrames += floatArrayOf(x1, x2, sill, head)
                 when (PlanSymbols.windowType(o)) {
                     PlanSymbols.WINDOW_SLIDER -> line(c, sill, c, head, Pen.THIN)
                     PlanSymbols.WINDOW_CASEMENT -> {
@@ -459,6 +460,17 @@ object ExteriorElevation {
                 val latchAtRight = Elevation.alongOf(fp, side, latch) > Elevation.alongOf(fp, side, a)
                 doorFace(o.symbolName, x1, x2, base, head, latchAtRight, ::line)
             }
+        }
+
+        // Window trim: windows side by side at the same sill and head (Trim.gangs, under 8" apart) share one surround,
+        // solid trim between them, as inside (Dan, Nov 25; outside Nov 28). A lone window gets its own.
+        for (g in Trim.gangs(winFrames, 1f)) {
+            val first = winFrames[g.minBy { winFrames[it][0] }]
+            val last = winFrames[g.maxBy { winFrames[it][1] }]
+            val sill = first[2]
+            val head = first[3]
+            rect(first[0] - CASING_IN, sill - 1.5f, last[1] + CASING_IN, head + CASING_IN, Pen.THIN)
+            holes += Rect(first[0] - CASING_IN, sill - 1.5f, last[1] + CASING_IN, head + CASING_IN)
         }
 
         // The exterior finish on the wall face (Dan, Nov 22): wainscot, main finish, the gable's own.

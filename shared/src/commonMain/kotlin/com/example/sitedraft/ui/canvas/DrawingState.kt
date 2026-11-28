@@ -134,7 +134,10 @@ sealed class DrawingElement {
         override val strokeWidth: Float,
         override val rotation: Float = 0f,
         // The layer this is drawn on (Building.kt); null = its default layer (Layers.defaultLayerId).
-        override val layerId: String? = null
+        override val layerId: String? = null,
+        // A room divider (Dan, Nov 28): a dashed line across an open space (kitchen / living) that rooms, finishes
+        // and room elevations stop at, as if it were a wall, but is no wall: no framing, no takeoff.
+        val divider: Boolean = false
     ) : DrawingElement()
 
     @Serializable
@@ -477,10 +480,18 @@ data class CanvasState(
     val cabinetSpecs: List<CabinetSpec> = emptyList(),
     // Each room's electrical choices (ElectricalCode, Nov 27).
     val roomElectrical: List<RoomElectrical> = emptyList(),
+    // Who the job is for (SheetSetBuilder.ProjectType name, Nov 28): it picks the sheet set's starting checklist. Blank = not picked.
+    val projectType: String = "",
+    // The sheet set checklist (SheetSetBuilder.Group names) as ticked; null = the project type's preset.
+    val sheetGroups: List<String>? = null,
     // The room whose electrical card is open: a point inside it. Session UI state.
     @kotlinx.serialization.Transient
     @Serializable(with = OffsetSerializer::class)
     val electricalRoom: Offset? = null,
+    // The unnamed room whose "Name this room" box is open (RoomNames, Nov 28): its middle. Session UI state.
+    @kotlinx.serialization.Transient
+    @Serializable(with = OffsetSerializer::class)
+    val namingRoom: Offset? = null,
     // Live rubber-band rectangle while a box-select drag is in progress; null the rest of the
     // time. Both corners kept (not a Rect) since which corner is "start" matters for future
     // window-vs-crossing selection semantics.

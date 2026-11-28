@@ -225,7 +225,31 @@ object DerivedLayers {
         }
         // Exterior walls belong on the first-floor plan; ones moved to another layer by mistake
         // (Nov 19 2026: a plan's 2x6 walls ended up on Foundation) still count when the plan has none.
-        val exterior = walls.filter { it.symbolName == FloorPlan.EXTERIOR_WALL }.ifEmpty {
+        // An outside wall is a 2x6, or any wall with the outdoors on one side (Dan, Nov 27: older houses have 2x4
+        // outside walls): a point 12" off one of its long faces that no walls close in on all four sides.
+        val rects = walls.map { wallRect(it) }
+        val inch12 = state.inchesToPx(12f)
+        fun enclosed(p: Offset) = rects.any { it.right <= p.x && p.y >= it.top && p.y <= it.bottom } &&
+            rects.any { it.left >= p.x && p.y >= it.top && p.y <= it.bottom } &&
+            rects.any { it.bottom <= p.y && p.x >= it.left && p.x <= it.right } &&
+            rects.any { it.top >= p.y && p.x >= it.left && p.x <= it.right }
+        fun facesOutside(w: DrawingElement.Symbol): Boolean {
+            val r = wallRect(w)
+            val probes = if (r.height > r.width) listOf(Offset(r.left - inch12, r.center.y), Offset(r.right + inch12, r.center.y))
+                else listOf(Offset(r.center.x, r.top - inch12), Offset(r.center.x, r.bottom + inch12))
+            return probes.any { !enclosed(it) }
+        }
+        // A job with 2x6 walls anywhere keeps the 2x6 rule; with none, the walls must close in at least one room.
+        val any2x6 = state.elements.any { it is DrawingElement.Symbol && it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL && !isGenerated(it) }
+        val formsRooms = !any2x6 && run {
+            val xs = rects.flatMap { listOf(it.left, it.right) }.distinct().sorted()
+            val ys = rects.flatMap { listOf(it.top, it.bottom) }.distinct().sorted()
+            xs.zipWithNext().any { (x1, x2) -> ys.zipWithNext().any { (y1, y2) ->
+                val p = Offset((x1 + x2) / 2f, (y1 + y2) / 2f)
+                rects.none { it.contains(p) } && enclosed(p)
+            } }
+        }
+        val exterior = walls.filter { it.symbolName == FloorPlan.EXTERIOR_WALL || (formsRooms && facesOutside(it)) }.ifEmpty {
             state.elements.filterIsInstance<DrawingElement.Symbol>().filter {
                 it.category == PlanSymbols.WALLS && it.symbolName == FloorPlan.EXTERIOR_WALL && !isGenerated(it) && isSquare(it.rotation)
             }
@@ -246,11 +270,16 @@ object DerivedLayers {
 
         // ---- Foundation walls and footings under the exterior walls ----
         if (foundationLayer != null) {
-            val t = Building.foundationWallIn(s) * inch
-            val f = s.footingWidthIn * inch
+            // With brick or stone veneer the foundation runs [ledge] past the framing for the brick to sit on
+            // (Dan, Nov 27): the wall is that much thicker, outward, and the footing that much wider.
+            val ledge = Building.brickLedgeIn(s) * inch
+            val t0 = Building.foundationWallIn(s) * inch
+            val t = t0 + ledge
+            val f = s.footingWidthIn * inch + ledge
             // The footing runs past the wall's outside face all the way round, corners included:
             // centred under the wall unless set (Nov 23, the code rule), [footingWidthIn] wide.
             val p = Building.footingProjections(s).first * inch
+            val outer = footprint.inflate(ledge)
             for (ew in exterior) {
                 val r = wallRect(ew)
                 val vertical = r.height > r.width
@@ -265,16 +294,27 @@ object DerivedLayers {
                 val joinStart: Int
                 val joinEnd: Int
                 val innerSign: Float
+                // Anchor bolts stay down the middle of the wall under the framing, not the brick.
+                var boltLine: Offset
+                var boltLen: Float
+                var ledgeStrip: Rect? = null
                 if (!vertical) {
                     val outsideTop = r.center.y < footprint.center.y
-                    val face = if (outsideTop) r.top else r.bottom
                     val inward = if (outsideTop) 1f else -1f
-                    center = Offset(r.center.x, face + inward * t / 2f)
-                    wallSize = Size(r.width, t)
+                    val frame = if (outsideTop) r.top else r.bottom
+                    val face = frame - inward * ledge
                     val atStart = abs(r.left - footprint.left) < tol
                     val atEnd = abs(r.right - footprint.right) < tol
-                    val x1 = if (atStart) footprint.left - p else r.left
-                    val x2 = if (atEnd) footprint.right + p else r.right
+                    // The long sides own the corners, the ledge's too.
+                    val wl = if (atStart) r.left - ledge else r.left
+                    val wr = if (atEnd) r.right + ledge else r.right
+                    center = Offset((wl + wr) / 2f, face + inward * t / 2f)
+                    wallSize = Size(wr - wl, t)
+                    boltLine = Offset(r.center.x, frame + inward * t0 / 2f)
+                    boltLen = r.width
+                    if (ledge > 0f) ledgeStrip = Rect(wl, minOf(face, frame), wr, maxOf(face, frame))
+                    val x1 = if (atStart) outer.left - p else r.left
+                    val x2 = if (atEnd) outer.right + p else r.right
                     footCenter = Offset((x1 + x2) / 2f, face + inward * (f / 2f - p))
                     footSize = Size(x2 - x1, f)
                     joinStart = if (atStart) Structure.JOIN_OWN else 0
@@ -282,14 +322,18 @@ object DerivedLayers {
                     innerSign = inward
                 } else {
                     val outsideLeft = r.center.x < footprint.center.x
-                    val face = if (outsideLeft) r.left else r.right
                     val inward = if (outsideLeft) 1f else -1f
+                    val frame = if (outsideLeft) r.left else r.right
+                    val face = frame - inward * ledge
                     center = Offset(face + inward * t / 2f, r.center.y)
                     wallSize = Size(t, r.height)
+                    boltLine = Offset(frame + inward * t0 / 2f, r.center.y)
+                    boltLen = r.height
+                    if (ledge > 0f) ledgeStrip = Rect(minOf(face, frame), r.top, maxOf(face, frame), r.bottom)
                     val atStart = abs(r.top - footprint.top) < tol
                     val atEnd = abs(r.bottom - footprint.bottom) < tol
-                    val y1 = if (atStart) footprint.top - p + f else r.top
-                    val y2 = if (atEnd) footprint.bottom + p - f else r.bottom
+                    val y1 = if (atStart) outer.top - p + f else r.top
+                    val y2 = if (atEnd) outer.bottom + p - f else r.bottom
                     footCenter = Offset(face + inward * (f / 2f - p), (y1 + y2) / 2f)
                     footSize = Size(f, (y2 - y1).coerceAtLeast(inch))
                     joinStart = if (atStart) Structure.JOIN_BUTT else 0
@@ -299,10 +343,15 @@ object DerivedLayers {
                 out += symbol("fw:${ew.id}", s.foundationWall.symbol, PlanSymbols.WALLS, center, wallSize, foundationLayer)
                 // Anchor bolts down the middle of the wall: [anchorBoltEndIn] from each end, then
                 // evenly spaced no more than [anchorBoltSpacingIn] apart (Dan: 12", 32").
-                val len = if (vertical) wallSize.height else wallSize.width
+                ledgeStrip?.let { ls ->
+                    out += symbol("bl:${ew.id}", Structure.BRICK_LEDGE, Structure.FOUNDATION, ls.center, ls.size, foundationLayer)
+                    // The brick itself on the floor plan, outside the framing (Dan, Nov 27).
+                    out += symbol("bv:${ew.id}", Structure.BRICK_VENEER, Structure.FOUNDATION, ls.center, ls.size, Building.FLOOR1_PLAN)
+                }
+                val len = boltLen
                 for ((i, a) in anchorBolts(len / inch, s.anchorBoltEndIn, s.anchorBoltSpacingIn).withIndex()) {
                     val along = a * inch - len / 2f
-                    val at = if (vertical) Offset(center.x, center.y + along) else Offset(center.x + along, center.y)
+                    val at = if (vertical) Offset(boltLine.x, boltLine.y + along) else Offset(boltLine.x + along, boltLine.y)
                     out += symbol("ab:${ew.id}:$i", Structure.ANCHOR_BOLT, Structure.FOUNDATION, at, Size(3f * inch, 3f * inch), foundationLayer)
                 }
                 out += symbol("ftg:${ew.id}", Structure.FOOTING, Structure.FOUNDATION, footCenter, footSize, foundationLayer,

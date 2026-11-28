@@ -313,7 +313,12 @@ function buildSheets(state, a) {
     view("STRUCTURAL_CALCS", "Structural Calculations", { xIn: cx * 1.45 })];
   sheet("Wall Section and Structural Calculations", secViews);
 
-  const details = symOf((e) => e.category === "Details" && !/section/i.test(e.symbolName || ""));
+  // Details in building order (Dan, Nov 28): footings and foundation, floor framing, walls, stairs, roof, the rest.
+  // Rank by DetailKit.Detail ordinal: OVERHANG, BEAM_POCKET, COLUMN, FOOTING, PORCH_POST, GARAGE_FROST, HOUSE_WALL, GARAGE_WALL, STAIR, BUILDING_SECTION.
+  const BUILD_ORDER = [4, 1, 1, 0, 0, 0, 2, 2, 3, 5];
+  const kindOf = (d) => Math.round((d.properties || {}).detailKind || 0);
+  const details = symOf((e) => e.category === "Details" && !/section/i.test(e.symbolName || ""))
+    .sort((p, q) => (BUILD_ORDER[kindOf(p)] ?? 9) * 100 + kindOf(p) - ((BUILD_ORDER[kindOf(q)] ?? 9) * 100 + kindOf(q)));
   if (details.length) {
     const cols = Math.min(3, details.length), rows = Math.ceil(details.length / cols);
     sheet("Structural Details", details.map((d, i) => view("ELEVATION", d.properties && d.properties.title ? d.properties.title : `Detail ${i + 1}`,
@@ -342,7 +347,12 @@ function buildSheets(state, a) {
       { elementId: e.id, scale: "HALF", xIn: ((i % cols) + 0.5) * (pw - strip) / cols, yIn: (Math.floor(i / cols) + 0.5) * ph / rows })));
   }
 
-  sheet("Door and Window Schedules", [view("DOOR_SCHEDULE", "Door Schedule", { yIn: ph * 0.3 }), view("WINDOW_SCHEDULE", "Window Schedule", { yIn: ph * 0.7 })]);
+  // Two schedule sheets, grouped by trade (Dan, Nov 28); the app's Arrange packs them in rows (SheetLayoutRules).
+  const stack = (list) => list.map(([k, t], i) => view(k, t, { xIn: cx, yIn: ph * (i + 0.5) / list.length }));
+  sheet("Door, window and finish schedules", stack([["DOOR_SCHEDULE", "Door schedule"], ["WINDOW_SCHEDULE", "Window schedule"],
+    ["FINISH_SCHEDULE", "Finish schedule"], ["PAINT_SCHEDULE", "Paint schedule"], ["TRIM_SCHEDULE", "Trim schedule"]]));
+  sheet("Cabinet, appliance and fixture schedules", stack([["CABINET_SCHEDULE", "Cabinet & countertop schedule"],
+    ["APPLIANCE_SCHEDULE", "Appliance schedule"], ["PLUMBING_SCHEDULE", "Plumbing fixture schedule"]]));
 
   // Numbered in the set's order; the app renumbers the same way when it opens them.
   const counters = {};
@@ -365,7 +375,7 @@ function buildSheets(state, a) {
       note: "Kept the sheets already there and added the rest; the app renumbers the set. replace: true starts the set over." } };
   }
   return { state: { ...state, sheets }, result: { sheets: sheets.map((s) => `${s.number} ${s.title}`), notMade: skipped, replaced: existing.length || undefined,
-    note: "Open Sheets in Site Draft; the views sit in the middle of each sheet, drag them where you want them. The set numbers itself in Dan's order." } };
+    note: "Open Sheets in Site Draft and press Arrange on a sheet to pack its views (schedules in rows, details in a numbered grid, extra to a (cont.) sheet). The set numbers itself in Dan's order. Every job starts with the 2 schedule sheets; delete what it doesn't need." } };
 }
 
 function listSheets(state) {

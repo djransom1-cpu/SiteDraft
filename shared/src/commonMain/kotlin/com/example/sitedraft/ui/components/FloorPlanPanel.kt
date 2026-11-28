@@ -325,11 +325,7 @@ fun FloorPlanPanel(
                             "floor" -> autoFloor; "walls" -> autoWalls
                             else -> com.example.sitedraft.ui.canvas.TrimSchedule.fromDrawing(field, f, state)
                         }
-                        OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onEvent(DrawingEvent.UpdateRoomFinish(f.id, field, text)) }),
-                            trailingIcon = { TextButton(onClick = { onEvent(DrawingEvent.UpdateRoomFinish(f.id, field, text)) }) { Text("Set") } })
+                        SetField(text = text, onText = { text = it }, label = label, onSet = { onEvent(DrawingEvent.UpdateRoomFinish(f.id, field, text)) })
                         if (field in listOf("floor", "walls", "trimBase", "trimCasing", "trimWindows", "trimWainscot")) {
                             Text(if (fromDrawing.isNotBlank()) "From the drawing (blank uses it): $fromDrawing" else "Nothing in the drawing yet: type it",
                                 style = MaterialTheme.typography.bodySmall, maxLines = 2, minLines = 2)
@@ -437,11 +433,7 @@ fun FloorPlanPanel(
                         com.example.sitedraft.ui.canvas.CabinetSchedule.fields.zip(com.example.sitedraft.ui.canvas.CabinetSchedule.labels).zip(values).forEach { (fl, value) ->
                             val (field, label) = fl
                             var text by remember(room, field, value) { mutableStateOf(value) }
-                            OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onEvent(DrawingEvent.UpdateCabinetSpec(room, field, text)) }),
-                                trailingIcon = { TextButton(onClick = { onEvent(DrawingEvent.UpdateCabinetSpec(room, field, text)) }) { Text("Set") } })
+                            SetField(text = text, onText = { text = it }, label = label, onSet = { onEvent(DrawingEvent.UpdateCabinetSpec(room, field, text)) })
                         }
                     }
                 }

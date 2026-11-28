@@ -47,7 +47,10 @@ fun HelpPanel(modifier: Modifier = Modifier, onClose: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Help", style = MaterialTheme.typography.headlineSmall)
+                Column {
+                    Text("Help", style = MaterialTheme.typography.headlineSmall)
+                    Text("Site Draft version ${com.example.sitedraft.AppVersion.NAME}", style = MaterialTheme.typography.bodySmall)
+                }
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") }
             }
             OutlinedTextField(

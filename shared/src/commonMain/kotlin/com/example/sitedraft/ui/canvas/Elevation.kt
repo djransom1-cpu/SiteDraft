@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.luminance
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.min
+import kotlin.math.max
 
 /** Which side of a wall the viewer stands on when looking at its elevation (screen directions: up = north). */
 @kotlinx.serialization.Serializable
@@ -70,6 +71,13 @@ data class ElevationSpec(
      */
     val fromIn: Float = 0f,
     val toIn: Float = 0f,
+    /**
+     * Natalie, Nov 28: how deep the room is in front of this face, inches. Walls standing parallel to the face inside
+     * that depth (a closet front 2' out) are drawn in front of it, with their doors and windows. 0 = off.
+     */
+    val foreIn: Float = 0f,
+    /** The room it belongs to (Nov 28), named in its title: "Kitchen, north wall, ...". Blank = no room named. */
+    val roomName: String = "",
 )
 
 /**
@@ -92,7 +100,7 @@ object Elevation {
     const val FARMHOUSE_APRON_IN = 10f
 
     /** [DEVICE]: a plug, switch, sconce, thermostat, wall register or return grille on the wall (Mep, Nov 27). */
-    enum class Kind { OPENING, FIXTURE, CUT_WALL, DEVICE }
+    enum class Kind { OPENING, FIXTURE, CUT_WALL, DEVICE, FORE_WALL }
 
     /** A plan symbol seen in the elevation, with its extent along the wall measured from the viewer's left end (px). */
     data class WallItem(val symbol: DrawingElement.Symbol, val from: Float, val to: Float, val kind: Kind)
@@ -198,6 +206,7 @@ object Elevation {
         s.symbolName == PlanSymbols.WALL_HUNG_SINK -> false
         s.category == PlanSymbols.FIXTURES && s.symbolName in PlanSymbols.counterSinks -> false
         s.symbolName.startsWith("TV") && !s.symbolName.startsWith("TV Stand") -> false
+        Mirrors.isMirror(s.symbolName) -> false
         else -> true
     }
 
@@ -270,6 +279,7 @@ object Elevation {
     /** How tall an item stands, for its end panel (inches, bottom to top). */
     fun endPanelSpan(s: DrawingElement.Symbol, spec: ElevationSpec): Pair<Float, Float> = when {
         PlanSymbols.isUpperCabinet(s) -> upperSpan(s, spec)
+        Mirrors.isMirror(s.symbolName) -> Mirrors.span(s)
         PlanSymbols.isVanity(s.symbolName) -> 0f to PlanSymbols.vanityTop(s)
         s.symbolName.startsWith("Pantry") || PlanSymbols.isOvenCabinet(s.symbolName) -> 0f to PlanSymbols.PANTRY_HEIGHT_IN
         Appliances.isFridge(s.symbolName) -> 0f to 70f
@@ -293,6 +303,49 @@ object Elevation {
         val all = itemsOnWall(wall, spec.side, state)
         if (a <= 0f && b >= lengthPx(wall)) return all
         return all.mapNotNull { if (it.to <= a + 0.5f || it.from >= b - 0.5f) null else it.copy(from = (it.from - a).coerceAtLeast(0f), to = (it.to - a).coerceAtMost(b - a)) }
+    }
+
+    /**
+     * What stands between the viewed face and the viewer (Natalie, Nov 28): walls parallel to the face, more than 1"
+     * out from it and inside [ElevationSpec.foreIn], each followed by the doors and windows in it, farthest first so
+     * nearer ones draw over them. Measured from the view's left end like [itemsInView].
+     */
+    fun itemsInFront(wall: DrawingElement.Symbol, spec: ElevationSpec, state: CanvasState): List<WallItem> {
+        if (spec.foreIn <= 0f || wall.category != PlanSymbols.WALLS) return emptyList()
+        val inch = state.inchesToPx(1f)
+        val wb = FloorPlan.bounds(wall)
+        val (a, b) = cropPx(wall, spec, state)
+        val horizontal = isHorizontal(wall)
+        val side = spec.side
+        fun gap(r: Rect): Float = when (side) {
+            ViewerSide.BELOW -> r.top - wb.bottom
+            ViewerSide.ABOVE -> wb.top - r.bottom
+            ViewerSide.RIGHT -> r.left - wb.right
+            ViewerSide.LEFT -> wb.left - r.right
+        }
+        fun cut(r: Rect): Pair<Float, Float>? {
+            val (f, t) = alongExtent(wb, side, r)
+            val f2 = max(f, a)
+            val t2 = min(t, b)
+            return if (t2 - f2 < inch) null else (f2 - a) to (t2 - a)
+        }
+        val symbols = Layers.onLevelOf(wall, state).filterIsInstance<DrawingElement.Symbol>()
+        val openings = symbols.filter { it.category == PlanSymbols.DOORS_WINDOWS }
+        val out = mutableListOf<WallItem>()
+        symbols.filter { it.category == PlanSymbols.WALLS && it.id != wall.id && !DerivedLayers.isGenerated(it) && isHorizontal(it) == horizontal }
+            .map { it to FloorPlan.bounds(it) }
+            .filter { (_, r) -> gap(r) >= inch && gap(r) <= (spec.foreIn - 1f) * inch }
+            .sortedByDescending { (_, r) -> gap(r) }
+            .forEach { (w, r) ->
+                val (f, t) = cut(r) ?: return@forEach
+                out += WallItem(w, f, t, Kind.FORE_WALL)
+                for (o in openings) {
+                    if (!r.inflate(2f * inch).contains(openingAnchor(o))) continue
+                    val (of, ot) = cut(FloorPlan.bounds(o)) ?: continue
+                    out += WallItem(o, of, ot, Kind.OPENING)
+                }
+            }
+        return out
     }
 
     fun itemsOnWall(wall: DrawingElement.Symbol, side: ViewerSide, state: CanvasState): List<WallItem> {
@@ -712,7 +765,7 @@ object Elevation {
             val xc = (from + to) / 2f
             val name = item.symbol.symbolName
             when (item.kind) {
-                Kind.DEVICE -> Unit // drawn after everything, below
+                Kind.DEVICE, Kind.FORE_WALL -> Unit // devices drawn after everything, below; walls in front at the end
                 Kind.CUT_WALL -> {
                     rect(from, to, 0f, spec.wallHeightIn, medium)
                     line(from, 0f, to, spec.wallHeightIn)
@@ -1147,6 +1200,15 @@ object Elevation {
                         var hIn = 12f
                         while (hIn < 72f) { rect(from, to, hIn, hIn + 0.75f, light); hIn += 12f }
                     }
+                    // Mirrors (Nov 28). A full mirror over a vanity runs the vanity's width (side-by-side vanities
+                    // as one) and sits on its backsplash, unless its own bottom is set.
+                    Mirrors.isMirror(name) -> {
+                        val under = if (name == Mirrors.VANITY) vanities.filter { overlaps(it, from, to) } else emptyList()
+                        val x1 = under.minOfOrNull { it.from } ?: from
+                        val x2 = under.maxOfOrNull { it.to } ?: to
+                        val (b, t) = Mirrors.span(item.symbol, under.maxOfOrNull { PlanSymbols.vanityTop(it.symbol) })
+                        Mirrors.drawElevation(item.symbol, x1, x2, b, t, appliancePen)
+                    }
                     name.startsWith("TV Stand") -> {
                         rect(from, to, 0f, 24f)
                         line(from, 12f, to, 12f)
@@ -1181,7 +1243,7 @@ object Elevation {
             when (it.kind) {
                 Kind.CUT_WALL -> blocked += it.from to it.to
                 Kind.FIXTURE -> if (standsOnFloor(it.symbol)) blocked += it.from to it.to
-                Kind.OPENING, Kind.DEVICE -> Unit
+                Kind.OPENING, Kind.DEVICE, Kind.FORE_WALL -> Unit
             }
         }
         // Windows side by side with the same head and sill are trimmed as one unit (Trim.gangs, Dan Nov 25).
@@ -1285,11 +1347,71 @@ object Elevation {
         }
         for ((a, b, top) in vMerged) rect(a - 0.5f * inch, b + 0.5f * inch, top - 1.5f, top, medium)
 
+        // Walls standing in front of this face inside the room (Natalie, Nov 28: the closet front 2' out from the
+        // south wall), drawn over the back wall, with their doors and windows, casing and base.
+        val fore = itemsInFront(wall, spec, state)
+        if (fore.isNotEmpty()) {
+            val face = Fill(pattern = FillPattern.SOLID, color = state.backgroundColor)
+            val wb = FloorPlan.bounds(wall)
+            var foreWall: WallItem? = null
+            val foreDoors = mutableListOf<Pair<Float, Float>>()
+            fun baseForWall() {
+                val fw = foreWall ?: return
+                Trim.drawBase(appliancePen, length, listOf(0f to fw.from, fw.to to length) + foreDoors, spec)
+                foreDoors.clear()
+            }
+            for (f in fore) {
+                if (f.kind == Kind.FORE_WALL) {
+                    baseForWall()
+                    foreWall = f
+                    rect(f.from, f.to, 0f, spec.wallHeightIn, heavy, face)
+                    continue
+                }
+                val name = f.symbol.symbolName
+                val props = f.symbol.properties
+                val window = PlanSymbols.isWindow(name)
+                val bottom = if (window) props[PlanSymbols.PROP_SILL_IN] ?: spec.sillIn else 0f
+                val top = if (window) bottom + (props[PlanSymbols.PROP_HEIGHT_IN] ?: spec.windowHeightIn) else props[PlanSymbols.PROP_HEIGHT_IN] ?: spec.doorHeightIn
+                val (x1, x2) = f.from to f.to
+                val xc = (x1 + x2) / 2f
+                rect(x1, x2, bottom, top, medium, face)
+                when {
+                    window -> line(x1, (bottom + top) / 2f, x2, (bottom + top) / 2f)
+                    PlanSymbols.isOpening(name) -> Unit
+                    PlanSymbols.isBifold(name) -> {
+                        val n = if (PlanSymbols.isBifoldPair(name, (x2 - x1) / inch)) 4 else 2
+                        for (i in 1 until n) { val x = x1 + (x2 - x1) * i / n; line(x, 0f, x, top) }
+                    }
+                    PlanSymbols.isDoubleDoor(name) -> {
+                        line(xc, 0f, xc, top)
+                        rect(x1 + 3f * inch, xc - 3f * inch, 8f, top - 8f, light)
+                        rect(xc + 3f * inch, x2 - 3f * inch, 8f, top - 8f, light)
+                        circle(xc - 2f * inch, 36f, 1f); circle(xc + 2f * inch, 36f, 1f)
+                    }
+                    PlanSymbols.isSlidingDoor(name) || PlanSymbols.isBarnDoor(name) && PlanSymbols.isBiParting(name) -> line(xc, 0f, xc, top)
+                    PlanSymbols.isPocketDoor(name) || PlanSymbols.isBarnDoor(name) -> Unit
+                    else -> {
+                        rect(x1 + 3f * inch, x2 - 3f * inch, 8f, top - 8f, light)
+                        val d = f.symbol
+                        val latchLocal = Offset(if (PlanSymbols.hingeRight(d)) -d.size.width / 2f else d.size.width / 2f, d.size.height / 2f)
+                        val latch = rotateAbout(d.center + latchLocal, d.center, d.rotation)
+                        val latchAtTo = alongOf(wb, spec.side, latch) > alongOf(wb, spec.side, openingAnchor(d))
+                        circle(if (latchAtTo) x2 - 3f * inch else x1 + 3f * inch, 36f, 1f)
+                    }
+                }
+                val own = Trim.specFor(f.symbol, spec)
+                if (spec.trimOn) Trim.drawOpening(appliancePen, x1, x2, bottom, top, window, own)
+                if (!window) foreDoors += if (spec.trimOn) Trim.outerEdges(x1, x2, false, own, inch) else (x1 to x2)
+            }
+            baseForWall()
+        }
+
         // Title under the floor line.
         val fontSize = (inch * 6f).coerceIn(10f, 36f)
         val lengthIn = length / inch
         out += DrawingElement.Text(
-            text = title ?: "Elevation, ${formatFeetInches(lengthIn)} wide x ${formatFeetInches(spec.wallHeightIn)} high, ${spec.side.looking}",
+            text = title ?: ((if (spec.roomName.isNotBlank()) "${spec.roomName}, " else "Elevation, ") +
+                "${formatFeetInches(lengthIn)} wide x ${formatFeetInches(spec.wallHeightIn)} high, ${spec.side.looking}"),
             topLeft = px(0f, -8f),
             fontSize = fontSize,
             color = color

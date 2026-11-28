@@ -14,7 +14,7 @@ object RoomElevations {
     val directions = listOf("north", "east", "south", "west")
 
     /** One wall of the room as an elevation: the wall, the side it's seen from, and the room's stretch of it. */
-    data class Face(val wall: DrawingElement.Symbol, val side: ViewerSide, val fromIn: Float, val toIn: Float, val direction: String)
+    data class Face(val wall: DrawingElement.Symbol, val side: ViewerSide, val fromIn: Float, val toIn: Float, val direction: String, val depthIn: Float = 0f)
 
     fun faces(p: Offset, state: CanvasState): List<Face> {
         val room = FloorPlan.areaAt(p, state) ?: return emptyList()
@@ -35,7 +35,9 @@ object RoomElevations {
             val wb = FloorPlan.bounds(wall)
             val x1 = Elevation.alongOf(wb, side, a) / inch
             val x2 = Elevation.alongOf(wb, side, b) / inch
-            return Face(wall, side, min(x1, x2), max(x1, x2), dir)
+            // How deep the room is looking at this wall, so what stands in it (a closet front) shows too.
+            val depth = (if (side == ViewerSide.BELOW || side == ViewerSide.ABOVE) room.height else room.width) / inch
+            return Face(wall, side, min(x1, x2), max(x1, x2), dir, depth)
         }
         return listOfNotNull(
             // North wall, seen from the room looking north: its left end is west.

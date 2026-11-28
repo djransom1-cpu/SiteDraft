@@ -60,10 +60,15 @@ class CloudSession(
      * decision from the last 7 days, if it allowed; otherwise [error] explains and the gate
      * stays shut.
      */
+    private val CHECK_TIMEOUT_MS = 20_000L
+
     suspend fun check(user: CloudUser) {
         checking = true
         error = null
         try {
+          // Nov 28: the desktop sat on "Checking your account..." for minutes when the cloud didn't answer. After
+          // CHECK_TIMEOUT_MS it goes on with the last answer it saved (the offline rule), or shows the error.
+          kotlinx.coroutines.withTimeout(CHECK_TIMEOUT_MS) {
             try {
                 cloud.store.touchUser(user.uid, user.email, user.displayName, platform.name)
             } catch (e: Exception) {
@@ -82,8 +87,10 @@ class CloudSession(
             cache.save(user.uid, decision)
             userDoc = doc
             access = decision
+          }
         } catch (e: Throwable) {
-            if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+            if (e is kotlin.coroutines.cancellation.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
+            platform.log("SiteDraftCloud", "account check: ${e.message}")
             val cached = AccessGate.decideOffline(cache.load(user.uid), nowMillis())
             if (cached != null) {
                 access = cached

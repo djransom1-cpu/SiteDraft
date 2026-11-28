@@ -248,7 +248,15 @@
             "Wall Unit 72\"",
             "Bookcase 36\"",
             "TV Stand 60\"",
-            "TV 65\""
+            "TV 43\"",
+            "TV 50\"",
+            "TV 55\"",
+            "TV 65\"",
+            "TV 75\"",
+            "TV 85\"",
+            "Mirror Rectangle",
+            "Mirror Oval",
+            "Mirror Over Vanity"
         ],
         "Foundation": [
             "Continuous Footing",
@@ -730,8 +738,28 @@
             60.0,
             18.0
         ],
+        "TV 43\"": [
+            38.0,
+            3.0
+        ],
+        "TV 50\"": [
+            44.0,
+            3.0
+        ],
+        "TV 55\"": [
+            48.5,
+            3.0
+        ],
         "TV 65\"": [
             57.0,
+            3.0
+        ],
+        "TV 75\"": [
+            66.0,
+            3.0
+        ],
+        "TV 85\"": [
+            74.5,
             3.0
         ],
         "Lynx 36\" Grill": [
@@ -1269,6 +1297,18 @@
         "Gas Stub": [
             6.0,
             6.0
+        ],
+        "Mirror Rectangle": [
+            30.0,
+            1.0
+        ],
+        "Mirror Oval": [
+            24.0,
+            1.0
+        ],
+        "Mirror Over Vanity": [
+            48.0,
+            1.0
         ]
     },
     "building": {

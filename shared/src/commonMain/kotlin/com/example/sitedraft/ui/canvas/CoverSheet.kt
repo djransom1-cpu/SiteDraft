@@ -20,7 +20,7 @@ object CoverSheet {
     /** One row: a label (or number) and its text; [symbol] draws a legend symbol in the label column instead. */
     data class Row(val label: String, val text: String, val symbol: LegendSymbol? = null, /** An electrical or HVAC symbol to draw (Mep). */ val mep: String? = null)
 
-    enum class LegendSymbol { DOOR_TAG, WINDOW_TAG, SECTION_CUT, DETAIL_BUBBLE, VIEW_TITLE, NORTH_ARROW }
+    enum class LegendSymbol { DOOR_TAG, WINDOW_TAG, SECTION_CUT, DETAIL_BUBBLE, VIEW_TITLE, NORTH_ARROW, ROOM_DIVIDER }
 
     fun title(kind: SheetViewKind): String = when (kind) {
         SheetViewKind.SHEET_INDEX -> "SHEET INDEX"
@@ -48,7 +48,7 @@ object CoverSheet {
     fun rows(kind: SheetViewKind, state: CanvasState): List<Row> = when (kind) {
         SheetViewKind.SHEET_INDEX -> sheetIndex(state)
         SheetViewKind.PROJECT_DATA -> projectData(state)
-        SheetViewKind.LEGEND -> legend() + mepLegend(state)
+        SheetViewKind.LEGEND -> legend() + wallLegend(state) + mepLegend(state)
         SheetViewKind.COVER_TITLE -> emptyList()
         SheetViewKind.PAINT_SCHEDULE -> paintSchedule(state)
         else -> generalNotes(state)
@@ -80,6 +80,15 @@ object CoverSheet {
      * The electrical and HVAC symbols the drawing uses (Dan, Nov 27), each drawn as on the plan, with what it is and, for
      * the wall boxes, the height to the bottom of the box (A.F.F., above the finished floor).
      */
+    /** The wall types the plan uses, and the room divider if there is one (Nov 28: the legend card's "wall types"). */
+    fun wallLegend(state: CanvasState): List<Row> {
+        val walls = state.elements.filterIsInstance<DrawingElement.Symbol>()
+            .filter { it.category == PlanSymbols.WALLS && !DerivedLayers.isGenerated(it) }.map { it.symbolName }.distinct().sorted()
+        val rows = walls.map { Row("WALL", it) }
+        val divider = state.elements.any { it is DrawingElement.Line && it.divider }
+        return rows + (if (divider) listOf(Row("", "Room divider: the room and its finishes change here; not a wall", LegendSymbol.ROOM_DIVIDER)) else emptyList())
+    }
+
     fun mepLegend(state: CanvasState): List<Row> {
         val used = state.elements.filterIsInstance<DrawingElement.Symbol>().filter { Mep.isMep(it) }.map { it.symbolName }.toSet()
         return (Mep.electrical + Mep.hvac + Mep.plumbing).filter { it in used }.map { n ->
@@ -286,6 +295,14 @@ object CoverSheet {
                 at("S-4", bc.y + r * 0.46f)
                 if (sym == LegendSymbol.VIEW_TITLE) {
                     drawLine(black, Offset(bc.x + r, bc.y + r * 0.2f), Offset(bc.x + d * 0.95f, bc.y + r * 0.2f), strokeWidth = line * 1.5f)
+                }
+            }
+            LegendSymbol.ROOM_DIVIDER -> {
+                // One dashed line, as on the plan.
+                var x = c.x - d * 0.4f
+                while (x < c.x + d * 0.4f) {
+                    drawLine(black, Offset(x, c.y), Offset(minOf(x + d * 0.1f, c.x + d * 0.4f), c.y), strokeWidth = line * 1.2f)
+                    x += d * 0.16f
                 }
             }
             LegendSymbol.NORTH_ARROW -> {

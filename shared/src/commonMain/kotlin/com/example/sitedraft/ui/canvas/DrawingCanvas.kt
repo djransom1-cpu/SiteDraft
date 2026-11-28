@@ -328,6 +328,9 @@ fun DrawingCanvas(
             }
         ) {
 
+            // Rooms with no name get a red "Name this room" tag (Nov 28), on screen only.
+            if (state.pendingPlacement == null) with(RoomNames) { drawTags(state) }
+
             // Laser wall mode: cursor marker with direction arrows (screen-constant size).
             state.wallMode.takeIf { it.active }?.let { wall -> drawWallCursor(wall, state.zoom) }
 
@@ -516,7 +519,9 @@ private fun DrawScope.drawElement(element: DrawingElement, isSelected: Boolean =
                     start = element.start,
                     end = element.end,
                     strokeWidth = element.strokeWidth,
-                    cap = StrokeCap.Round
+                    cap = if (element.divider) StrokeCap.Butt else StrokeCap.Round,
+                    // A room divider is one dashed line (Nov 28).
+                    pathEffect = if (element.divider) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(14f, 9f)) else null
                 )
             }
             is DrawingElement.Rectangle -> {

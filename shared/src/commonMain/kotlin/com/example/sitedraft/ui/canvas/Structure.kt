@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -38,6 +39,10 @@ object Structure {
     const val PIER = "Pier (round)"
     const val SLAB = "Slab"
     const val ANCHOR_BOLT = "Anchor Bolt"
+    /** The strip of foundation the brick veneer sits on, outside the framing (made by the foundation, not the library). */
+    const val BRICK_LEDGE = "Brick Ledge"
+    /** The brick veneer on the floor plan, outside the framing, over the ledge. */
+    const val BRICK_VENEER = "Brick Veneer"
     val foundationLibrary = listOf(FOOTING, PAD, PIER, SLAB, ANCHOR_BOLT)
 
     const val JOIST_BAY = "Joist Bay"
@@ -202,6 +207,11 @@ object Structure {
         val long = maxOf(w, h)
         fun label(text: String, at: Offset = Offset.Zero, ink: Shower.Ink = Shower.Ink.ACCENT, size: Float = labelSize) {
             if (long > inch * text.length * 3f) out.add(Shower.Part.Label(text, at, size, ink))
+        }
+        if (s.symbolName == BRICK_LEDGE || s.symbolName == BRICK_VENEER) {
+            rect(box, Shower.Ink.LINE)
+            if (s.symbolName == BRICK_LEDGE && long > inch * 40f) label("BRICK LEDGE", Offset.Zero, Shower.Ink.ACCENT, (minOf(w, h) * 0.6f).coerceAtLeast(inch * 2f))
+            return out
         }
         when (s.symbolName) {
             FOOTING -> {
@@ -525,6 +535,17 @@ object Structure {
         val openings = if (s.symbolName == JOIST_BAY) openingsOver(s, state) else emptyList()
         // The house layout's origin from the symbol's top-left corner (FramingLayout), when square to the page.
         val origin = if (s.rotation % 360f == 0f) FramingLayout.origin(state)?.let { it - (s.center - Offset(w / 2f, h / 2f)) } else null
+        // The brick ledge shows the brick sitting on it (Dan, Nov 27): running bond in the strip.
+        if (s.symbolName == BRICK_LEDGE || s.symbolName == BRICK_VENEER) {
+            val r = Rect(-w / 2f, -h / 2f, w / 2f, h / 2f)
+            val horizontal = w >= h
+            val course = minOf(w, h) / 2f
+            if (horizontal) drawShapeFill(Path().apply { addRect(r) }, r, Fill(FillPattern.BRICK, spacing = course, lineWidth = thin.width, length = course * 3f), accentColor)
+            else rotate(90f, pivot = Offset.Zero) {
+                val rr = Rect(-h / 2f, -w / 2f, h / 2f, w / 2f)
+                drawShapeFill(Path().apply { addRect(rr) }, rr, Fill(FillPattern.BRICK, spacing = course, lineWidth = thin.width, length = course * 3f), accentColor)
+            }
+        }
         for (p in planParts(s, w, h, inch, openings, origin)) when (p) {
             is Shower.Part.Seg -> drawPath(Path().apply { moveTo(p.a.x, p.a.y); lineTo(p.b.x, p.b.y) }, color = color(p.ink), style = stroke(p.ink))
             is Shower.Part.Poly -> drawPath(Path().apply {

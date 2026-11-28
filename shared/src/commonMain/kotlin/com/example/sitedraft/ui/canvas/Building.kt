@@ -428,6 +428,14 @@ object Building {
     /** The foundation wall's thickness, inches. */
     fun foundationWallIn(s: BuildingSettings): Float = s.foundationWall.thicknessIn
 
+    /**
+     * The brick ledge (Dan, Nov 27, with the architect): brick or stone veneer on the house sits on the foundation, so
+     * the foundation runs this far past the framing's outside face, inches; 0 with no masonry veneer.
+     */
+    const val BRICK_LEDGE_IN = 4f
+    fun brickLedgeIn(s: BuildingSettings): Float =
+        if (s.exterior?.main == WallFinish.BRICK || s.exterior?.main == WallFinish.STONE) BRICK_LEDGE_IN else 0f
+
     /** How far the footing runs past the wall (outside, inside), inches: centred unless set. */
     fun footingProjections(s: BuildingSettings): Pair<Float, Float> {
         val spare = s.footingWidthIn - foundationWallIn(s)

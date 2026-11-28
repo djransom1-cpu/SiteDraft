@@ -207,8 +207,14 @@ data class ItemSpec(
 object ItemSchedules {
     enum class Kind(val title: String, val prefix: String, val empty: String) {
         APPLIANCE("APPLIANCE SCHEDULE", "A", "No appliances on the plan yet"),
-        PLUMBING("PLUMBING FIXTURE SCHEDULE", "P", "No plumbing fixtures on the plan yet")
+        PLUMBING("PLUMBING FIXTURE SCHEDULE", "P", "No plumbing fixtures on the plan yet"),
+        /** Light fixtures and fans (Nov 28), one line per type with its rooms and count. */
+        LIGHTING("LIGHTING FIXTURE SCHEDULE", "L", "No light fixtures on the plan yet")
     }
+
+    /** What goes on the lighting schedule, in the library's order. */
+    val lightNames = listOf(Mep.CEILING_LIGHT, Mep.CAN_4, Mep.CAN_6, Mep.PENDANT, Mep.SCONCE, Mep.UNDER_CABINET, Mep.EXTERIOR_LIGHT,
+        Mep.FAN_44, Mep.FAN_52, Mep.FAN_60, Mep.BATH_FAN, Mep.BATH_FAN_LIGHT)
 
     /** Appliances that sit in the Fixtures list (the laundry pair, the older fridge, range and dishwasher). */
     private val applianceNames = listOf("Washer", "Dryer", "Refrigerator", "Range", "Dishwasher")
@@ -216,6 +222,7 @@ object ItemSchedules {
     val labels = listOf("Make", "Model", "Finish", "Notes")
 
     fun kindOf(s: DrawingElement.Symbol): Kind? = when {
+        s.category == Mep.ELECTRICAL && s.symbolName in lightNames -> Kind.LIGHTING
         s.category == PlanSymbols.APPLIANCES || s.category == PlanSymbols.HOODS -> Kind.APPLIANCE
         s.category == PlanSymbols.FIXTURES && applianceNames.any { s.symbolName.startsWith(it) } -> Kind.APPLIANCE
         s.category == PlanSymbols.SHOWERS -> Kind.PLUMBING
@@ -261,8 +268,24 @@ object ItemSchedules {
 
     private val COLS = listOf("MARK" to 0.7f, "ROOM" to 1.7f, "ITEM" to 3.8f, "SIZE" to 1.6f, "MAKE / MODEL" to 3.4f, "FINISH" to 2.0f, "NOTES" to 3.0f)
 
-    /** MARK, ROOM, ITEM, SIZE, MAKE / MODEL, FINISH, NOTES. */
-    fun rows(state: CanvasState, kind: Kind): List<List<String>> = items(state, kind).mapIndexed { i, s ->
+    private val LIGHT_COLS = listOf("MARK" to 0.7f, "TYPE" to 3.0f, "ROOMS" to 3.6f, "QTY" to 0.7f, "MAKE / MODEL" to 3.4f, "FINISH" to 2.0f, "NOTES" to 3.0f)
+
+    /** The light fixtures by type, in the library's order: one schedule line each. */
+    fun lightGroups(state: CanvasState): List<List<DrawingElement.Symbol>> =
+        items(state, Kind.LIGHTING).groupBy { it.symbolName }.entries.sortedBy { lightNames.indexOf(it.key) }.map { it.value }
+
+    /** A light type's make, model, finish and notes: typed on any one of that type. */
+    private fun groupSpec(state: CanvasState, group: List<DrawingElement.Symbol>): ItemSpec =
+        group.map { spec(state, it.id) }.firstOrNull { listOf(it.make, it.model, it.finish, it.notes).any { v -> v.isNotBlank() } } ?: ItemSpec(group.first().id)
+
+    private fun lightRows(state: CanvasState): List<List<String>> = lightGroups(state).mapIndexed { i, g ->
+        val sp = groupSpec(state, g)
+        listOf("L${i + 1}", g.first().symbolName, g.map { ScheduleTable.roomOf(it, state) }.distinct().joinToString(", "), g.size.toString(),
+            listOf(sp.make, sp.model).filter { it.isNotBlank() }.joinToString(" "), sp.finish, sp.notes)
+    }
+
+    /** MARK, ROOM, ITEM, SIZE, MAKE / MODEL, FINISH, NOTES (lighting: MARK, TYPE, ROOMS, QTY, ...). */
+    fun rows(state: CanvasState, kind: Kind): List<List<String>> = if (kind == Kind.LIGHTING) lightRows(state) else items(state, kind).mapIndexed { i, s ->
         val sp = spec(state, s.id)
         listOf("${kind.prefix}${i + 1}", ScheduleTable.roomOf(s, state), itemName(s), sizeOf(s, state),
             listOf(sp.make, sp.model).filter { it.isNotBlank() }.joinToString(" "), sp.finish, sp.notes)
@@ -271,20 +294,23 @@ object ItemSchedules {
     /** An item's mark ("A2", "P1"), for the Properties panel; null when it isn't on a schedule. */
     fun markOf(s: DrawingElement.Symbol, state: CanvasState): String? {
         val kind = kindOf(s) ?: return null
+        if (kind == Kind.LIGHTING) return lightGroups(state).indexOfFirst { g -> g.any { it.id == s.id } }.takeIf { it >= 0 }?.let { "L${it + 1}" }
         val i = items(state, kind).indexOfFirst { it.id == s.id }
         return if (i < 0) null else "${kind.prefix}${i + 1}"
     }
 
-    fun tableSizeIn(kind: Kind, state: CanvasState, size: Float = 1f) = ScheduleTable.sizeIn(COLS, items(state, kind).size, size)
+    fun tableSizeIn(kind: Kind, state: CanvasState, size: Float = 1f) =
+        if (kind == Kind.LIGHTING) ScheduleTable.sizeIn(LIGHT_COLS, lightGroups(state).size, size) else ScheduleTable.sizeIn(COLS, items(state, kind).size, size)
 
     fun DrawScope.drawItemTable(kind: Kind, state: CanvasState, topLeft: Offset, dpi: Float, size: Float = 1f) = with(ScheduleTable) {
-        drawTable(kind.title, COLS, rows(state, kind).map { ScheduleTable.Row(it) }, kind.empty, topLeft, dpi, size)
+        drawTable(kind.title, if (kind == Kind.LIGHTING) LIGHT_COLS else COLS, rows(state, kind).map { ScheduleTable.Row(it) }, kind.empty, topLeft, dpi, size)
     }
 }
 
 /** The trade schedules as sheet views: their size on paper and their drawing (null / false for other views). */
 object TradeSchedules {
-    val kinds = listOf(SheetViewKind.TRIM_SCHEDULE, SheetViewKind.CABINET_SCHEDULE, SheetViewKind.APPLIANCE_SCHEDULE, SheetViewKind.PLUMBING_SCHEDULE)
+    val kinds = listOf(SheetViewKind.TRIM_SCHEDULE, SheetViewKind.CABINET_SCHEDULE, SheetViewKind.APPLIANCE_SCHEDULE, SheetViewKind.PLUMBING_SCHEDULE,
+        SheetViewKind.LIGHTING_SCHEDULE)
 
     fun isTrade(kind: SheetViewKind) = kind in kinds
 
@@ -293,6 +319,7 @@ object TradeSchedules {
         SheetViewKind.CABINET_SCHEDULE -> CabinetSchedule.tableSizeIn(state, size)
         SheetViewKind.APPLIANCE_SCHEDULE -> ItemSchedules.tableSizeIn(ItemSchedules.Kind.APPLIANCE, state, size)
         SheetViewKind.PLUMBING_SCHEDULE -> ItemSchedules.tableSizeIn(ItemSchedules.Kind.PLUMBING, state, size)
+        SheetViewKind.LIGHTING_SCHEDULE -> ItemSchedules.tableSizeIn(ItemSchedules.Kind.LIGHTING, state, size)
         else -> null
     }
 
@@ -302,6 +329,7 @@ object TradeSchedules {
             SheetViewKind.CABINET_SCHEDULE -> with(CabinetSchedule) { drawCabinetTable(state, topLeft, dpi, size) }
             SheetViewKind.APPLIANCE_SCHEDULE -> with(ItemSchedules) { drawItemTable(ItemSchedules.Kind.APPLIANCE, state, topLeft, dpi, size) }
             SheetViewKind.PLUMBING_SCHEDULE -> with(ItemSchedules) { drawItemTable(ItemSchedules.Kind.PLUMBING, state, topLeft, dpi, size) }
+            SheetViewKind.LIGHTING_SCHEDULE -> with(ItemSchedules) { drawItemTable(ItemSchedules.Kind.LIGHTING, state, topLeft, dpi, size) }
             else -> {}
         }
     }

@@ -35,7 +35,9 @@ enum class SheetViewKind { PLAN, ELEVATION,
     /** The finish schedule (FinishSchedule, Nov 26): by room, floor, walls, ceiling, trim, notes. */
     FINISH_SCHEDULE,
     /** The schedules by trade (TradeSchedules, Nov 26): trim, cabinets and countertops, appliances, plumbing fixtures. */
-    TRIM_SCHEDULE, CABINET_SCHEDULE, APPLIANCE_SCHEDULE, PLUMBING_SCHEDULE }
+    TRIM_SCHEDULE, CABINET_SCHEDULE, APPLIANCE_SCHEDULE, PLUMBING_SCHEDULE,
+    /** Light fixtures and fans by type (Nov 28). */
+    LIGHTING_SCHEDULE }
 
 /** One view on a sheet. [xIn], [yIn]: the view's centre on the paper, inches from the sheet's top-left corner. */
 @Serializable
@@ -155,7 +157,8 @@ object Sheets {
         SheetViewKind.SECTION -> sectionFor(view, state)?.let { sec -> listOf(sec) + WallSection.ownedBy(sec, state) } ?: emptyList()
         SheetViewKind.DOOR_SCHEDULE, SheetViewKind.WINDOW_SCHEDULE, SheetViewKind.STRUCTURAL_CALCS,
         SheetViewKind.SHEET_INDEX, SheetViewKind.PROJECT_DATA, SheetViewKind.LEGEND, SheetViewKind.GENERAL_NOTES, SheetViewKind.COVER_TITLE, SheetViewKind.PAINT_SCHEDULE, SheetViewKind.FINISH_SCHEDULE,
-        SheetViewKind.TRIM_SCHEDULE, SheetViewKind.CABINET_SCHEDULE, SheetViewKind.APPLIANCE_SCHEDULE, SheetViewKind.PLUMBING_SCHEDULE -> emptyList()
+        SheetViewKind.TRIM_SCHEDULE, SheetViewKind.CABINET_SCHEDULE, SheetViewKind.APPLIANCE_SCHEDULE, SheetViewKind.PLUMBING_SCHEDULE,
+        SheetViewKind.LIGHTING_SCHEDULE -> emptyList()
     }
 
     /** The schedule a view is, if it is one. */
@@ -300,6 +303,7 @@ object Sheets {
         SheetViewKind.CABINET_SCHEDULE -> Slot("A", 803)
         SheetViewKind.APPLIANCE_SCHEDULE -> Slot("A", 804)
         SheetViewKind.PLUMBING_SCHEDULE -> Slot("A", 805)
+        SheetViewKind.LIGHTING_SCHEDULE -> Slot("A", 806)
         SheetViewKind.DOOR_SCHEDULE -> Slot("A", 700)
         SheetViewKind.WINDOW_SCHEDULE -> Slot("A", 701)
         SheetViewKind.ELEVATION -> {
@@ -404,14 +408,19 @@ object Sheets {
                 v.spec.stairSide >= 0 -> "Stair"
                 else -> v.spec.side.looking.replaceFirstChar { it.uppercase() }
             }
-            v to "Elevation ${i + 1} ($what)"
+            // A room elevation names its room (Nov 28): "Kitchen (Looking north)".
+            v to (if (v.spec.roomName.isNotBlank()) "${v.spec.roomName} ($what)" else "Elevation ${i + 1} ($what)")
         }
 
     /**
      * [view] placed in the first free spot on [sheet]: rows from the top-left of the drawing
      * area, left to right, a 1/2" gap between views. Falls back to the middle when nothing fits.
      */
-    fun placed(sheet: SheetLayout, view: SheetView, state: CanvasState): SheetView {
+    fun placed(sheet: SheetLayout, view: SheetView, state: CanvasState): SheetView =
+        placedOrNull(sheet, view, state) ?: drawingArea(sheet).let { view.copy(xIn = it.center.x, yIn = it.center.y) }
+
+    /** [placed], or null when no free spot on [sheet] holds it (SheetLayoutRules then starts a "(cont.)" sheet). */
+    fun placedOrNull(sheet: SheetLayout, view: SheetView, state: CanvasState): SheetView? {
         val area = drawingArea(sheet)
         val size = footprint(view.copy(xIn = 0f, yIn = 0f), state) ?: return view.copy(xIn = area.center.x, yIn = area.center.y)
         val w = size.width
@@ -432,7 +441,7 @@ object Sheets {
             }
             y += step
         }
-        return view.copy(xIn = area.center.x, yIn = area.center.y)
+        return null
     }
 
     // --- Working inside a viewport, as in AutoCAD's paper space (Dan, Nov 22) ---

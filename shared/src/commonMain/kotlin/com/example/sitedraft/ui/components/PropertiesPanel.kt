@@ -419,6 +419,17 @@ fun PropertiesPanel(
                 
                 when (selectedElement) {
                     is DrawingElement.Line -> {
+                        // Room divider (Nov 28): one dashed line that splits an open space into rooms.
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Room divider", style = MaterialTheme.typography.labelLarge)
+                                Text("Dashed. Rooms, finishes and room elevations stop here; name the room on each side. Not a wall.",
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                            Switch(checked = selectedElement.divider, onCheckedChange = {
+                                onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "divider", if (it) "1" else "0"))
+                            })
+                        }
                         val length = (selectedElement.end - selectedElement.start).getDistance() / state.scale.ratio
                         if (state.unitSystem == UnitSystem.IMPERIAL) {
                             FeetInchesProperty("Length", length) {
@@ -603,6 +614,29 @@ fun PropertiesPanel(
                         }
                         // An appliance or plumbing fixture: its mark and what's typed for its schedule (Nov 26).
                         if (ItemSchedules.kindOf(selectedElement) != null) ItemSpecFields(selectedElement, state, onEvent)
+                        // A mirror's size, height and frame (Nov 28). Width is the plan symbol's width.
+                        if (Mirrors.isMirror(selectedElement.symbolName)) {
+                            Text("Mirror", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                            val wUnits = selectedElement.size.width / state.scale.ratio
+                            if (state.unitSystem == UnitSystem.IMPERIAL) FeetInchesProperty("Width", wUnits) {
+                                onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "width", it.toString()))
+                            } else EditableProperty("Width", "%.2f".format(wUnits)) {
+                                onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "width", it))
+                            }
+                            val (mb, mt) = Mirrors.span(selectedElement)
+                            EditableProperty("Bottom off the floor (in)", formatInches(mb)) {
+                                onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_SILL_IN, it))
+                            }
+                            EditableProperty("Height (in)", formatInches(mt - mb)) {
+                                onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, PlanSymbols.PROP_HEIGHT_IN, it))
+                            }
+                            EditableProperty("Frame (in, 0 = frameless)", formatInches(Mirrors.frameIn(selectedElement))) {
+                                onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, Mirrors.PROP_FRAME_IN, it))
+                            }
+                            if (selectedElement.symbolName == Mirrors.VANITY)
+                                Text("Over a vanity it runs the vanity's full width in the elevation and sits on the 4\" backsplash until you set a bottom.",
+                                    style = MaterialTheme.typography.bodySmall)
+                        }
                         if (selectedElement.category == "Lumber") {
                             val w = selectedElement.size.width / state.scale.ratio
                             val h = selectedElement.size.height / state.scale.ratio
@@ -1129,6 +1163,7 @@ fun PropertiesPanel(
                             Text(text = "Length of wall shown (in from the left end; 0 to 0 = whole wall)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                             EditableProperty("Show from (in)", formatInches(spec.fromIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "fromIn", it)) }
                             EditableProperty("Show to (in)", formatInches(spec.toIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "toIn", it)) }
+                            EditableProperty("Show walls in front up to (in; 0 = off)", formatInches(spec.foreIn)) { onEvent(DrawingEvent.UpdateElementProperty(selectedElement.id, "foreIn", it)) }
                         }
                         // Wainscot on this face of the wall (Wainscot, Nov 25). Kept on the wall, so every elevation of
                         // this face shows it; set wall by wall.
@@ -1179,6 +1214,21 @@ fun PropertiesPanel(
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 OutlinedButton(onClick = { importer.pickImage { onEvent(DrawingEvent.AddWallArt(selectedElement.id, it)) } }) { Text("Add art") }
                                 OutlinedButton(onClick = { importer.pickImage { onEvent(DrawingEvent.AddWallpaper(selectedElement.id, it)) } }) { Text("Wallpaper") }
+                            }
+                            // Generic patterns at real repeats (Natalie, Nov 28), in a few colourways.
+                            var colorway by remember { mutableStateOf(0) }
+                            Text("Or a pattern, at its real repeat:", style = MaterialTheme.typography.bodySmall)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                WallpaperPatterns.colorways.forEachIndexed { i, c ->
+                                    FilterChip(selected = colorway == i, onClick = { colorway = i }, label = { Text(c.label) })
+                                }
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                WallpaperPatterns.patterns.forEach { p ->
+                                    OutlinedButton(onClick = { onEvent(DrawingEvent.AddPatternWallpaper(selectedElement.id, p.key, colorway)) }) {
+                                        Text("${p.label} ${formatInches(p.widthIn)}\"")
+                                    }
+                                }
                             }
                             Text("Pick a picture: art hangs centred on this view at 60\" (30\" wide, its own shape); a wallpaper swatch repeats across the wall above any wainscot, with doors, windows and cabinets cutting through.",
                                 style = MaterialTheme.typography.bodySmall)
@@ -1578,18 +1628,18 @@ private fun EditableProperty(label: String, value: String, onUpdate: (String) ->
 private fun ItemSpecFields(sym: DrawingElement.Symbol, state: CanvasState, onEvent: (DrawingEvent) -> Unit) {
     val kind = ItemSchedules.kindOf(sym) ?: return
     val mark = ItemSchedules.markOf(sym, state)
-    val what = if (kind == ItemSchedules.Kind.APPLIANCE) "Appliance schedule" else "Plumbing fixture schedule"
+    val what = when (kind) {
+        ItemSchedules.Kind.APPLIANCE -> "Appliance schedule"
+        ItemSchedules.Kind.LIGHTING -> "Lighting schedule (one line per type: typed on any one fills the line)"
+        else -> "Plumbing fixture schedule"
+    }
     Text(if (mark != null) "$what: $mark" else "$what (a duplicate at this spot: not listed)", style = MaterialTheme.typography.titleSmall)
     val sp = ItemSchedules.spec(state, sym.id)
     val values = listOf(sp.make, sp.model, sp.finish, sp.notes)
     ItemSchedules.fields.zip(ItemSchedules.labels).zip(values).forEach { (fl, value) ->
         val (field, label) = fl
         var text by remember(sym.id, field, value) { mutableStateOf(value) }
-        OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onEvent(DrawingEvent.UpdateItemSpec(sym.id, field, text)) }),
-            trailingIcon = { TextButton(onClick = { onEvent(DrawingEvent.UpdateItemSpec(sym.id, field, text)) }) { Text("Set") } })
+        SetField(text = text, onText = { text = it }, label = label, onSet = { onEvent(DrawingEvent.UpdateItemSpec(sym.id, field, text)) })
     }
 }
 

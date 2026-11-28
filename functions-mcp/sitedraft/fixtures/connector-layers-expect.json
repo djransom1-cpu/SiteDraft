@@ -1,12 +1,12 @@
 {
   "note": "Written by functions-mcp/test/sitedraft-mcp.test.js; ConnectorCheckTest checks it with the app's code.",
   "layerOf": {
-    "f098e10c-76fb-4ab0-bd65-0e2f894eed87": "foundation",
-    "97127f17-74a2-409f-8807-37e0dbbc73f6": "foundation",
-    "9b0824b1-63d2-4f56-a477-d403712efc9d": "foundation",
-    "a391d335-d856-4c7c-a34d-96a422f392a4": "foundation",
-    "f020ad81-81bb-4f51-90a1-01f5fc640d5c": "floor2-cabinets",
-    "56d096eb-6cf9-4fb5-96f9-272de04135fb": "custom-aa92f730"
+    "5167e207-65bf-495a-90cd-2cbd8d5ccc5f": "foundation",
+    "7fea8f27-c813-4a2b-9dba-43d92099f301": "foundation",
+    "a8876bc9-feed-43f7-9fe0-c42306cf74e6": "foundation",
+    "e6e749a2-2d39-4302-9cb5-abd0501fc840": "foundation",
+    "6266f44a-6192-432b-ab3c-6a07fe9f3bdb": "floor2-cabinets",
+    "6db04e30-2980-43e9-a414-67242ea3665f": "custom-37ac502c"
   },
   "activeLayer": "floor1-plan",
   "hidden": [

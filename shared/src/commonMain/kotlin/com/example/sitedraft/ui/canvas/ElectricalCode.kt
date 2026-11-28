@@ -172,7 +172,13 @@ object ElectricalCode {
     /** Every room on the active level (the rooms auto-dimensioning finds). */
     fun rooms(state: CanvasState): List<Room> {
         cache?.let { (els, opts, layer, list) -> if (els === state.elements && opts === state.roomElectrical && layer == state.activeLayerId) return list }
-        val walls = Layers.onActiveLevel(state).filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS }.map { FloorPlan.bounds(it) }
+        val level = Layers.onActiveLevel(state)
+        // Room dividers (Nov 28) split an open space into rooms: a line with no thickness, so the rooms on each side
+        // meet at it (a strip would poke into them and AutoDimension would take them for L-shapes).
+        val dividers = level.filterIsInstance<DrawingElement.Line>().filter { it.divider && (it.start.x == it.end.x || it.start.y == it.end.y) }.map {
+            Rect(minOf(it.start.x, it.end.x), minOf(it.start.y, it.end.y), maxOf(it.start.x, it.end.x), maxOf(it.start.y, it.end.y))
+        }
+        val walls = level.filterIsInstance<DrawingElement.Symbol>().filter { it.category == PlanSymbols.WALLS }.map { FloorPlan.bounds(it) } + dividers
         val list = if (walls.isEmpty()) emptyList() else {
             val outer = Rect(walls.minOf { it.left }, walls.minOf { it.top }, walls.maxOf { it.right }, walls.maxOf { it.bottom })
             AutoDimension.rooms(walls, outer, state).map { roomFor(it, nameIn(it, state), state) }
